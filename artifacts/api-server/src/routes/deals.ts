@@ -5,107 +5,122 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-function calcCommission(tenantId: string, dealType: string, grossProfit: number) {
-  const rates: Record<string, number> = {
-    NET_NEW: 0.10, RENEWAL: 0.05, UPSELL: 0.075, CROSS_SELL: 0.06,
-  };
-  return Math.round(grossProfit * (rates[dealType] ?? 0.10) * 100) / 100;
-}
+const COMM_PCT: Record<string, number> = { NET_NEW: 10, RENEWAL: 5, UPSELL: 7, CROSS_SELL: 6 };
 
-function dealToResponse(deal: any, userName?: string) {
+function dealToResponse(d: any) {
   return {
-    id: deal.id,
-    tenantId: deal.tenantId,
-    userId: deal.userId,
-    userName: userName ?? `${deal.user?.firstName ?? ""} ${deal.user?.lastName ?? ""}`.trim(),
-    dealName: deal.dealName,
-    dealType: deal.dealType,
-    grossProfit: deal.grossProfit,
-    commission: deal.commission,
-    status: deal.status,
-    notes: deal.notes,
-    closedAt: deal.closedAt ? deal.closedAt.toISOString() : null,
-    createdAt: deal.createdAt.toISOString(),
+    id: d.id,
+    tenantId: d.tenantId,
+    salesExecutiveId: d.salesExecutiveId,
+    salesExecutiveName: d.salesExecutive ? `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}` : "",
+    customerName: d.customerName,
+    dealName: d.dealName,
+    dealType: d.dealType,
+    contractStartDate: d.contractStartDate?.toISOString() ?? null,
+    contractEndDate: d.contractEndDate?.toISOString() ?? null,
+    revenue: d.revenue,
+    cost: d.cost,
+    grossProfit: d.grossProfit,
+    grossProfitPercentage: d.grossProfitPercentage,
+    commissionPercentage: d.commissionPercentage,
+    calculatedCommission: d.calculatedCommission,
+    status: d.status,
+    submittedById: d.submittedById,
+    submittedAt: d.submittedAt?.toISOString() ?? null,
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.updatedAt.toISOString(),
   };
 }
 
+// GET /api/deals
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   const { status, dealType, page = "1", limit = "20" } = req.query as Record<string, string>;
   const skip = (parseInt(page) - 1) * parseInt(limit);
+  const isSalesExec = req.user!.role === "SALES_EXECUTIVE";
+  const where: any = {
+    tenantId: req.user!.tenantId,
+    ...(isSalesExec && { salesExecutiveId: req.user!.userId }),
+    ...(status && { status }),
+    ...(dealType && { dealType }),
+  };
   try {
-    const where: any = { tenantId: req.user!.tenantId };
-    if (req.user!.role === "SALES_EXECUTIVE") where.userId = req.user!.userId;
-    if (status) where.status = status;
-    if (dealType) where.dealType = dealType;
-
-    const [deals, total] = await Promise.all([
+    const [data, total] = await Promise.all([
       prisma.deal.findMany({
-        where,
-        include: { user: { select: { firstName: true, lastName: true } } },
+        where, skip, take: parseInt(limit),
         orderBy: { createdAt: "desc" },
-        skip,
-        take: parseInt(limit),
+        include: { salesExecutive: { select: { firstName: true, lastName: true } } },
       }),
       prisma.deal.count({ where }),
     ]);
-
-    res.json({
-      data: deals.map(d => dealToResponse(d)),
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-    });
+    res.json({ data: data.map(dealToResponse), total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
     logger.error({ err }, "ListDeals error");
     res.status(500).json({ error: "Server error" });
   }
 });
 
-router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { dealName, dealType, grossProfit, notes, closedAt } = req.body;
-  if (!dealName || !dealType || !grossProfit) {
-    res.status(400).json({ error: "dealName, dealType, grossProfit required" }); return;
-  }
+// GET /api/deals/:id
+router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    const commission = calcCommission(req.user!.tenantId, dealType, parseFloat(grossProfit));
+    const deal = await prisma.deal.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      include: {
+        salesExecutive: { select: { firstName: true, lastName: true } },
+        approvalWorkflows: {
+          include: { approver: { select: { firstName: true, lastName: true } } },
+          orderBy: { approvalLevel: "asc" },
+        },
+      },
+    });
+    if (!deal) { res.status(404).json({ error: "Deal not found" }); return; }
+    res.json({
+      ...dealToResponse(deal),
+      approvalWorkflows: deal.approvalWorkflows.map((aw: any) => ({
+        id: aw.id, approvalLevel: aw.approvalLevel, approverRole: aw.approverRole,
+        approverName: aw.approver ? `${aw.approver.firstName} ${aw.approver.lastName}` : null,
+        status: aw.status, comments: aw.comments,
+        approvedAt: aw.approvedAt?.toISOString() ?? null,
+      })),
+    });
+  } catch (err) {
+    logger.error({ err }, "GetDeal error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/deals
+router.post("/", requireAuth, async (req: Request, res: Response) => {
+  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate } = req.body;
+  if (!customerName || !dealName || !dealType || revenue == null || cost == null) {
+    res.status(400).json({ error: "customerName, dealName, dealType, revenue and cost are required" });
+    return;
+  }
+  const rev = parseFloat(revenue);
+  const cst = parseFloat(cost);
+  const gp = rev - cst;
+  const gpPct = rev > 0 ? Math.round((gp / rev) * 10000) / 100 : 0;
+  const pct = COMM_PCT[dealType] ?? 10;
+  const commission = Math.round(gp * (pct / 100) * 100) / 100;
+  try {
     const deal = await prisma.deal.create({
       data: {
         tenantId: req.user!.tenantId,
-        userId: req.user!.userId,
-        dealName, dealType,
-        grossProfit: parseFloat(grossProfit),
-        commission,
+        salesExecutiveId: req.user!.userId,
+        submittedById: req.user!.userId,
+        customerName, dealName, dealType,
+        revenue: rev, cost: cst,
+        grossProfit: gp, grossProfitPercentage: gpPct,
+        commissionPercentage: pct, calculatedCommission: commission,
         status: "SUBMITTED",
-        notes: notes || null,
-        closedAt: closedAt ? new Date(closedAt) : null,
+        submittedAt: new Date(),
+        contractStartDate: contractStartDate ? new Date(contractStartDate) : null,
+        contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
       },
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });
-
-    // Create approval entry
-    await prisma.approval.create({
-      data: {
-        tenantId: req.user!.tenantId,
-        type: "DEAL",
-        referenceId: deal.id,
-        referenceName: dealName,
-        requestedById: req.user!.userId,
-        status: "PENDING",
-      },
-    });
-
-    // Audit log
     await prisma.auditLog.create({
-      data: {
-        tenantId: req.user!.tenantId,
-        userId: req.user!.userId,
-        action: "CREATE",
-        entity: "Deal",
-        entityId: deal.id,
-        metadata: JSON.stringify({ dealName, dealType, grossProfit }),
-      },
+      data: { tenantId: req.user!.tenantId, userId: req.user!.userId, action: "CREATE", entityType: "Deal", entityId: deal.id, newValue: JSON.stringify({ dealName, status: "SUBMITTED" }) },
     });
-
     res.status(201).json(dealToResponse(deal));
   } catch (err) {
     logger.error({ err }, "CreateDeal error");
@@ -113,56 +128,48 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.get("/:dealId", requireAuth, async (req: Request, res: Response) => {
+// PATCH /api/deals/:id
+router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
+  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate, status } = req.body;
   try {
-    const deal = await prisma.deal.findFirst({
-      where: { id: req.params.dealId, tenantId: req.user!.tenantId },
-      include: { user: { select: { firstName: true, lastName: true } } },
-    });
-    if (!deal) { res.status(404).json({ error: "Deal not found" }); return; }
-    res.json(dealToResponse(deal));
-  } catch (err) {
-    logger.error({ err }, "GetDeal error");
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-router.patch("/:dealId", requireAuth, async (req: Request, res: Response) => {
-  const { dealName, dealType, grossProfit, notes, status, closedAt } = req.body;
-  try {
-    const existing = await prisma.deal.findFirst({ where: { id: req.params.dealId, tenantId: req.user!.tenantId } });
+    const existing = await prisma.deal.findFirst({ where: { id: req.params.id, tenantId: req.user!.tenantId } });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
+    const newRev  = revenue != null ? parseFloat(revenue) : existing.revenue;
+    const newCost = cost != null ? parseFloat(cost) : existing.cost;
+    const gp      = newRev - newCost;
+    const gpPct   = newRev > 0 ? Math.round((gp / newRev) * 10000) / 100 : 0;
+    const newType = dealType ?? existing.dealType;
+    const pct     = COMM_PCT[newType] ?? existing.commissionPercentage;
+    const comm    = Math.round(gp * (pct / 100) * 100) / 100;
 
-    let commission = existing.commission;
-    if (grossProfit && dealType) commission = calcCommission(req.user!.tenantId, dealType ?? existing.dealType, parseFloat(grossProfit));
-
-    const deal = await prisma.deal.update({
-      where: { id: req.params.dealId },
-      data: {
-        ...(dealName && { dealName }),
-        ...(dealType && { dealType }),
-        ...(grossProfit && { grossProfit: parseFloat(grossProfit), commission }),
-        ...(notes !== undefined && { notes }),
-        ...(status && { status }),
-        ...(closedAt !== undefined && { closedAt: closedAt ? new Date(closedAt) : null }),
-      },
-      include: { user: { select: { firstName: true, lastName: true } } },
-    });
-
-    // If deal becomes approved, add wallet credit
-    if (status === "EXECUTIVE_APPROVED" && existing.status !== "EXECUTIVE_APPROVED") {
-      await prisma.transaction.create({
-        data: {
-          tenantId: req.user!.tenantId,
-          userId: existing.userId,
-          type: "CREDIT",
-          amount: deal.commission,
-          description: `Commission credited for ${deal.dealName}`,
-          referenceId: deal.id,
-        },
+    if (status === "PENDING_APPROVAL" && ["SUBMITTED", "DRAFT"].includes(existing.status)) {
+      await prisma.approvalWorkflow.deleteMany({ where: { dealId: existing.id } });
+      await prisma.approvalWorkflow.createMany({
+        data: [
+          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
+          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, approverRole: "FINANCE", status: "PENDING" },
+          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, approverRole: "ADMIN",   status: "PENDING" },
+        ],
       });
     }
 
+    const deal = await prisma.deal.update({
+      where: { id: req.params.id },
+      data: {
+        ...(customerName && { customerName }),
+        ...(dealName && { dealName }),
+        ...(dealType && { dealType, commissionPercentage: pct }),
+        revenue: newRev, cost: newCost,
+        grossProfit: gp, grossProfitPercentage: gpPct, calculatedCommission: comm,
+        ...(status && { status }),
+        ...(contractStartDate && { contractStartDate: new Date(contractStartDate) }),
+        ...(contractEndDate && { contractEndDate: new Date(contractEndDate) }),
+      },
+      include: { salesExecutive: { select: { firstName: true, lastName: true } } },
+    });
+    await prisma.auditLog.create({
+      data: { tenantId: req.user!.tenantId, userId: req.user!.userId, action: "UPDATE", entityType: "Deal", entityId: deal.id, oldValue: JSON.stringify({ status: existing.status }), newValue: JSON.stringify({ status: deal.status }) },
+    });
     res.json(dealToResponse(deal));
   } catch (err) {
     logger.error({ err }, "UpdateDeal error");
@@ -170,9 +177,53 @@ router.patch("/:dealId", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.delete("/:dealId", requireAuth, async (req: Request, res: Response) => {
+// POST /api/deals/:id/submit
+router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
   try {
-    await prisma.deal.delete({ where: { id: req.params.dealId } });
+    const existing = await prisma.deal.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
+    });
+    if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
+    if (!["DRAFT", "SUBMITTED"].includes(existing.status)) {
+      res.status(400).json({ error: "Only DRAFT or SUBMITTED deals can be submitted for approval" }); return;
+    }
+    await prisma.approvalWorkflow.deleteMany({ where: { dealId: existing.id } });
+    await prisma.approvalWorkflow.createMany({
+      data: [
+        { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
+        { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, approverRole: "FINANCE", status: "PENDING" },
+        { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, approverRole: "ADMIN",   status: "PENDING" },
+      ],
+    });
+    const deal = await prisma.deal.update({
+      where: { id: req.params.id },
+      data: { status: "PENDING_APPROVAL", submittedAt: new Date(), submittedById: req.user!.userId },
+      include: { salesExecutive: { select: { firstName: true, lastName: true } } },
+    });
+    const managers = await prisma.user.findMany({ where: { tenantId: req.user!.tenantId, role: "MANAGER", status: "ACTIVE" } });
+    if (managers.length > 0) {
+      await prisma.notification.createMany({
+        data: managers.map(m => ({
+          tenantId: req.user!.tenantId, userId: m.id,
+          title: "New Deal Approval Required",
+          message: `${deal.dealName} for ${deal.customerName} requires your approval`,
+          type: "DEAL_SUBMITTED" as const, readStatus: false,
+        })),
+      });
+    }
+    res.json(dealToResponse(deal));
+  } catch (err) {
+    logger.error({ err }, "SubmitDeal error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// DELETE /api/deals/:id
+router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const existing = await prisma.deal.findFirst({ where: { id: req.params.id, tenantId: req.user!.tenantId } });
+    if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
+    await prisma.deal.delete({ where: { id: req.params.id } });
     res.json({ message: "Deal deleted" });
   } catch (err) {
     logger.error({ err }, "DeleteDeal error");

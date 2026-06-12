@@ -7,24 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  currency  String   @default("ZAR")
-  logoUrl   String?
-  taxRate   Float    @default(0.25)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ─── Enums ────────────────────────────────────────────────────────────────────
 
-  users           User[]
-  deals           Deal[]
-  payoutRequests  PayoutRequest[]
-  commissionRules CommissionRule[]
-  approvals       Approval[]
-  auditLogs       AuditLog[]
-  notifications   Notification[]
-  transactions    Transaction[]
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  INACTIVE
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
 }
 
 enum UserRole {
@@ -41,31 +36,6 @@ enum UserStatus {
   PENDING
 }
 
-model User {
-  id        String     @id @default(cuid())
-  tenantId  String
-  email     String
-  password  String
-  firstName String
-  lastName  String
-  role      UserRole   @default(SALES_EXECUTIVE)
-  status    UserStatus @default(ACTIVE)
-  avatarUrl String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-
-  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  deals             Deal[]
-  payoutRequests    PayoutRequest[]
-  approvals         Approval[]      @relation("RequestedByUser")
-  reviewedApprovals Approval[]      @relation("ReviewedByUser")
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  transactions      Transaction[]
-
-  @@unique([tenantId, email])
-}
-
 enum DealType {
   NET_NEW
   RENEWAL
@@ -74,103 +44,28 @@ enum DealType {
 }
 
 enum DealStatus {
+  DRAFT
   SUBMITTED
   PENDING_APPROVAL
   MANAGER_APPROVED
   FINANCE_APPROVED
   EXECUTIVE_APPROVED
   REJECTED
-}
-
-model Deal {
-  id          String     @id @default(cuid())
-  tenantId    String
-  userId      String
-  dealName    String
-  dealType    DealType
-  grossProfit Float
-  commission  Float
-  status      DealStatus @default(SUBMITTED)
-  notes       String?
-  closedAt    DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
-}
-
-enum PayoutStatus {
-  PENDING
-  FINANCE_APPROVED
-  REJECTED
-  PAID
-}
-
-model PayoutRequest {
-  id         String       @id @default(cuid())
-  tenantId   String
-  userId     String
-  amount     Float
-  status     PayoutStatus @default(PENDING)
-  notes      String?
-  reviewedBy String?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
-}
-
-enum RateType {
-  PERCENTAGE
-  FLAT
-}
-
-model CommissionRule {
-  id             String   @id @default(cuid())
-  tenantId       String
-  name           String
-  dealType       DealType
-  rateType       RateType
-  rateValue      Float
-  minGrossProfit Float?
-  maxGrossProfit Float?
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-}
-
-enum ApprovalType {
-  DEAL
-  PAYOUT
-  COMMISSION_RULE
+  CANCELLED
 }
 
 enum ApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+  ESCALATED
 }
 
-model Approval {
-  id            String         @id @default(cuid())
-  tenantId      String
-  type          ApprovalType
-  referenceId   String
-  referenceName String
-  requestedById String
-  status        ApprovalStatus @default(PENDING)
-  reviewedById  String?
-  notes         String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  requestedBy User   @relation("RequestedByUser", fields: [requestedById], references: [id])
-  reviewedBy  User?  @relation("ReviewedByUser", fields: [reviewedById], references: [id])
+enum PayoutStatus {
+  PENDING
+  FINANCE_APPROVED
+  PAID
+  REJECTED
 }
 
 enum TransactionType {
@@ -178,45 +73,222 @@ enum TransactionType {
   DEBIT
   TRANSFER
   PAYOUT
+  ADJUSTMENT
 }
 
-model Transaction {
-  id          String          @id @default(cuid())
-  tenantId    String
-  userId      String
-  type        TransactionType
-  amount      Float
-  description String
-  referenceId String?
-  createdAt   DateTime        @default(now())
+enum NotificationType {
+  DEAL_SUBMITTED
+  DEAL_APPROVED
+  DEAL_REJECTED
+  PAYOUT_REQUESTED
+  PAYOUT_APPROVED
+  PAYOUT_PAID
+  WALLET_CREDITED
+  SYSTEM
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id                 String           @id @default(cuid())
+  companyName        String
+  registrationNumber String?
+  vatNumber          String?
+  industry           String?
+  contactName        String
+  contactEmail       String
+  contactPhone       String?
+  status             TenantStatus     @default(ACTIVE)
+  subscriptionPlan   SubscriptionPlan @default(STARTER)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  users              User[]
+  commissionRules    CommissionRule[]
+  deals              Deal[]
+  approvalWorkflows  ApprovalWorkflow[]
+  wallets            Wallet[]
+  walletTransactions WalletTransaction[]
+  payoutRequests     PayoutRequest[]
+  taxProfiles        TaxProfile[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+}
+
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String
+  firstName    String
+  lastName     String
+  email        String
+  passwordHash String
+  role         UserRole   @default(SALES_EXECUTIVE)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dealsAsExecutive     Deal[]             @relation("SalesExecutive")
+  dealsSubmitted       Deal[]             @relation("SubmittedBy")
+  approvalWorkflows    ApprovalWorkflow[]
+  wallet               Wallet?
+  payoutRequests       PayoutRequest[]
+  taxProfile           TaxProfile?
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+
+  @@unique([tenantId, email])
+}
+
+model CommissionRule {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  ruleName             String
+  dealType             DealType
+  commissionPercentage Float
+  appliesToRole        UserRole  @default(SALES_EXECUTIVE)
+  minGrossProfit       Float?
+  maxGrossProfit       Float?
+  effectiveFrom        DateTime
+  effectiveTo          DateTime?
+  status               String    @default("ACTIVE")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Deal {
+  id                    String     @id @default(cuid())
+  tenantId              String
+  salesExecutiveId      String
+  customerName          String
+  dealName              String
+  dealType              DealType
+  contractStartDate     DateTime?
+  contractEndDate       DateTime?
+  revenue               Float      @default(0)
+  cost                  Float      @default(0)
+  grossProfit           Float      @default(0)
+  grossProfitPercentage Float      @default(0)
+  commissionPercentage  Float      @default(0)
+  calculatedCommission  Float      @default(0)
+  status                DealStatus @default(DRAFT)
+  submittedById         String?
+  submittedAt           DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesExecutive    User               @relation("SalesExecutive", fields: [salesExecutiveId], references: [id])
+  submittedBy       User?              @relation("SubmittedBy", fields: [submittedById], references: [id])
+  approvalWorkflows ApprovalWorkflow[]
+}
+
+model ApprovalWorkflow {
+  id            String         @id @default(cuid())
+  tenantId      String
+  dealId        String
+  approvalLevel Int
+  approverRole  UserRole
+  approverUserId String?
+  status        ApprovalStatus @default(PENDING)
+  comments      String?
+  approvedAt    DateTime?
+  createdAt     DateTime       @default(now())
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal     Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  approver User?  @relation(fields: [approverUserId], references: [id])
+}
+
+model Wallet {
+  id               String   @id @default(cuid())
+  tenantId         String
+  userId           String   @unique
+  availableBalance Float    @default(0)
+  pendingBalance   Float    @default(0)
+  deferredBalance  Float    @default(0)
+  paidOutBalance   Float    @default(0)
+  updatedAt        DateTime @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id              String          @id @default(cuid())
+  tenantId        String
+  walletId        String
+  transactionType TransactionType
+  amount          Float
+  referenceType   String?
+  referenceId     String?
+  description     String
+  createdAt       DateTime        @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+}
+
+model PayoutRequest {
+  id                  String       @id @default(cuid())
+  tenantId            String
+  userId              String
+  requestedAmount     Float
+  estimatedTax        Float        @default(0)
+  estimatedNetPayout  Float        @default(0)
+  payoutMonth         String
+  status              PayoutStatus @default(PENDING)
+  requestedAt         DateTime     @default(now())
+  approvedAt          DateTime?
+  paidAt              DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model TaxProfile {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  userId                 String   @unique
+  monthlySalary          Float    @default(0)
+  annualSalary           Float    @default(0)
+  taxYear                Int
+  medicalAidCredits      Float    @default(0)
+  retirementContribution Float    @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  oldValue   String?
+  newValue   String?
+  createdAt  DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id])
 }
 
 model Notification {
-  id        String   @id @default(cuid())
-  tenantId  String
-  userId    String
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  link      String?
-  createdAt DateTime @default(now())
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
-}
-
-model AuditLog {
-  id        String   @id @default(cuid())
-  tenantId  String
-  userId    String
-  action    String
-  entity    String
-  entityId  String
-  metadata  String?
-  createdAt DateTime @default(now())
+  id         String           @id @default(cuid())
+  tenantId   String
+  userId     String
+  title      String
+  message    String
+  type       NotificationType @default(SYSTEM)
+  readStatus Boolean          @default(false)
+  createdAt  DateTime         @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id])

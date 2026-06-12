@@ -5,39 +5,48 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
+// GET /api/reports/deals
 router.get("/deals", requireAuth, async (req: Request, res: Response) => {
   const { from, to } = req.query as { from?: string; to?: string };
   const tenantId = req.user!.tenantId;
-  const userId = req.user!.role === "SALES_EXECUTIVE" ? req.user!.userId : undefined;
-  const where: any = { tenantId, ...(userId && { userId }) };
-  if (from || to) {
-    where.createdAt = {};
-    if (from) where.createdAt.gte = new Date(from);
-    if (to) where.createdAt.lte = new Date(to);
-  }
+  const isSalesExec = req.user!.role === "SALES_EXECUTIVE";
+  const where: any = {
+    tenantId,
+    ...(isSalesExec && { salesExecutiveId: req.user!.userId }),
+    ...((from || to) && {
+      createdAt: {
+        ...(from && { gte: new Date(from) }),
+        ...(to && { lte: new Date(to) }),
+      },
+    }),
+  };
   try {
-    const [total, gp, commission] = await Promise.all([
+    const [total, gpAgg, commAgg, revenueAgg] = await Promise.all([
       prisma.deal.count({ where }),
-      prisma.deal.aggregate({ where, _sum: { grossProfit: true } }),
-      prisma.deal.aggregate({ where, _sum: { commission: true } }),
+      prisma.deal.aggregate({ where, _sum: { grossProfit: true }, _avg: { grossProfitPercentage: true } }),
+      prisma.deal.aggregate({ where, _sum: { calculatedCommission: true } }),
+      prisma.deal.aggregate({ where, _sum: { revenue: true } }),
     ]);
+
     const types = ["NET_NEW", "RENEWAL", "UPSELL", "CROSS_SELL"] as const;
     const byType = await Promise.all(
-      types.map(t => prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { commission: true } })
-        .then(r => ({ dealType: t, amount: r._sum.commission ?? 0, percentage: 0 })))
+      types.map(t => prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true }, _count: true })
+        .then(r => ({ dealType: t, amount: r._sum.calculatedCommission ?? 0, count: r._count, percentage: 0 })))
     );
     const totalComm = byType.reduce((s, r) => s + r.amount, 0);
     byType.forEach(r => { r.percentage = totalComm > 0 ? Math.round((r.amount / totalComm) * 100) : 0; });
 
-    const statuses = ["SUBMITTED", "PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "REJECTED"] as const;
+    const statuses = ["DRAFT", "SUBMITTED", "PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "REJECTED", "CANCELLED"] as const;
     const byStatus = await Promise.all(
       statuses.map(s => prisma.deal.count({ where: { ...where, status: s } }).then(c => ({ status: s, count: c })))
     );
 
     res.json({
       totalDeals: total,
-      totalGrossProfit: gp._sum.grossProfit ?? 0,
-      totalCommission: commission._sum.commission ?? 0,
+      totalRevenue: revenueAgg._sum.revenue ?? 0,
+      totalGrossProfit: gpAgg._sum.grossProfit ?? 0,
+      avgGrossProfitPercentage: Math.round((gpAgg._avg.grossProfitPercentage ?? 0) * 100) / 100,
+      totalCommission: commAgg._sum.calculatedCommission ?? 0,
       byType,
       byStatus,
     });

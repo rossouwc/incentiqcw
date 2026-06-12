@@ -5,53 +5,69 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
+// GET /api/wallet  — returns the authenticated user's wallet
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const tenantId = req.user!.tenantId;
   try {
-    const [creditTxns, payoutTxns, pendingDeals, deferredDeals, paidDeals] = await Promise.all([
-      prisma.transaction.aggregate({ where: { userId, tenantId, type: "CREDIT" }, _sum: { amount: true } }),
-      prisma.transaction.aggregate({ where: { userId, tenantId, type: "PAYOUT" }, _sum: { amount: true } }),
-      prisma.deal.aggregate({ where: { userId, tenantId, status: "PENDING_APPROVAL" }, _sum: { commission: true } }),
-      prisma.deal.aggregate({ where: { userId, tenantId, status: "MANAGER_APPROVED" }, _sum: { commission: true } }),
-      prisma.deal.aggregate({ where: { userId, tenantId, status: "EXECUTIVE_APPROVED" }, _sum: { commission: true } }),
-    ]);
-
+    let wallet = await prisma.wallet.findUnique({ where: { userId } });
+    // Auto-create wallet if missing (e.g. older accounts)
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { tenantId: req.user!.tenantId, userId },
+      });
+    }
     const ytdStart = new Date(new Date().getFullYear(), 0, 1);
-    const paidYtdTxns = await prisma.transaction.aggregate({
-      where: { userId, tenantId, type: "PAYOUT", createdAt: { gte: ytdStart } },
+    const paidYtd = await prisma.walletTransaction.aggregate({
+      where: { walletId: wallet.id, transactionType: "PAYOUT", createdAt: { gte: ytdStart } },
       _sum: { amount: true },
     });
-
-    const totalCredits = creditTxns._sum.amount ?? 0;
-    const totalPayouts = payoutTxns._sum.amount ?? 0;
-    const available = Math.max(0, totalCredits - totalPayouts);
-    const pending = pendingDeals._sum.commission ?? 0;
-    const deferred = deferredDeals._sum.commission ?? 0;
-    const paidYtd = paidYtdTxns._sum.amount ?? 0;
-
-    res.json({ userId, available, pending, deferred, paidYtd });
+    res.json({
+      id: wallet.id,
+      userId: wallet.userId,
+      availableBalance: wallet.availableBalance,
+      pendingBalance: wallet.pendingBalance,
+      deferredBalance: wallet.deferredBalance,
+      paidOutBalance: wallet.paidOutBalance,
+      paidYtd: paidYtd._sum.amount ?? 0,
+      updatedAt: wallet.updatedAt.toISOString(),
+    });
   } catch (err) {
     logger.error({ err }, "GetWallet error");
     res.status(500).json({ error: "Server error" });
   }
 });
 
+// GET /api/wallet/transactions
 router.get("/transactions", requireAuth, async (req: Request, res: Response) => {
-  const { page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { page = "1", limit = "20", type } = req.query as Record<string, string>;
   const skip = (parseInt(page) - 1) * parseInt(limit);
   try {
-    const txns = await prisma.transaction.findMany({
-      where: { userId: req.user!.userId, tenantId: req.user!.tenantId },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: parseInt(limit),
+    const wallet = await prisma.wallet.findUnique({ where: { userId: req.user!.userId } });
+    if (!wallet) { res.json([]); return; }
+    const where: any = { walletId: wallet.id, ...(type && { transactionType: type }) };
+    const [txns, total] = await Promise.all([
+      prisma.walletTransaction.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.walletTransaction.count({ where }),
+    ]);
+    res.json({
+      data: txns.map(t => ({
+        id: t.id, walletId: t.walletId,
+        transactionType: t.transactionType,
+        amount: t.amount,
+        referenceType: t.referenceType,
+        referenceId: t.referenceId,
+        description: t.description,
+        createdAt: t.createdAt.toISOString(),
+      })),
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
     });
-    res.json(txns.map(t => ({
-      id: t.id, userId: t.userId, type: t.type, amount: t.amount,
-      description: t.description, referenceId: t.referenceId,
-      createdAt: t.createdAt.toISOString(),
-    })));
   } catch (err) {
     logger.error({ err }, "ListTransactions error");
     res.status(500).json({ error: "Server error" });

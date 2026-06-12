@@ -7,17 +7,28 @@ const router = Router();
 
 function ruleToResponse(r: any) {
   return {
-    id: r.id, tenantId: r.tenantId, name: r.name, dealType: r.dealType,
-    rateType: r.rateType, rateValue: r.rateValue, minGrossProfit: r.minGrossProfit,
-    maxGrossProfit: r.maxGrossProfit, isActive: r.isActive, createdAt: r.createdAt.toISOString(),
+    id: r.id,
+    tenantId: r.tenantId,
+    ruleName: r.ruleName,
+    dealType: r.dealType,
+    commissionPercentage: r.commissionPercentage,
+    appliesToRole: r.appliesToRole,
+    minGrossProfit: r.minGrossProfit,
+    maxGrossProfit: r.maxGrossProfit,
+    effectiveFrom: r.effectiveFrom.toISOString(),
+    effectiveTo: r.effectiveTo?.toISOString() ?? null,
+    status: r.status,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
   };
 }
 
+// GET /api/commission-rules
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const rules = await prisma.commissionRule.findMany({
       where: { tenantId: req.user!.tenantId },
-      orderBy: { createdAt: "desc" },
+      orderBy: { effectiveFrom: "desc" },
     });
     res.json(rules.map(ruleToResponse));
   } catch (err) {
@@ -26,18 +37,25 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/commission-rules
 router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { name, dealType, rateType, rateValue, minGrossProfit, maxGrossProfit } = req.body;
-  if (!name || !dealType || !rateType || rateValue === undefined) {
-    res.status(400).json({ error: "name, dealType, rateType, rateValue required" }); return;
+  const { ruleName, dealType, commissionPercentage, appliesToRole, minGrossProfit, maxGrossProfit, effectiveFrom, effectiveTo } = req.body;
+  if (!ruleName || !dealType || commissionPercentage == null || !effectiveFrom) {
+    res.status(400).json({ error: "ruleName, dealType, commissionPercentage, effectiveFrom required" }); return;
   }
   try {
     const rule = await prisma.commissionRule.create({
       data: {
-        tenantId: req.user!.tenantId, name, dealType, rateType,
-        rateValue: parseFloat(rateValue),
+        tenantId: req.user!.tenantId,
+        ruleName,
+        dealType,
+        commissionPercentage: parseFloat(commissionPercentage),
+        appliesToRole: appliesToRole ?? "SALES_EXECUTIVE",
         minGrossProfit: minGrossProfit ? parseFloat(minGrossProfit) : null,
         maxGrossProfit: maxGrossProfit ? parseFloat(maxGrossProfit) : null,
+        effectiveFrom: new Date(effectiveFrom),
+        effectiveTo: effectiveTo ? new Date(effectiveTo) : null,
+        status: "ACTIVE",
       },
     });
     res.status(201).json(ruleToResponse(rule));
@@ -47,15 +65,19 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.patch("/:ruleId", requireAuth, async (req: Request, res: Response) => {
-  const { name, rateValue, isActive } = req.body;
+// PATCH /api/commission-rules/:id
+router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
+  const { ruleName, commissionPercentage, minGrossProfit, maxGrossProfit, effectiveTo, status } = req.body;
   try {
     const rule = await prisma.commissionRule.update({
-      where: { id: req.params.ruleId },
+      where: { id: req.params.id },
       data: {
-        ...(name && { name }),
-        ...(rateValue !== undefined && { rateValue: parseFloat(rateValue) }),
-        ...(isActive !== undefined && { isActive }),
+        ...(ruleName && { ruleName }),
+        ...(commissionPercentage != null && { commissionPercentage: parseFloat(commissionPercentage) }),
+        ...(minGrossProfit != null && { minGrossProfit: parseFloat(minGrossProfit) }),
+        ...(maxGrossProfit != null && { maxGrossProfit: parseFloat(maxGrossProfit) }),
+        ...(effectiveTo !== undefined && { effectiveTo: effectiveTo ? new Date(effectiveTo) : null }),
+        ...(status && { status }),
       },
     });
     res.json(ruleToResponse(rule));
@@ -65,9 +87,10 @@ router.patch("/:ruleId", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.delete("/:ruleId", requireAuth, async (req: Request, res: Response) => {
+// DELETE /api/commission-rules/:id
+router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    await prisma.commissionRule.delete({ where: { id: req.params.ruleId } });
+    await prisma.commissionRule.delete({ where: { id: req.params.id } });
     res.json({ message: "Rule deleted" });
   } catch (err) {
     logger.error({ err }, "DeleteRule error");

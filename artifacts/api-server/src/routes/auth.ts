@@ -6,24 +6,10 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50);
-}
-
 function userToResponse(user: {
-  id: string;
-  tenantId: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  status: string;
-  avatarUrl: string | null;
-  createdAt: Date;
+  id: string; tenantId: string; email: string;
+  firstName: string; lastName: string; role: string;
+  status: string; createdAt: Date;
 }) {
   return {
     id: user.id,
@@ -33,35 +19,42 @@ function userToResponse(user: {
     lastName: user.lastName,
     role: user.role,
     status: user.status,
-    avatarUrl: user.avatarUrl,
     createdAt: user.createdAt.toISOString(),
   };
 }
 
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
+}
+
 // POST /api/auth/register
 router.post("/register", async (req: Request, res: Response) => {
-  const { companyName, email, password, firstName, lastName } = req.body;
+  const { companyName, email, password, firstName, lastName, contactPhone, industry, registrationNumber, vatNumber } = req.body;
   if (!companyName || !email || !password || !firstName || !lastName) {
-    res.status(400).json({ error: "All fields required" });
+    res.status(400).json({ error: "companyName, email, password, firstName and lastName are required" });
     return;
   }
   try {
-    const baseSlug = slugify(companyName);
-    let slug = baseSlug;
-    let count = 0;
-    while (await prisma.tenant.findUnique({ where: { slug } })) {
-      count++;
-      slug = `${baseSlug}-${count}`;
+    // Check if email already exists
+    const existing = await prisma.user.findFirst({ where: { email: email.toLowerCase().trim() } });
+    if (existing) {
+      res.status(409).json({ error: "Email already registered" });
+      return;
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const tenant = await prisma.tenant.create({
       data: {
-        name: companyName,
-        slug,
-        currency: "ZAR",
-        taxRate: 0.25,
+        companyName,
+        registrationNumber: registrationNumber ?? null,
+        vatNumber: vatNumber ?? null,
+        industry: industry ?? "Technology",
+        contactName: `${firstName} ${lastName}`,
+        contactEmail: email.toLowerCase().trim(),
+        contactPhone: contactPhone ?? null,
+        status: "ACTIVE",
+        subscriptionPlan: "STARTER",
       },
     });
 
@@ -69,7 +62,7 @@ router.post("/register", async (req: Request, res: Response) => {
       data: {
         tenantId: tenant.id,
         email: email.toLowerCase().trim(),
-        password: hashedPassword,
+        passwordHash,
         firstName,
         lastName,
         role: "ADMIN",
@@ -77,111 +70,120 @@ router.post("/register", async (req: Request, res: Response) => {
       },
     });
 
-    // Seed demo commission rules
+    // Seed commission rules
     await prisma.commissionRule.createMany({
       data: [
-        { tenantId: tenant.id, name: "Net New 10%", dealType: "NET_NEW", rateType: "PERCENTAGE", rateValue: 10, isActive: true },
-        { tenantId: tenant.id, name: "Renewal 5%", dealType: "RENEWAL", rateType: "PERCENTAGE", rateValue: 5, isActive: true },
-        { tenantId: tenant.id, name: "Upsell 7.5%", dealType: "UPSELL", rateType: "PERCENTAGE", rateValue: 7.5, isActive: true },
-        { tenantId: tenant.id, name: "Cross-sell 6%", dealType: "CROSS_SELL", rateType: "PERCENTAGE", rateValue: 6, isActive: true },
+        { tenantId: tenant.id, ruleName: "Net New Standard",   dealType: "NET_NEW",    commissionPercentage: 10, appliesToRole: "SALES_EXECUTIVE", effectiveFrom: new Date("2024-01-01"), status: "ACTIVE" },
+        { tenantId: tenant.id, ruleName: "Renewal Commission",  dealType: "RENEWAL",    commissionPercentage: 5,  appliesToRole: "SALES_EXECUTIVE", effectiveFrom: new Date("2024-01-01"), status: "ACTIVE" },
+        { tenantId: tenant.id, ruleName: "Upsell Commission",   dealType: "UPSELL",     commissionPercentage: 7,  appliesToRole: "SALES_EXECUTIVE", effectiveFrom: new Date("2024-01-01"), status: "ACTIVE" },
+        { tenantId: tenant.id, ruleName: "Cross-Sell Standard", dealType: "CROSS_SELL", commissionPercentage: 6,  appliesToRole: "SALES_EXECUTIVE", effectiveFrom: new Date("2024-01-01"), status: "ACTIVE" },
       ],
     });
 
-    // Seed demo deals and wallet transactions
+    // Create wallet for admin user
+    const wallet = await prisma.wallet.create({
+      data: { tenantId: tenant.id, userId: user.id },
+    });
+
+    // Seed demo deals & wallet history
     const now = new Date();
-    const months = ["2023-12", "2024-01", "2024-02", "2024-03", "2024-04", "2024-05"];
+    const commPct: Record<string, number> = { NET_NEW: 10, RENEWAL: 5, UPSELL: 7, CROSS_SELL: 6 };
+    const months = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06"];
+    let totalAvailable = 0;
     for (const m of months) {
-      const commission = Math.round((8000 + Math.random() * 20000) * 100) / 100;
-      await prisma.deal.create({
+      const revenue = Math.round((200000 + Math.random() * 400000) * 100) / 100;
+      const cost = Math.round(revenue * 0.75 * 100) / 100;
+      const gp = revenue - cost;
+      const pct = commPct["NET_NEW"];
+      const commission = Math.round(gp * (pct / 100) * 100) / 100;
+      const dealDate = new Date(`${m}-15`);
+      const deal = await prisma.deal.create({
         data: {
           tenantId: tenant.id,
-          userId: user.id,
-          dealName: `Demo Deal ${m}`,
+          salesExecutiveId: user.id,
+          submittedById: user.id,
+          customerName: `Demo Customer ${m}`,
+          dealName: `Demo Net New ${m}`,
           dealType: "NET_NEW",
-          grossProfit: commission * 10,
-          commission,
+          revenue, cost, grossProfit: gp,
+          grossProfitPercentage: Math.round((gp / revenue) * 10000) / 100,
+          commissionPercentage: pct,
+          calculatedCommission: commission,
           status: "EXECUTIVE_APPROVED",
-          closedAt: new Date(`${m}-15`),
+          submittedAt: dealDate,
+          contractStartDate: dealDate,
+          contractEndDate: new Date(dealDate.getFullYear() + 1, dealDate.getMonth(), dealDate.getDate()),
+          createdAt: dealDate,
         },
       });
-      await prisma.transaction.create({
+      await prisma.walletTransaction.create({
         data: {
           tenantId: tenant.id,
-          userId: user.id,
-          type: "CREDIT",
+          walletId: wallet.id,
+          transactionType: "CREDIT",
           amount: commission,
-          description: `Commission credited for ${m}`,
-          createdAt: new Date(`${m}-15`),
+          referenceType: "DEAL",
+          referenceId: deal.id,
+          description: `Commission for ${deal.dealName}`,
+          createdAt: dealDate,
         },
       });
+      totalAvailable += commission;
     }
 
-    // Seed current deals
-    const dealSeeds = [
-      { name: "ABC Technologies", type: "NET_NEW" as const, gp: 120000, commission: 12000, status: "EXECUTIVE_APPROVED" as const },
-      { name: "XYZ Solutions Renewal", type: "RENEWAL" as const, gp: 80000, commission: 4000, status: "FINANCE_APPROVED" as const },
-      { name: "LMN System Upgrade", type: "UPSELL" as const, gp: 60000, commission: 4500, status: "MANAGER_APPROVED" as const },
-      { name: "OPQ Cross-sell", type: "CROSS_SELL" as const, gp: 40000, commission: 2400, status: "SUBMITTED" as const },
-      { name: "RST New Contract", type: "NET_NEW" as const, gp: 200000, commission: 20000, status: "PENDING_APPROVAL" as const },
-    ];
-    for (const d of dealSeeds) {
-      await prisma.deal.create({
-        data: {
-          tenantId: tenant.id,
-          userId: user.id,
-          dealName: d.name,
-          dealType: d.type,
-          grossProfit: d.gp,
-          commission: d.commission,
-          status: d.status,
-        },
-      });
-    }
-
-    // Seed wallet credit
-    await prisma.transaction.create({
+    // Pending deal
+    const pendingRevenue = 800000;
+    const pendingCost = 600000;
+    const pendingGP = pendingRevenue - pendingCost;
+    const pendingComm = Math.round(pendingGP * 0.10 * 100) / 100;
+    const pendingDeal = await prisma.deal.create({
       data: {
         tenantId: tenant.id,
-        userId: user.id,
-        type: "CREDIT",
-        amount: 12000,
-        description: "Commission for ABC Technologies approved",
+        salesExecutiveId: user.id,
+        submittedById: user.id,
+        customerName: "RST Industries",
+        dealName: "New Contract 2024",
+        dealType: "NET_NEW",
+        revenue: pendingRevenue,
+        cost: pendingCost,
+        grossProfit: pendingGP,
+        grossProfitPercentage: 25,
+        commissionPercentage: 10,
+        calculatedCommission: pendingComm,
+        status: "PENDING_APPROVAL",
+        submittedAt: now,
+        createdAt: now,
       },
     });
 
-    // Seed notifications
+    // Approval workflow for pending deal
+    await prisma.approvalWorkflow.createMany({
+      data: [
+        { tenantId: tenant.id, dealId: pendingDeal.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
+        { tenantId: tenant.id, dealId: pendingDeal.id, approvalLevel: 2, approverRole: "FINANCE", status: "PENDING" },
+        { tenantId: tenant.id, dealId: pendingDeal.id, approvalLevel: 3, approverRole: "ADMIN",   status: "PENDING" },
+      ],
+    });
+
+    // Update wallet balance
+    await prisma.wallet.update({
+      where: { id: wallet.id },
+      data: {
+        availableBalance: Math.round(totalAvailable * 100) / 100,
+        pendingBalance: pendingComm,
+      },
+    });
+
+    // Notifications
     await prisma.notification.createMany({
       data: [
-        { tenantId: tenant.id, userId: user.id, title: "Deal Approved", message: "Your deal ABC Technologies was approved by Executive Approver", isRead: false },
-        { tenantId: tenant.id, userId: user.id, title: "Commission Moved", message: "Commission of R12,000.00 moved to your available balance", isRead: false },
-        { tenantId: tenant.id, userId: user.id, title: "Payout Submitted", message: "Payout request of R20,000.00 submitted successfully", isRead: true },
+        { tenantId: tenant.id, userId: user.id, title: "Welcome to Incentiq!", message: `Your company ${companyName} has been registered. Demo data has been seeded.`, type: "SYSTEM", readStatus: false },
+        { tenantId: tenant.id, userId: user.id, title: "Commission Rules Set Up", message: "4 default commission rules have been configured for your tenant.", type: "SYSTEM", readStatus: false },
       ],
     });
 
-    // Seed pending approval
-    const pendingDeal = await prisma.deal.findFirst({ where: { tenantId: tenant.id, dealName: "RST New Contract" } });
-    if (pendingDeal) {
-      await prisma.approval.create({
-        data: {
-          tenantId: tenant.id,
-          type: "DEAL",
-          referenceId: pendingDeal.id,
-          referenceName: "RST New Contract",
-          requestedById: user.id,
-          status: "PENDING",
-        },
-      });
-    }
-
     await prisma.auditLog.create({
-      data: {
-        tenantId: tenant.id,
-        userId: user.id,
-        action: "CREATE",
-        entity: "Tenant",
-        entityId: tenant.id,
-        metadata: JSON.stringify({ companyName }),
-      },
+      data: { tenantId: tenant.id, userId: user.id, action: "REGISTER", entityType: "Tenant", entityId: tenant.id, newValue: JSON.stringify({ companyName }) },
     });
 
     const token = generateToken({ userId: user.id, tenantId: tenant.id, role: user.role, email: user.email });
@@ -201,15 +203,9 @@ router.post("/login", async (req: Request, res: Response) => {
   }
   try {
     const user = await prisma.user.findFirst({ where: { email: email.toLowerCase().trim() } });
-    if (!user) {
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
+    if (!user) { res.status(401).json({ error: "Invalid credentials" }); return; }
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) { res.status(401).json({ error: "Invalid credentials" }); return; }
     const token = generateToken({ userId: user.id, tenantId: user.tenantId, role: user.role, email: user.email });
     res.json({ token, user: userToResponse(user) });
   } catch (err) {
