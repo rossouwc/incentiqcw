@@ -1,0 +1,2 @@
+- [Incentiq stack decisions](incentiq-stack.md) — Prisma v5 (NOT v7), JWT via SESSION_SECRET, ZAR currency, dark mode applied via html class="dark"
+- [Prisma pnpm setup](prisma-pnpm.md) — must add @prisma/client to onlyBuiltDependencies; generate in dev script with --schema path; no custom output path

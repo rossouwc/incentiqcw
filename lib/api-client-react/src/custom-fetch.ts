@@ -358,6 +358,12 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  // Inject Incentiq token
+  const incentiqToken = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  if (incentiqToken && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${incentiqToken}`);
+  }
+
   const requestInfo = { method, url: resolveUrl(input) };
 
   const response = await fetch(input, { ...init, method, headers });

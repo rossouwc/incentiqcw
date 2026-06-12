@@ -3,20 +3,42 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Incentiq Commission Wallet Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: tenants
+    description: Tenant/company management
+  - name: users
+    description: User management
+  - name: deals
+    description: Deal management
+  - name: wallet
+    description: Wallet operations
+  - name: payouts
+    description: Payout requests
+  - name: commission-rules
+    description: Commission rule management
+  - name: approvals
+    description: Approval workflows
+  - name: reports
+    description: Analytics and reporting
+  - name: notifications
+    description: Notifications
+  - name: audit
+    description: Audit logs
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +46,1252 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── AUTH ───────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new company and admin user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ─── TENANT ─────────────────────────────────────────
+  /tenant:
+    get:
+      operationId: getTenant
+      tags: [tenants]
+      summary: Get current tenant info
+      responses:
+        "200":
+          description: Tenant info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+    patch:
+      operationId: updateTenant
+      tags: [tenants]
+      summary: Update tenant settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  # ─── USERS ───────────────────────────────────────────
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users in tenant
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Invite a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ─── DEALS ───────────────────────────────────────────
+  /deals:
+    get:
+      operationId: listDeals
+      tags: [deals]
+      summary: List deals
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: dealType
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealsPage"
+    post:
+      operationId: createDeal
+      tags: [deals]
+      summary: Create a deal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+
+  /deals/{dealId}:
+    get:
+      operationId: getDeal
+      tags: [deals]
+      summary: Get a deal
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+    patch:
+      operationId: updateDeal
+      tags: [deals]
+      summary: Update a deal
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+    delete:
+      operationId: deleteDeal
+      tags: [deals]
+      summary: Delete a deal
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ─── WALLET ──────────────────────────────────────────
+  /wallet:
+    get:
+      operationId: getWallet
+      tags: [wallet]
+      summary: Get wallet balances for current user
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+
+  /wallet/transactions:
+    get:
+      operationId: listTransactions
+      tags: [wallet]
+      summary: List wallet transactions
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  # ─── PAYOUTS ─────────────────────────────────────────
+  /payouts:
+    get:
+      operationId: listPayouts
+      tags: [payouts]
+      summary: List payout requests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PayoutRequest"
+    post:
+      operationId: createPayout
+      tags: [payouts]
+      summary: Request a payout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutRequest"
+
+  /payouts/{payoutId}:
+    get:
+      operationId: getPayout
+      tags: [payouts]
+      summary: Get a payout request
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutRequest"
+    patch:
+      operationId: updatePayoutStatus
+      tags: [payouts]
+      summary: Update payout status (approve/reject)
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutStatusUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutRequest"
+
+  # ─── COMMISSION RULES ────────────────────────────────
+  /commission-rules:
+    get:
+      operationId: listCommissionRules
+      tags: [commission-rules]
+      summary: List commission rules
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommissionRule"
+    post:
+      operationId: createCommissionRule
+      tags: [commission-rules]
+      summary: Create a commission rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommissionRuleInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionRule"
+
+  /commission-rules/{ruleId}:
+    patch:
+      operationId: updateCommissionRule
+      tags: [commission-rules]
+      summary: Update a commission rule
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommissionRuleUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionRule"
+    delete:
+      operationId: deleteCommissionRule
+      tags: [commission-rules]
+      summary: Delete a commission rule
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ─── APPROVALS ───────────────────────────────────────
+  /approvals:
+    get:
+      operationId: listApprovals
+      tags: [approvals]
+      summary: List pending approvals
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approvals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Approval"
+
+  /approvals/{approvalId}/action:
+    post:
+      operationId: actionApproval
+      tags: [approvals]
+      summary: Approve or reject an item
+      parameters:
+        - name: approvalId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalAction"
+      responses:
+        "200":
+          description: Actioned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+
+  # ─── DASHBOARD SUMMARY (wow endpoints) ───────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [reports]
+      summary: Dashboard wallet summary totals
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/commission-trend:
+    get:
+      operationId: getCommissionTrend
+      tags: [reports]
+      summary: Commission trend over last 6 months
+      responses:
+        "200":
+          description: Trend data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendPoint"
+
+  /dashboard/commission-by-type:
+    get:
+      operationId: getCommissionByType
+      tags: [reports]
+      summary: Commission breakdown by deal type
+      responses:
+        "200":
+          description: Breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommissionByType"
+
+  /dashboard/payout-summary:
+    get:
+      operationId: getPayoutSummary
+      tags: [reports]
+      summary: Payout summary with tax estimate
+      responses:
+        "200":
+          description: Payout summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutSummary"
+
+  /dashboard/recent-activity:
+    get:
+      operationId: getRecentActivity
+      tags: [reports]
+      summary: Recent activity feed
+      responses:
+        "200":
+          description: Activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/my-tasks:
+    get:
+      operationId: getMyTasks
+      tags: [reports]
+      summary: My pending task counts
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyTasks"
+
+  # ─── REPORTS ─────────────────────────────────────────
+  /reports/deals:
+    get:
+      operationId: getDealsReport
+      tags: [reports]
+      summary: Deals performance report
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealsReport"
+
+  # ─── NOTIFICATIONS ───────────────────────────────────
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List notifications for current user
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/{notificationId}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  # ─── AUDIT LOGS ──────────────────────────────────────
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [audit]
+      summary: List audit logs for tenant
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    # ─── AUTH SCHEMAS ────────────────────────────────────
+    RegisterInput:
+      type: object
+      required: [companyName, email, password, firstName, lastName]
+      properties:
+        companyName:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+
+    # ─── TENANT ──────────────────────────────────────────
+    Tenant:
+      type: object
+      required: [id, name, slug, currency, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        currency:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        taxRate:
+          type: number
+        createdAt:
+          type: string
+
+    TenantUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        currency:
+          type: string
+        taxRate:
+          type: number
+        logoUrl:
+          type: string
+
+    # ─── USER ─────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, tenantId, email, firstName, lastName, role, status, createdAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          enum: [SUPER_ADMIN, ADMIN, MANAGER, SALES_EXECUTIVE, FINANCE]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, PENDING]
+        avatarUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    UserInput:
+      type: object
+      required: [email, firstName, lastName, role]
+      properties:
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+        password:
+          type: string
+
+    UserUpdate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+
+    # ─── DEAL ─────────────────────────────────────────────
+    Deal:
+      type: object
+      required: [id, tenantId, userId, dealName, dealType, grossProfit, commission, status, createdAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        dealName:
+          type: string
+        dealType:
+          type: string
+          enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        grossProfit:
+          type: number
+        commission:
+          type: number
+        status:
+          type: string
+          enum: [SUBMITTED, PENDING_APPROVAL, MANAGER_APPROVED, FINANCE_APPROVED, EXECUTIVE_APPROVED, REJECTED]
+        notes:
+          type: ["string", "null"]
+        closedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    DealInput:
+      type: object
+      required: [dealName, dealType, grossProfit]
+      properties:
+        dealName:
+          type: string
+        dealType:
+          type: string
+        grossProfit:
+          type: number
+        notes:
+          type: string
+        closedAt:
+          type: string
+
+    DealUpdate:
+      type: object
+      properties:
+        dealName:
+          type: string
+        dealType:
+          type: string
+        grossProfit:
+          type: number
+        notes:
+          type: string
+        status:
+          type: string
+        closedAt:
+          type: string
+
+    DealsPage:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deal"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    # ─── WALLET ───────────────────────────────────────────
+    Wallet:
+      type: object
+      required: [userId, available, pending, deferred, paidYtd]
+      properties:
+        userId:
+          type: string
+        available:
+          type: number
+        pending:
+          type: number
+        deferred:
+          type: number
+        paidYtd:
+          type: number
+
+    Transaction:
+      type: object
+      required: [id, userId, type, amount, description, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        type:
+          type: string
+          enum: [CREDIT, DEBIT, TRANSFER, PAYOUT]
+        amount:
+          type: number
+        description:
+          type: string
+        referenceId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    # ─── PAYOUT ───────────────────────────────────────────
+    PayoutRequest:
+      type: object
+      required: [id, userId, amount, status, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, FINANCE_APPROVED, REJECTED, PAID]
+        notes:
+          type: ["string", "null"]
+        reviewedBy:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    PayoutInput:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+        notes:
+          type: string
+
+    PayoutStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        notes:
+          type: string
+
+    # ─── COMMISSION RULE ──────────────────────────────────
+    CommissionRule:
+      type: object
+      required: [id, tenantId, name, dealType, rateType, rateValue, isActive, createdAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        dealType:
+          type: string
+        rateType:
+          type: string
+          enum: [PERCENTAGE, FLAT]
+        rateValue:
+          type: number
+        minGrossProfit:
+          type: ["number", "null"]
+        maxGrossProfit:
+          type: ["number", "null"]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+
+    CommissionRuleInput:
+      type: object
+      required: [name, dealType, rateType, rateValue]
+      properties:
+        name:
+          type: string
+        dealType:
+          type: string
+        rateType:
+          type: string
+        rateValue:
+          type: number
+        minGrossProfit:
+          type: number
+        maxGrossProfit:
+          type: number
+
+    CommissionRuleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        rateValue:
+          type: number
+        isActive:
+          type: boolean
+
+    # ─── APPROVAL ─────────────────────────────────────────
+    Approval:
+      type: object
+      required: [id, type, referenceId, requestedBy, status, createdAt]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [DEAL, PAYOUT, COMMISSION_RULE]
+        referenceId:
+          type: string
+        referenceName:
+          type: string
+        requestedBy:
+          type: string
+        requestedByName:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        reviewedBy:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    ApprovalAction:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [APPROVE, REJECT]
+        notes:
+          type: string
+
+    # ─── DASHBOARD / WOW ──────────────────────────────────
+    DashboardSummary:
+      type: object
+      required: [available, pending, deferred, paidYtd, userName, dateRange]
+      properties:
+        available:
+          type: number
+        pending:
+          type: number
+        deferred:
+          type: number
+        paidYtd:
+          type: number
+        userName:
+          type: string
+        dateRange:
+          type: string
+
+    TrendPoint:
+      type: object
+      required: [month, amount]
+      properties:
+        month:
+          type: string
+        amount:
+          type: number
+
+    CommissionByType:
+      type: object
+      required: [dealType, amount, percentage]
+      properties:
+        dealType:
+          type: string
+        amount:
+          type: number
+        percentage:
+          type: number
+
+    PayoutSummary:
+      type: object
+      required: [totalAvailable, estimatedTax, estimatedNetPayout, payoutPercentage]
+      properties:
+        totalAvailable:
+          type: number
+        estimatedTax:
+          type: number
+        estimatedNetPayout:
+          type: number
+        payoutPercentage:
+          type: number
+
+    ActivityItem:
+      type: object
+      required: [id, type, message, createdAt]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [DEAL_APPROVED, COMMISSION_MOVED, PAYOUT_SUBMITTED, DEAL_SUBMITTED]
+        message:
+          type: string
+        timeAgo:
+          type: string
+        createdAt:
+          type: string
+
+    MyTasks:
+      type: object
+      required: [pendingApprovals, payoutRequests, approvedForPayroll, informationRequired]
+      properties:
+        pendingApprovals:
+          type: integer
+        payoutRequests:
+          type: integer
+        approvedForPayroll:
+          type: integer
+        informationRequired:
+          type: integer
+
+    DealsReport:
+      type: object
+      required: [totalDeals, totalGrossProfit, totalCommission, byType, byStatus]
+      properties:
+        totalDeals:
+          type: integer
+        totalGrossProfit:
+          type: number
+        totalCommission:
+          type: number
+        byType:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommissionByType"
+        byStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+
+    StatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+
+    # ─── NOTIFICATION ─────────────────────────────────────
+    Notification:
+      type: object
+      required: [id, userId, title, message, isRead, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        isRead:
+          type: boolean
+        link:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    # ─── AUDIT LOG ────────────────────────────────────────
+    AuditLog:
+      type: object
+      required: [id, tenantId, userId, action, entity, entityId, createdAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        action:
+          type: string
+        entity:
+          type: string
+        entityId:
+          type: string
+        metadata:
+          type: ["string", "null"]
+        createdAt:
+          type: string

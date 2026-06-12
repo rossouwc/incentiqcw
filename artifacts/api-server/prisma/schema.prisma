@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  currency  String   @default("ZAR")
+  logoUrl   String?
+  taxRate   Float    @default(0.25)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  deals           Deal[]
+  payoutRequests  PayoutRequest[]
+  commissionRules CommissionRule[]
+  approvals       Approval[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  transactions    Transaction[]
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  SALES_EXECUTIVE
+  FINANCE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+model User {
+  id        String     @id @default(cuid())
+  tenantId  String
+  email     String
+  password  String
+  firstName String
+  lastName  String
+  role      UserRole   @default(SALES_EXECUTIVE)
+  status    UserStatus @default(ACTIVE)
+  avatarUrl String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deals             Deal[]
+  payoutRequests    PayoutRequest[]
+  approvals         Approval[]      @relation("RequestedByUser")
+  reviewedApprovals Approval[]      @relation("ReviewedByUser")
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  transactions      Transaction[]
+
+  @@unique([tenantId, email])
+}
+
+enum DealType {
+  NET_NEW
+  RENEWAL
+  UPSELL
+  CROSS_SELL
+}
+
+enum DealStatus {
+  SUBMITTED
+  PENDING_APPROVAL
+  MANAGER_APPROVED
+  FINANCE_APPROVED
+  EXECUTIVE_APPROVED
+  REJECTED
+}
+
+model Deal {
+  id          String     @id @default(cuid())
+  tenantId    String
+  userId      String
+  dealName    String
+  dealType    DealType
+  grossProfit Float
+  commission  Float
+  status      DealStatus @default(SUBMITTED)
+  notes       String?
+  closedAt    DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+enum PayoutStatus {
+  PENDING
+  FINANCE_APPROVED
+  REJECTED
+  PAID
+}
+
+model PayoutRequest {
+  id         String       @id @default(cuid())
+  tenantId   String
+  userId     String
+  amount     Float
+  status     PayoutStatus @default(PENDING)
+  notes      String?
+  reviewedBy String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+enum RateType {
+  PERCENTAGE
+  FLAT
+}
+
+model CommissionRule {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  dealType       DealType
+  rateType       RateType
+  rateValue      Float
+  minGrossProfit Float?
+  maxGrossProfit Float?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum ApprovalType {
+  DEAL
+  PAYOUT
+  COMMISSION_RULE
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Approval {
+  id            String         @id @default(cuid())
+  tenantId      String
+  type          ApprovalType
+  referenceId   String
+  referenceName String
+  requestedById String
+  status        ApprovalStatus @default(PENDING)
+  reviewedById  String?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedBy User   @relation("RequestedByUser", fields: [requestedById], references: [id])
+  reviewedBy  User?  @relation("ReviewedByUser", fields: [reviewedById], references: [id])
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+  TRANSFER
+  PAYOUT
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  tenantId    String
+  userId      String
+  type        TransactionType
+  amount      Float
+  description String
+  referenceId String?
+  createdAt   DateTime        @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
