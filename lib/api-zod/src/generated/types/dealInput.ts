@@ -5,11 +5,16 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { DealInputDealType } from './dealInputDealType';
 
 export interface DealInput {
+  customerName: string;
   dealName: string;
-  dealType: string;
-  grossProfit: number;
-  notes?: string;
-  closedAt?: string;
+  dealType: DealInputDealType;
+  revenue: number;
+  cost: number;
+  /** @nullable */
+  contractStartDate?: string | null;
+  /** @nullable */
+  contractEndDate?: string | null;
 }

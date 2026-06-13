@@ -38,6 +38,7 @@ export * from './dashboardSummary';
 export * from './deal';
 export * from './dealDealType';
 export * from './dealInput';
+export * from './dealInputDealType';
 export * from './dealsPage';
 export * from './dealsReport';
 export * from './dealStatus';

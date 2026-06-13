@@ -34,6 +34,7 @@ function getNavGroups(role: string): NavGroup[] {
           label: "Company",
           items: [
             { name: "Dashboard",         path: "/dashboard",          icon: LayoutDashboard },
+            { name: "All Deals",         path: "/all-deals",          icon: Briefcase },
             { name: "Users",             path: "/users",              icon: Users },
             { name: "Commission Rules",  path: "/commission-rules",   icon: Sliders },
             { name: "Approval Workflow", path: "/approval-workflow",  icon: ClipboardCheck },

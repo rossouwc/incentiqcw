@@ -111,46 +111,76 @@ export type DealStatus = typeof DealStatus[keyof typeof DealStatus];
 
 
 export const DealStatus = {
+  DRAFT: 'DRAFT',
   SUBMITTED: 'SUBMITTED',
   PENDING_APPROVAL: 'PENDING_APPROVAL',
   MANAGER_APPROVED: 'MANAGER_APPROVED',
   FINANCE_APPROVED: 'FINANCE_APPROVED',
   EXECUTIVE_APPROVED: 'EXECUTIVE_APPROVED',
   REJECTED: 'REJECTED',
+  PAID: 'PAID',
 } as const;
 
 export interface Deal {
   id: string;
   tenantId: string;
-  userId: string;
-  userName?: string;
+  salesExecutiveId: string;
+  salesExecutiveName: string;
+  customerName: string;
   dealName: string;
   dealType: DealDealType;
+  /** @nullable */
+  contractStartDate?: string | null;
+  /** @nullable */
+  contractEndDate?: string | null;
+  revenue: number;
+  cost: number;
   grossProfit: number;
+  grossProfitPercentage: number;
+  commissionPercentage: number;
   commission: number;
   status: DealStatus;
   /** @nullable */
-  notes?: string | null;
+  submittedById?: string | null;
   /** @nullable */
-  closedAt?: string | null;
+  submittedAt?: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
+export type DealInputDealType = typeof DealInputDealType[keyof typeof DealInputDealType];
+
+
+export const DealInputDealType = {
+  NET_NEW: 'NET_NEW',
+  RENEWAL: 'RENEWAL',
+  UPSELL: 'UPSELL',
+  CROSS_SELL: 'CROSS_SELL',
+} as const;
+
 export interface DealInput {
+  customerName: string;
   dealName: string;
-  dealType: string;
-  grossProfit: number;
-  notes?: string;
-  closedAt?: string;
+  dealType: DealInputDealType;
+  revenue: number;
+  cost: number;
+  /** @nullable */
+  contractStartDate?: string | null;
+  /** @nullable */
+  contractEndDate?: string | null;
 }
 
 export interface DealUpdate {
+  customerName?: string;
   dealName?: string;
   dealType?: string;
-  grossProfit?: number;
-  notes?: string;
+  revenue?: number;
+  cost?: number;
+  /** @nullable */
+  contractStartDate?: string | null;
+  /** @nullable */
+  contractEndDate?: string | null;
   status?: string;
-  closedAt?: string;
 }
 
 export interface DealsPage {

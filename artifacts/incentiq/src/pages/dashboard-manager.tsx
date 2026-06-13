@@ -211,7 +211,7 @@ export default function ManagerDashboard() {
                         <div className="font-medium text-foreground">{d.dealName}</div>
                         <div className="text-xs text-muted-foreground">{formatDate(d.createdAt)}</div>
                       </td>
-                      <td className="px-6 py-4 text-muted-foreground">{d.userName ?? "—"}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{d.salesExecutiveName ?? "—"}</td>
                       <td className="px-6 py-4 text-muted-foreground">{d.dealType.replace(/_/g, " ")}</td>
                       <td className="px-6 py-4 text-right">{formatCurrency(d.grossProfit)}</td>
                       <td className="px-6 py-4 text-right font-semibold text-primary">{formatCurrency(d.commission)}</td>

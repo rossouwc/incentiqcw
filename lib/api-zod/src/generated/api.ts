@@ -218,16 +218,24 @@ export const ListDealsResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.string(),
   "tenantId": zod.string(),
-  "userId": zod.string(),
-  "userName": zod.string().optional(),
+  "salesExecutiveId": zod.string(),
+  "salesExecutiveName": zod.string(),
+  "customerName": zod.string(),
   "dealName": zod.string(),
   "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "contractStartDate": zod.string().nullish(),
+  "contractEndDate": zod.string().nullish(),
+  "revenue": zod.number(),
+  "cost": zod.number(),
   "grossProfit": zod.number(),
+  "grossProfitPercentage": zod.number(),
+  "commissionPercentage": zod.number(),
   "commission": zod.number(),
-  "status": zod.enum(['SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED']),
-  "notes": zod.string().nullish(),
-  "closedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "status": zod.enum(['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED', 'PAID']),
+  "submittedById": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })),
   "total": zod.number(),
   "page": zod.number(),
@@ -239,11 +247,44 @@ export const ListDealsResponse = zod.object({
  * @summary Create a deal
  */
 export const CreateDealBody = zod.object({
+  "customerName": zod.string(),
   "dealName": zod.string(),
-  "dealType": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "revenue": zod.number(),
+  "cost": zod.number(),
+  "contractStartDate": zod.string().nullish(),
+  "contractEndDate": zod.string().nullish()
+})
+
+
+/**
+ * @summary Submit a deal for approval
+ */
+export const SubmitDealParams = zod.object({
+  "dealId": zod.coerce.string()
+})
+
+export const SubmitDealResponse = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "salesExecutiveId": zod.string(),
+  "salesExecutiveName": zod.string(),
+  "customerName": zod.string(),
+  "dealName": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "contractStartDate": zod.string().nullish(),
+  "contractEndDate": zod.string().nullish(),
+  "revenue": zod.number(),
+  "cost": zod.number(),
   "grossProfit": zod.number(),
-  "notes": zod.string().optional(),
-  "closedAt": zod.string().optional()
+  "grossProfitPercentage": zod.number(),
+  "commissionPercentage": zod.number(),
+  "commission": zod.number(),
+  "status": zod.enum(['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED', 'PAID']),
+  "submittedById": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 
@@ -257,16 +298,24 @@ export const GetDealParams = zod.object({
 export const GetDealResponse = zod.object({
   "id": zod.string(),
   "tenantId": zod.string(),
-  "userId": zod.string(),
-  "userName": zod.string().optional(),
+  "salesExecutiveId": zod.string(),
+  "salesExecutiveName": zod.string(),
+  "customerName": zod.string(),
   "dealName": zod.string(),
   "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "contractStartDate": zod.string().nullish(),
+  "contractEndDate": zod.string().nullish(),
+  "revenue": zod.number(),
+  "cost": zod.number(),
   "grossProfit": zod.number(),
+  "grossProfitPercentage": zod.number(),
+  "commissionPercentage": zod.number(),
   "commission": zod.number(),
-  "status": zod.enum(['SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED']),
-  "notes": zod.string().nullish(),
-  "closedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "status": zod.enum(['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED', 'PAID']),
+  "submittedById": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 
@@ -278,27 +327,37 @@ export const UpdateDealParams = zod.object({
 })
 
 export const UpdateDealBody = zod.object({
+  "customerName": zod.string().optional(),
   "dealName": zod.string().optional(),
   "dealType": zod.string().optional(),
-  "grossProfit": zod.number().optional(),
-  "notes": zod.string().optional(),
-  "status": zod.string().optional(),
-  "closedAt": zod.string().optional()
+  "revenue": zod.number().optional(),
+  "cost": zod.number().optional(),
+  "contractStartDate": zod.string().nullish(),
+  "contractEndDate": zod.string().nullish(),
+  "status": zod.string().optional()
 })
 
 export const UpdateDealResponse = zod.object({
   "id": zod.string(),
   "tenantId": zod.string(),
-  "userId": zod.string(),
-  "userName": zod.string().optional(),
+  "salesExecutiveId": zod.string(),
+  "salesExecutiveName": zod.string(),
+  "customerName": zod.string(),
   "dealName": zod.string(),
   "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "contractStartDate": zod.string().nullish(),
+  "contractEndDate": zod.string().nullish(),
+  "revenue": zod.number(),
+  "cost": zod.number(),
   "grossProfit": zod.number(),
+  "grossProfitPercentage": zod.number(),
+  "commissionPercentage": zod.number(),
   "commission": zod.number(),
-  "status": zod.enum(['SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED']),
-  "notes": zod.string().nullish(),
-  "closedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "status": zod.enum(['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'EXECUTIVE_APPROVED', 'REJECTED', 'PAID']),
+  "submittedById": zod.string().nullish(),
+  "submittedAt": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 

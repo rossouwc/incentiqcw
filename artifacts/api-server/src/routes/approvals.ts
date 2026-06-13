@@ -79,7 +79,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
   }
   const roleToLevel: Record<string, number> = { MANAGER: 1, FINANCE: 2, ADMIN: 3, SUPER_ADMIN: 3 };
   try {
-    const aw = await prisma.approvalWorkflow.findUnique({
+    const aw: any = await prisma.approvalWorkflow.findUnique({
       where: { id: req.params.id },
       include: { deal: true },
     });
@@ -164,21 +164,27 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         // Advance deal status to intermediate stage
         const interimStatus = level === 1 ? "MANAGER_APPROVED" : "FINANCE_APPROVED";
         await prisma.deal.update({ where: { id: aw.dealId }, data: { status: interimStatus } });
-
-        // Add to pending balance
-        const wallet = await prisma.wallet.findUnique({ where: { userId: aw.deal.salesExecutiveId } });
-        if (wallet && level === 1) {
-          await prisma.wallet.update({
-            where: { id: wallet.id },
-            data: {
-              pendingBalance: wallet.pendingBalance + aw.deal.calculatedCommission,
-            },
-          });
-        }
+        // pendingBalance already added at submission — no duplicate add here
+        await prisma.notification.create({
+          data: {
+            tenantId: req.user!.tenantId,
+            userId: aw.deal.salesExecutiveId,
+            title: "Deal Progressed",
+            message: `Your deal ${aw.deal.dealName} has been approved at level ${level}`,
+            type: "DEAL_APPROVED", readStatus: false,
+          },
+        });
       }
     } else {
-      // Rejected → update deal status
+      // Rejected → update deal status and deduct from pendingBalance
       await prisma.deal.update({ where: { id: aw.dealId }, data: { status: "REJECTED" } });
+      const wallet = await prisma.wallet.findUnique({ where: { userId: aw.deal.salesExecutiveId } });
+      if (wallet) {
+        await prisma.wallet.update({
+          where: { id: wallet.id },
+          data: { pendingBalance: Math.max(0, wallet.pendingBalance - aw.deal.calculatedCommission) },
+        });
+      }
       // Notify sales exec
       await prisma.notification.create({
         data: {

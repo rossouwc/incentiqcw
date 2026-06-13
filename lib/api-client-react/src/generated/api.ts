@@ -1120,6 +1120,76 @@ export const useCreateDeal = <TError = ErrorType<unknown>,
       return useMutation(getCreateDealMutationOptions(options));
     }
 
+export const getSubmitDealUrl = (dealId: string,) => {
+
+
+
+
+  return `/api/deals/${dealId}/submit`
+}
+
+/**
+ * @summary Submit a deal for approval
+ */
+export const submitDeal = async (dealId: string, options?: RequestInit): Promise<Deal> => {
+
+  return customFetch<Deal>(getSubmitDealUrl(dealId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getSubmitDealMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitDeal>>, TError,{dealId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitDeal>>, TError,{dealId: string}, TContext> => {
+
+const mutationKey = ['submitDeal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitDeal>>, {dealId: string}> = (props) => {
+          const {dealId} = props ?? {};
+
+          return  submitDeal(dealId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitDealMutationResult = NonNullable<Awaited<ReturnType<typeof submitDeal>>>
+
+    export type SubmitDealMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Submit a deal for approval
+ */
+export const useSubmitDeal = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitDeal>>, TError,{dealId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitDeal>>,
+        TError,
+        {dealId: string},
+        TContext
+      > => {
+      return useMutation(getSubmitDealMutationOptions(options));
+    }
+
 export const getGetDealUrl = (dealId: string,) => {
 
 

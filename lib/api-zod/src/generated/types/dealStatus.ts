@@ -10,10 +10,12 @@ export type DealStatus = typeof DealStatus[keyof typeof DealStatus];
 
 
 export const DealStatus = {
+  DRAFT: 'DRAFT',
   SUBMITTED: 'SUBMITTED',
   PENDING_APPROVAL: 'PENDING_APPROVAL',
   MANAGER_APPROVED: 'MANAGER_APPROVED',
   FINANCE_APPROVED: 'FINANCE_APPROVED',
   EXECUTIVE_APPROVED: 'EXECUTIVE_APPROVED',
   REJECTED: 'REJECTED',
+  PAID: 'PAID',
 } as const;

@@ -292,6 +292,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/Deal"
 
+  /deals/{dealId}/submit:
+    post:
+      operationId: submitDeal
+      tags: [deals]
+      summary: Submit a deal for approval
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deal submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+
   /deals/{dealId}:
     get:
       operationId: getDeal
@@ -975,64 +994,89 @@ components:
     # ─── DEAL ─────────────────────────────────────────────
     Deal:
       type: object
-      required: [id, tenantId, userId, dealName, dealType, grossProfit, commission, status, createdAt]
+      required: [id, tenantId, salesExecutiveId, salesExecutiveName, customerName, dealName, dealType, revenue, cost, grossProfit, grossProfitPercentage, commissionPercentage, commission, status, createdAt, updatedAt]
       properties:
         id:
           type: string
         tenantId:
           type: string
-        userId:
+        salesExecutiveId:
           type: string
-        userName:
+        salesExecutiveName:
+          type: string
+        customerName:
           type: string
         dealName:
           type: string
         dealType:
           type: string
           enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        contractStartDate:
+          type: ["string", "null"]
+        contractEndDate:
+          type: ["string", "null"]
+        revenue:
+          type: number
+        cost:
+          type: number
         grossProfit:
+          type: number
+        grossProfitPercentage:
+          type: number
+        commissionPercentage:
           type: number
         commission:
           type: number
         status:
           type: string
-          enum: [SUBMITTED, PENDING_APPROVAL, MANAGER_APPROVED, FINANCE_APPROVED, EXECUTIVE_APPROVED, REJECTED]
-        notes:
+          enum: [DRAFT, SUBMITTED, PENDING_APPROVAL, MANAGER_APPROVED, FINANCE_APPROVED, EXECUTIVE_APPROVED, REJECTED, PAID]
+        submittedById:
           type: ["string", "null"]
-        closedAt:
+        submittedAt:
           type: ["string", "null"]
         createdAt:
+          type: string
+        updatedAt:
           type: string
 
     DealInput:
       type: object
-      required: [dealName, dealType, grossProfit]
+      required: [customerName, dealName, dealType, revenue, cost]
       properties:
+        customerName:
+          type: string
         dealName:
           type: string
         dealType:
           type: string
-        grossProfit:
+          enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        revenue:
           type: number
-        notes:
-          type: string
-        closedAt:
-          type: string
+        cost:
+          type: number
+        contractStartDate:
+          type: ["string", "null"]
+        contractEndDate:
+          type: ["string", "null"]
 
     DealUpdate:
       type: object
       properties:
+        customerName:
+          type: string
         dealName:
           type: string
         dealType:
           type: string
-        grossProfit:
+        revenue:
           type: number
-        notes:
-          type: string
+        cost:
+          type: number
+        contractStartDate:
+          type: ["string", "null"]
+        contractEndDate:
+          type: ["string", "null"]
         status:
-          type: string
-        closedAt:
           type: string
 
     DealsPage:

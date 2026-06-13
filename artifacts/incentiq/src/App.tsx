@@ -28,6 +28,7 @@ import Payouts from "@/pages/payouts";
 import TaxProfile from "@/pages/tax-profile";
 
 import TeamDeals from "@/pages/team-deals";
+import AllDeals from "@/pages/all-deals";
 import Approvals from "@/pages/approvals";
 
 import CommissionValidation from "@/pages/commission-validation";
@@ -79,6 +80,9 @@ function Router() {
 
       {/* Sales Executive */}
       <Route path="/tax-profile"><P component={TaxProfile} /></Route>
+
+      {/* Admin */}
+      <Route path="/all-deals"><P component={AllDeals} /></Route>
 
       {/* Manager */}
       <Route path="/team-deals"><P component={TeamDeals} /></Route>

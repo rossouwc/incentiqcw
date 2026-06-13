@@ -5,14 +5,41 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const COMM_PCT: Record<string, number> = { NET_NEW: 10, RENEWAL: 5, UPSELL: 7, CROSS_SELL: 6 };
+const COMM_PCT_FALLBACK: Record<string, number> = { NET_NEW: 10, RENEWAL: 5, UPSELL: 7, CROSS_SELL: 6 };
+
+async function lookupCommissionPct(tenantId: string, salesExecutiveId: string, dealType: string): Promise<number> {
+  try {
+    const groups = await prisma.commissionRuleGroup.findMany({
+      where: {
+        tenantId,
+        status: "ACTIVE",
+        OR: [
+          { assignToAll: true },
+          { members: { some: { userId: salesExecutiveId } } },
+        ],
+      },
+      include: { rules: { include: { rule: true } } },
+    });
+    for (const group of groups) {
+      const match = (group.rules as any[]).find(
+        (gr) => gr.rule?.dealType === dealType && gr.rule?.status === "ACTIVE"
+      );
+      if (match) return match.rule.commissionPercentage;
+    }
+  } catch (err) {
+    logger.warn({ err }, "Commission rule lookup failed, using fallback");
+  }
+  return COMM_PCT_FALLBACK[dealType] ?? 10;
+}
 
 function dealToResponse(d: any) {
   return {
     id: d.id,
     tenantId: d.tenantId,
     salesExecutiveId: d.salesExecutiveId,
-    salesExecutiveName: d.salesExecutive ? `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}` : "",
+    salesExecutiveName: d.salesExecutive
+      ? `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`
+      : "",
     customerName: d.customerName,
     dealName: d.dealName,
     dealType: d.dealType,
@@ -23,9 +50,9 @@ function dealToResponse(d: any) {
     grossProfit: d.grossProfit,
     grossProfitPercentage: d.grossProfitPercentage,
     commissionPercentage: d.commissionPercentage,
-    calculatedCommission: d.calculatedCommission,
+    commission: d.calculatedCommission,
     status: d.status,
-    submittedById: d.submittedById,
+    submittedById: d.submittedById ?? null,
     submittedAt: d.submittedAt?.toISOString() ?? null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
@@ -34,19 +61,23 @@ function dealToResponse(d: any) {
 
 // GET /api/deals
 router.get("/", requireAuth, async (req: Request, res: Response) => {
-  const { status, dealType, page = "1", limit = "20" } = req.query as Record<string, string>;
+  const { status, dealType, page = "1", limit = "20", salesExecutiveId } =
+    req.query as Record<string, string>;
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const isSalesExec = req.user!.role === "SALES_EXECUTIVE";
   const where: any = {
     tenantId: req.user!.tenantId,
     ...(isSalesExec && { salesExecutiveId: req.user!.userId }),
+    ...(!isSalesExec && salesExecutiveId && { salesExecutiveId }),
     ...(status && { status }),
     ...(dealType && { dealType }),
   };
   try {
     const [data, total] = await Promise.all([
       prisma.deal.findMany({
-        where, skip, take: parseInt(limit),
+        where,
+        skip,
+        take: parseInt(limit),
         orderBy: { createdAt: "desc" },
         include: { salesExecutive: { select: { firstName: true, lastName: true } } },
       }),
@@ -75,10 +106,13 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
     if (!deal) { res.status(404).json({ error: "Deal not found" }); return; }
     res.json({
       ...dealToResponse(deal),
-      approvalWorkflows: deal.approvalWorkflows.map((aw: any) => ({
-        id: aw.id, approvalLevel: aw.approvalLevel, approverRole: aw.approverRole,
+      approvalWorkflows: ((deal as any).approvalWorkflows as any[]).map((aw) => ({
+        id: aw.id,
+        approvalLevel: aw.approvalLevel,
+        approverRole: aw.approverRole,
         approverName: aw.approver ? `${aw.approver.firstName} ${aw.approver.lastName}` : null,
-        status: aw.status, comments: aw.comments,
+        status: aw.status,
+        comments: aw.comments,
         approvedAt: aw.approvedAt?.toISOString() ?? null,
       })),
     });
@@ -88,9 +122,10 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/deals
+// POST /api/deals — create as DRAFT
 router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate } = req.body;
+  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate } =
+    req.body;
   if (!customerName || !dealName || !dealType || revenue == null || cost == null) {
     res.status(400).json({ error: "customerName, dealName, dealType, revenue and cost are required" });
     return;
@@ -99,27 +134,37 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   const cst = parseFloat(cost);
   const gp = rev - cst;
   const gpPct = rev > 0 ? Math.round((gp / rev) * 10000) / 100 : 0;
-  const pct = COMM_PCT[dealType] ?? 10;
+  const pct = await lookupCommissionPct(req.user!.tenantId, req.user!.userId, dealType);
   const commission = Math.round(gp * (pct / 100) * 100) / 100;
   try {
     const deal = await prisma.deal.create({
       data: {
         tenantId: req.user!.tenantId,
         salesExecutiveId: req.user!.userId,
-        submittedById: req.user!.userId,
-        customerName, dealName, dealType,
-        revenue: rev, cost: cst,
-        grossProfit: gp, grossProfitPercentage: gpPct,
-        commissionPercentage: pct, calculatedCommission: commission,
-        status: "SUBMITTED",
-        submittedAt: new Date(),
+        customerName,
+        dealName,
+        dealType,
+        revenue: rev,
+        cost: cst,
+        grossProfit: gp,
+        grossProfitPercentage: gpPct,
+        commissionPercentage: pct,
+        calculatedCommission: commission,
+        status: "DRAFT",
         contractStartDate: contractStartDate ? new Date(contractStartDate) : null,
         contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
       },
       include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });
     await prisma.auditLog.create({
-      data: { tenantId: req.user!.tenantId, userId: req.user!.userId, action: "CREATE", entityType: "Deal", entityId: deal.id, newValue: JSON.stringify({ dealName, status: "SUBMITTED" }) },
+      data: {
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        action: "CREATE",
+        entityType: "Deal",
+        entityId: deal.id,
+        newValue: JSON.stringify({ dealName, status: "DRAFT" }),
+      },
     });
     res.status(201).json(dealToResponse(deal));
   } catch (err) {
@@ -130,45 +175,56 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
 
 // PATCH /api/deals/:id
 router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
-  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate, status } = req.body;
+  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate, status } =
+    req.body;
   try {
-    const existing = await prisma.deal.findFirst({ where: { id: req.params.id, tenantId: req.user!.tenantId } });
+    const existing = await prisma.deal.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+    });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
-    const newRev  = revenue != null ? parseFloat(revenue) : existing.revenue;
-    const newCost = cost != null ? parseFloat(cost) : existing.cost;
+
+    const newRev  = revenue  != null ? parseFloat(revenue)  : existing.revenue;
+    const newCost = cost     != null ? parseFloat(cost)     : existing.cost;
     const gp      = newRev - newCost;
     const gpPct   = newRev > 0 ? Math.round((gp / newRev) * 10000) / 100 : 0;
     const newType = dealType ?? existing.dealType;
-    const pct     = COMM_PCT[newType] ?? existing.commissionPercentage;
-    const comm    = Math.round(gp * (pct / 100) * 100) / 100;
-
-    if (status === "PENDING_APPROVAL" && ["SUBMITTED", "DRAFT"].includes(existing.status)) {
-      await prisma.approvalWorkflow.deleteMany({ where: { dealId: existing.id } });
-      await prisma.approvalWorkflow.createMany({
-        data: [
-          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
-          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, approverRole: "FINANCE", status: "PENDING" },
-          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, approverRole: "ADMIN",   status: "PENDING" },
-        ],
-      });
+    let pct = existing.commissionPercentage;
+    if (dealType && dealType !== existing.dealType) {
+      pct = await lookupCommissionPct(req.user!.tenantId, existing.salesExecutiveId, newType);
     }
+    const comm = Math.round(gp * (pct / 100) * 100) / 100;
 
     const deal = await prisma.deal.update({
       where: { id: req.params.id },
       data: {
-        ...(customerName && { customerName }),
-        ...(dealName && { dealName }),
-        ...(dealType && { dealType, commissionPercentage: pct }),
-        revenue: newRev, cost: newCost,
-        grossProfit: gp, grossProfitPercentage: gpPct, calculatedCommission: comm,
-        ...(status && { status }),
-        ...(contractStartDate && { contractStartDate: new Date(contractStartDate) }),
-        ...(contractEndDate && { contractEndDate: new Date(contractEndDate) }),
+        ...(customerName !== undefined && { customerName }),
+        ...(dealName     !== undefined && { dealName }),
+        ...(dealType     !== undefined && { dealType, commissionPercentage: pct }),
+        revenue: newRev,
+        cost: newCost,
+        grossProfit: gp,
+        grossProfitPercentage: gpPct,
+        calculatedCommission: comm,
+        ...(status !== undefined && { status }),
+        ...(contractStartDate !== undefined && {
+          contractStartDate: contractStartDate ? new Date(contractStartDate) : null,
+        }),
+        ...(contractEndDate !== undefined && {
+          contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
+        }),
       },
       include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });
     await prisma.auditLog.create({
-      data: { tenantId: req.user!.tenantId, userId: req.user!.userId, action: "UPDATE", entityType: "Deal", entityId: deal.id, oldValue: JSON.stringify({ status: existing.status }), newValue: JSON.stringify({ status: deal.status }) },
+      data: {
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        action: "UPDATE",
+        entityType: "Deal",
+        entityId: deal.id,
+        oldValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: deal.status }),
+      },
     });
     res.json(dealToResponse(deal));
   } catch (err) {
@@ -177,40 +233,79 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/deals/:id/submit
+// POST /api/deals/:id/submit — submit for approval
 router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
   try {
     const existing = await prisma.deal.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
+      where: {
+        id: req.params.id,
+        tenantId: req.user!.tenantId,
+        salesExecutiveId: req.user!.userId,
+      },
     });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
     if (!["DRAFT", "SUBMITTED"].includes(existing.status)) {
-      res.status(400).json({ error: "Only DRAFT or SUBMITTED deals can be submitted for approval" }); return;
+      res.status(400).json({ error: "Only DRAFT deals can be submitted for approval" });
+      return;
     }
-    await prisma.approvalWorkflow.deleteMany({ where: { dealId: existing.id } });
-    await prisma.approvalWorkflow.createMany({
-      data: [
-        { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
-        { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, approverRole: "FINANCE", status: "PENDING" },
-        { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, approverRole: "ADMIN",   status: "PENDING" },
-      ],
+
+    const deal = await prisma.$transaction(async (tx) => {
+      await tx.approvalWorkflow.deleteMany({ where: { dealId: existing.id } });
+      await tx.approvalWorkflow.createMany({
+        data: [
+          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
+          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, approverRole: "FINANCE",  status: "PENDING" },
+          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, approverRole: "ADMIN",    status: "PENDING" },
+        ],
+      });
+
+      const updatedDeal = await tx.deal.update({
+        where: { id: req.params.id },
+        data: { status: "PENDING_APPROVAL", submittedAt: new Date(), submittedById: req.user!.userId },
+        include: { salesExecutive: { select: { firstName: true, lastName: true } } },
+      });
+
+      await tx.wallet.upsert({
+        where: { userId: req.user!.userId },
+        create: {
+          tenantId: req.user!.tenantId,
+          userId: req.user!.userId,
+          pendingBalance: updatedDeal.calculatedCommission,
+        },
+        update: { pendingBalance: { increment: updatedDeal.calculatedCommission } },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: req.user!.tenantId,
+          userId: req.user!.userId,
+          action: "SUBMIT",
+          entityType: "Deal",
+          entityId: updatedDeal.id,
+          oldValue: JSON.stringify({ status: existing.status }),
+          newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
+        },
+      });
+
+      return updatedDeal;
     });
-    const deal = await prisma.deal.update({
-      where: { id: req.params.id },
-      data: { status: "PENDING_APPROVAL", submittedAt: new Date(), submittedById: req.user!.userId },
-      include: { salesExecutive: { select: { firstName: true, lastName: true } } },
+
+    const managers = await prisma.user.findMany({
+      where: { tenantId: req.user!.tenantId, role: "MANAGER", status: "ACTIVE" },
     });
-    const managers = await prisma.user.findMany({ where: { tenantId: req.user!.tenantId, role: "MANAGER", status: "ACTIVE" } });
     if (managers.length > 0) {
       await prisma.notification.createMany({
-        data: managers.map(m => ({
-          tenantId: req.user!.tenantId, userId: m.id,
+        data: managers.map((m) => ({
+          tenantId: req.user!.tenantId,
+          userId: m.id,
           title: "New Deal Approval Required",
           message: `${deal.dealName} for ${deal.customerName} requires your approval`,
-          type: "DEAL_SUBMITTED" as const, readStatus: false,
+          type: "DEAL_SUBMITTED" as const,
+          readStatus: false,
         })),
       });
     }
+
     res.json(dealToResponse(deal));
   } catch (err) {
     logger.error({ err }, "SubmitDeal error");
@@ -221,9 +316,21 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
 // DELETE /api/deals/:id
 router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    const existing = await prisma.deal.findFirst({ where: { id: req.params.id, tenantId: req.user!.tenantId } });
+    const existing = await prisma.deal.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+    });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
     await prisma.deal.delete({ where: { id: req.params.id } });
+    await prisma.auditLog.create({
+      data: {
+        tenantId: req.user!.tenantId,
+        userId: req.user!.userId,
+        action: "DELETE",
+        entityType: "Deal",
+        entityId: existing.id,
+        oldValue: JSON.stringify({ dealName: existing.dealName, status: existing.status }),
+      },
+    });
     res.json({ message: "Deal deleted" });
   } catch (err) {
     logger.error({ err }, "DeleteDeal error");

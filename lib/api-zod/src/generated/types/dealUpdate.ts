@@ -7,10 +7,14 @@
  */
 
 export interface DealUpdate {
+  customerName?: string;
   dealName?: string;
   dealType?: string;
-  grossProfit?: number;
-  notes?: string;
+  revenue?: number;
+  cost?: number;
+  /** @nullable */
+  contractStartDate?: string | null;
+  /** @nullable */
+  contractEndDate?: string | null;
   status?: string;
-  closedAt?: string;
 }

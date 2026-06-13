@@ -11,16 +11,26 @@ import type { DealStatus } from './dealStatus';
 export interface Deal {
   id: string;
   tenantId: string;
-  userId: string;
-  userName?: string;
+  salesExecutiveId: string;
+  salesExecutiveName: string;
+  customerName: string;
   dealName: string;
   dealType: DealDealType;
+  /** @nullable */
+  contractStartDate?: string | null;
+  /** @nullable */
+  contractEndDate?: string | null;
+  revenue: number;
+  cost: number;
   grossProfit: number;
+  grossProfitPercentage: number;
+  commissionPercentage: number;
   commission: number;
   status: DealStatus;
   /** @nullable */
-  notes?: string | null;
+  submittedById?: string | null;
   /** @nullable */
-  closedAt?: string | null;
+  submittedAt?: string | null;
   createdAt: string;
+  updatedAt: string;
 }
