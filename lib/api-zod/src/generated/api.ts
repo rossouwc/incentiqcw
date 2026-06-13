@@ -1156,3 +1156,267 @@ export const ListAuditLogsResponseItem = zod.object({
 export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
 
 
+/**
+ * @summary Get current user's tax profile
+ */
+export const GetTaxProfileResponse = zod.union([zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "monthlySalary": zod.number(),
+  "annualSalary": zod.number(),
+  "medicalAidCredits": zod.number(),
+  "retirementContribution": zod.number(),
+  "taxYear": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+}),zod.null()])
+
+
+/**
+ * @summary Create or update tax profile
+ */
+export const upsertTaxProfileBodyMonthlySalaryMin = 0;
+
+export const upsertTaxProfileBodyAnnualSalaryMin = 0;
+
+export const upsertTaxProfileBodyMedicalAidCreditsMin = 0;
+
+export const upsertTaxProfileBodyRetirementContributionMin = 0;
+
+export const upsertTaxProfileBodyTaxYearMin = 2020;
+export const upsertTaxProfileBodyTaxYearMax = 2099;
+
+
+
+export const UpsertTaxProfileBody = zod.object({
+  "monthlySalary": zod.number().min(upsertTaxProfileBodyMonthlySalaryMin),
+  "annualSalary": zod.number().min(upsertTaxProfileBodyAnnualSalaryMin),
+  "medicalAidCredits": zod.number().min(upsertTaxProfileBodyMedicalAidCreditsMin),
+  "retirementContribution": zod.number().min(upsertTaxProfileBodyRetirementContributionMin),
+  "taxYear": zod.number().min(upsertTaxProfileBodyTaxYearMin).max(upsertTaxProfileBodyTaxYearMax)
+})
+
+export const UpsertTaxProfileResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "monthlySalary": zod.number(),
+  "annualSalary": zod.number(),
+  "medicalAidCredits": zod.number(),
+  "retirementContribution": zod.number(),
+  "taxYear": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary List tax brackets for a tax year
+ */
+export const ListTaxBracketsQueryParams = zod.object({
+  "year": zod.coerce.number().optional()
+})
+
+export const ListTaxBracketsResponseItem = zod.object({
+  "id": zod.string(),
+  "taxYear": zod.number(),
+  "fromIncome": zod.number(),
+  "toIncome": zod.number().nullish(),
+  "rate": zod.number(),
+  "baseAmount": zod.number(),
+  "description": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+export const ListTaxBracketsResponse = zod.array(ListTaxBracketsResponseItem)
+
+
+/**
+ * @summary Create a tax bracket (Admin+)
+ */
+export const createTaxBracketBodyTaxYearMin = 2020;
+export const createTaxBracketBodyTaxYearMax = 2099;
+
+export const createTaxBracketBodyFromIncomeMin = 0;
+
+export const createTaxBracketBodyRateMin = 0;
+export const createTaxBracketBodyRateMax = 100;
+
+export const createTaxBracketBodyBaseAmountMin = 0;
+
+
+
+export const CreateTaxBracketBody = zod.object({
+  "taxYear": zod.number().min(createTaxBracketBodyTaxYearMin).max(createTaxBracketBodyTaxYearMax),
+  "fromIncome": zod.number().min(createTaxBracketBodyFromIncomeMin),
+  "toIncome": zod.number().nullish(),
+  "rate": zod.number().min(createTaxBracketBodyRateMin).max(createTaxBracketBodyRateMax),
+  "baseAmount": zod.number().min(createTaxBracketBodyBaseAmountMin),
+  "description": zod.string().optional()
+})
+
+
+/**
+ * @summary Update a tax bracket (Admin+)
+ */
+export const UpdateTaxBracketParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateTaxBracketBodyTaxYearMin = 2020;
+export const updateTaxBracketBodyTaxYearMax = 2099;
+
+export const updateTaxBracketBodyFromIncomeMin = 0;
+
+export const updateTaxBracketBodyRateMin = 0;
+export const updateTaxBracketBodyRateMax = 100;
+
+export const updateTaxBracketBodyBaseAmountMin = 0;
+
+
+
+export const UpdateTaxBracketBody = zod.object({
+  "taxYear": zod.number().min(updateTaxBracketBodyTaxYearMin).max(updateTaxBracketBodyTaxYearMax),
+  "fromIncome": zod.number().min(updateTaxBracketBodyFromIncomeMin),
+  "toIncome": zod.number().nullish(),
+  "rate": zod.number().min(updateTaxBracketBodyRateMin).max(updateTaxBracketBodyRateMax),
+  "baseAmount": zod.number().min(updateTaxBracketBodyBaseAmountMin),
+  "description": zod.string().optional()
+})
+
+export const UpdateTaxBracketResponse = zod.object({
+  "id": zod.string(),
+  "taxYear": zod.number(),
+  "fromIncome": zod.number(),
+  "toIncome": zod.number().nullish(),
+  "rate": zod.number(),
+  "baseAmount": zod.number(),
+  "description": zod.string().nullish(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a tax bracket (Admin+)
+ */
+export const DeleteTaxBracketParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+/**
+ * @summary List rebates for a tax year
+ */
+export const ListTaxRebatesQueryParams = zod.object({
+  "year": zod.coerce.number().optional()
+})
+
+export const ListTaxRebatesResponseItem = zod.object({
+  "id": zod.string(),
+  "taxYear": zod.number(),
+  "type": zod.enum(['PRIMARY', 'SECONDARY', 'TERTIARY']),
+  "amount": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+export const ListTaxRebatesResponse = zod.array(ListTaxRebatesResponseItem)
+
+
+/**
+ * @summary Create a tax rebate (Admin+)
+ */
+export const createTaxRebateBodyTaxYearMin = 2020;
+export const createTaxRebateBodyTaxYearMax = 2099;
+
+export const createTaxRebateBodyAmountMin = 0;
+
+
+
+export const CreateTaxRebateBody = zod.object({
+  "taxYear": zod.number().min(createTaxRebateBodyTaxYearMin).max(createTaxRebateBodyTaxYearMax),
+  "type": zod.enum(['PRIMARY', 'SECONDARY', 'TERTIARY']),
+  "amount": zod.number().min(createTaxRebateBodyAmountMin)
+})
+
+
+/**
+ * @summary Update a tax rebate (Admin+)
+ */
+export const UpdateTaxRebateParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateTaxRebateBodyTaxYearMin = 2020;
+export const updateTaxRebateBodyTaxYearMax = 2099;
+
+export const updateTaxRebateBodyAmountMin = 0;
+
+
+
+export const UpdateTaxRebateBody = zod.object({
+  "taxYear": zod.number().min(updateTaxRebateBodyTaxYearMin).max(updateTaxRebateBodyTaxYearMax),
+  "type": zod.enum(['PRIMARY', 'SECONDARY', 'TERTIARY']),
+  "amount": zod.number().min(updateTaxRebateBodyAmountMin)
+})
+
+export const UpdateTaxRebateResponse = zod.object({
+  "id": zod.string(),
+  "taxYear": zod.number(),
+  "type": zod.enum(['PRIMARY', 'SECONDARY', 'TERTIARY']),
+  "amount": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a tax rebate (Admin+)
+ */
+export const DeleteTaxRebateParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+/**
+ * @summary Estimate PAYE tax impact of a commission payout
+ */
+export const estimatePAYEBodyAnnualSalaryMin = 0;
+
+export const estimatePAYEBodyCommissionPayoutMin = 0;
+
+export const estimatePAYEBodyMedicalAidCreditsDefault = 0;
+export const estimatePAYEBodyMedicalAidCreditsMin = 0;
+
+export const estimatePAYEBodyRetirementContributionDefault = 0;
+export const estimatePAYEBodyRetirementContributionMin = 0;
+
+export const estimatePAYEBodyTaxYearMin = 2020;
+export const estimatePAYEBodyTaxYearMax = 2099;
+
+
+
+export const EstimatePAYEBody = zod.object({
+  "annualSalary": zod.number().min(estimatePAYEBodyAnnualSalaryMin),
+  "commissionPayout": zod.number().min(estimatePAYEBodyCommissionPayoutMin),
+  "medicalAidCredits": zod.number().min(estimatePAYEBodyMedicalAidCreditsMin).default(estimatePAYEBodyMedicalAidCreditsDefault),
+  "retirementContribution": zod.number().min(estimatePAYEBodyRetirementContributionMin).default(estimatePAYEBodyRetirementContributionDefault),
+  "taxYear": zod.number().min(estimatePAYEBodyTaxYearMin).max(estimatePAYEBodyTaxYearMax)
+})
+
+export const EstimatePAYEResponse = zod.object({
+  "taxYear": zod.number(),
+  "annualSalary": zod.number(),
+  "commissionPayout": zod.number(),
+  "retirementContribution": zod.number(),
+  "medicalAidCreditAnnual": zod.number(),
+  "taxableIncomeBase": zod.number(),
+  "taxableIncomeWithCommission": zod.number(),
+  "netTaxBase": zod.number(),
+  "netTaxWithCommission": zod.number(),
+  "additionalTax": zod.number(),
+  "estimatedNetPayout": zod.number(),
+  "effectiveRateOnCommission": zod.number(),
+  "primaryRebateApplied": zod.number()
+})
+
+

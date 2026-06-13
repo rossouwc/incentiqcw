@@ -32,6 +32,12 @@ tags:
     description: Notifications
   - name: audit
     description: Audit logs
+  - name: tax-profile
+    description: User tax profile
+  - name: tax-brackets
+    description: PAYE tax bracket management
+  - name: tax
+    description: PAYE tax estimation
 
 paths:
   /healthz:
@@ -1057,6 +1063,210 @@ paths:
                 items:
                   $ref: "#/components/schemas/AuditLog"
 
+  # ─── TAX PROFILE ──────────────────────────────────────────────────────────
+  /tax-profile:
+    get:
+      operationId: getTaxProfile
+      tags: [tax-profile]
+      summary: Get current user's tax profile
+      responses:
+        "200":
+          description: Tax profile or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/TaxProfile"
+                  - type: "null"
+    put:
+      operationId: upsertTaxProfile
+      tags: [tax-profile]
+      summary: Create or update tax profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxProfileInput"
+      responses:
+        "200":
+          description: Saved tax profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxProfile"
+
+  # ─── TAX BRACKETS ─────────────────────────────────────────────────────────
+  /tax-brackets:
+    get:
+      operationId: listTaxBrackets
+      tags: [tax-brackets]
+      summary: List tax brackets for a tax year
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tax brackets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaxBracket"
+    post:
+      operationId: createTaxBracket
+      tags: [tax-brackets]
+      summary: Create a tax bracket (Admin+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxBracketInput"
+      responses:
+        "201":
+          description: Created bracket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxBracket"
+
+  /tax-brackets/{id}:
+    patch:
+      operationId: updateTaxBracket
+      tags: [tax-brackets]
+      summary: Update a tax bracket (Admin+)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxBracketInput"
+      responses:
+        "200":
+          description: Updated bracket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxBracket"
+    delete:
+      operationId: deleteTaxBracket
+      tags: [tax-brackets]
+      summary: Delete a tax bracket (Admin+)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /tax-brackets/rebates:
+    get:
+      operationId: listTaxRebates
+      tags: [tax-brackets]
+      summary: List rebates for a tax year
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Rebates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaxRebate"
+    post:
+      operationId: createTaxRebate
+      tags: [tax-brackets]
+      summary: Create a tax rebate (Admin+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxRebateInput"
+      responses:
+        "201":
+          description: Created rebate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxRebate"
+
+  /tax-brackets/rebates/{id}:
+    patch:
+      operationId: updateTaxRebate
+      tags: [tax-brackets]
+      summary: Update a tax rebate (Admin+)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxRebateInput"
+      responses:
+        "200":
+          description: Updated rebate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxRebate"
+    delete:
+      operationId: deleteTaxRebate
+      tags: [tax-brackets]
+      summary: Delete a tax rebate (Admin+)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── PAYE ESTIMATE ────────────────────────────────────────────────────────
+  /tax/estimate:
+    post:
+      operationId: estimatePAYE
+      tags: [tax]
+      summary: Estimate PAYE tax impact of a commission payout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxEstimateRequest"
+      responses:
+        "200":
+          description: PAYE estimate breakdown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxEstimateResult"
+
 components:
   schemas:
     HealthStatus:
@@ -1935,6 +2145,108 @@ components:
           type: ["string", "null"]
         createdAt:
           type: string
+
+    # ─── TAX PROFILE ──────────────────────────────────────
+    TaxProfile:
+      type: object
+      required: [id, userId, monthlySalary, annualSalary, medicalAidCredits, retirementContribution, taxYear]
+      properties:
+        id:                     { type: string }
+        userId:                 { type: string }
+        monthlySalary:          { type: number }
+        annualSalary:           { type: number }
+        medicalAidCredits:      { type: number }
+        retirementContribution: { type: number }
+        taxYear:                { type: integer }
+        createdAt:              { type: string }
+        updatedAt:              { type: string }
+
+    TaxProfileInput:
+      type: object
+      required: [monthlySalary, annualSalary, medicalAidCredits, retirementContribution, taxYear]
+      properties:
+        monthlySalary:          { type: number, minimum: 0 }
+        annualSalary:           { type: number, minimum: 0 }
+        medicalAidCredits:      { type: number, minimum: 0 }
+        retirementContribution: { type: number, minimum: 0 }
+        taxYear:                { type: integer, minimum: 2020, maximum: 2099 }
+
+    # ─── TAX BRACKET ──────────────────────────────────────
+    TaxBracket:
+      type: object
+      required: [id, taxYear, fromIncome, rate, baseAmount]
+      properties:
+        id:          { type: string }
+        taxYear:     { type: integer }
+        fromIncome:  { type: number }
+        toIncome:    { type: ["number", "null"] }
+        rate:        { type: number }
+        baseAmount:  { type: number }
+        description: { type: ["string", "null"] }
+        createdAt:   { type: string }
+        updatedAt:   { type: string }
+
+    TaxBracketInput:
+      type: object
+      required: [taxYear, fromIncome, rate, baseAmount]
+      properties:
+        taxYear:     { type: integer, minimum: 2020, maximum: 2099 }
+        fromIncome:  { type: number, minimum: 0 }
+        toIncome:    { type: ["number", "null"] }
+        rate:        { type: number, minimum: 0, maximum: 100 }
+        baseAmount:  { type: number, minimum: 0 }
+        description: { type: string }
+
+    # ─── TAX REBATE ───────────────────────────────────────
+    TaxRebate:
+      type: object
+      required: [id, taxYear, type, amount]
+      properties:
+        id:        { type: string }
+        taxYear:   { type: integer }
+        type:      { type: string, enum: [PRIMARY, SECONDARY, TERTIARY] }
+        amount:    { type: number }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    TaxRebateInput:
+      type: object
+      required: [taxYear, type, amount]
+      properties:
+        taxYear: { type: integer, minimum: 2020, maximum: 2099 }
+        type:    { type: string, enum: [PRIMARY, SECONDARY, TERTIARY] }
+        amount:  { type: number, minimum: 0 }
+
+    # ─── TAX ESTIMATE ─────────────────────────────────────
+    TaxEstimateRequest:
+      type: object
+      required: [annualSalary, commissionPayout, taxYear]
+      properties:
+        annualSalary:           { type: number, minimum: 0 }
+        commissionPayout:       { type: number, minimum: 0 }
+        medicalAidCredits:      { type: number, minimum: 0, default: 0 }
+        retirementContribution: { type: number, minimum: 0, default: 0 }
+        taxYear:                { type: integer, minimum: 2020, maximum: 2099 }
+
+    TaxEstimateResult:
+      type: object
+      required: [taxYear, annualSalary, commissionPayout, retirementContribution, medicalAidCreditAnnual,
+                 taxableIncomeBase, taxableIncomeWithCommission, netTaxBase, netTaxWithCommission,
+                 additionalTax, estimatedNetPayout, effectiveRateOnCommission, primaryRebateApplied]
+      properties:
+        taxYear:                      { type: integer }
+        annualSalary:                 { type: number }
+        commissionPayout:             { type: number }
+        retirementContribution:       { type: number }
+        medicalAidCreditAnnual:       { type: number }
+        taxableIncomeBase:            { type: number }
+        taxableIncomeWithCommission:  { type: number }
+        netTaxBase:                   { type: number }
+        netTaxWithCommission:         { type: number }
+        additionalTax:                { type: number }
+        estimatedNetPayout:           { type: number }
+        effectiveRateOnCommission:    { type: number }
+        primaryRebateApplied:         { type: number }
 
     # ─── AUDIT LOG ────────────────────────────────────────
     AuditLog:

@@ -48,6 +48,8 @@ import type {
   ListAuditLogsParams,
   ListDealsParams,
   ListPayoutsParams,
+  ListTaxBracketsParams,
+  ListTaxRebatesParams,
   ListTransactionsParams,
   ListUsersParams,
   LoginInput,
@@ -60,6 +62,14 @@ import type {
   PayoutStatusUpdate,
   PayoutSummary,
   RegisterInput,
+  TaxBracket,
+  TaxBracketInput,
+  TaxEstimateRequest,
+  TaxEstimateResult,
+  TaxProfile,
+  TaxProfileInput,
+  TaxRebate,
+  TaxRebateInput,
   Tenant,
   TenantUpdate,
   TransactionPage,
@@ -4221,4 +4231,817 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
 
 
 
+
+export const getGetTaxProfileUrl = () => {
+
+
+
+
+  return `/api/tax-profile`
+}
+
+/**
+ * @summary Get current user's tax profile
+ */
+export const getTaxProfile = async ( options?: RequestInit): Promise<TaxProfile | null> => {
+
+  return customFetch<TaxProfile | null>(getGetTaxProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTaxProfileQueryKey = () => {
+    return [
+    `/api/tax-profile`
+    ] as const;
+    }
+
+
+export const getGetTaxProfileQueryOptions = <TData = Awaited<ReturnType<typeof getTaxProfile>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTaxProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTaxProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTaxProfile>>> = ({ signal }) => getTaxProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTaxProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTaxProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getTaxProfile>>>
+export type GetTaxProfileQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get current user's tax profile
+ */
+
+export function useGetTaxProfile<TData = Awaited<ReturnType<typeof getTaxProfile>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTaxProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTaxProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpsertTaxProfileUrl = () => {
+
+
+
+
+  return `/api/tax-profile`
+}
+
+/**
+ * @summary Create or update tax profile
+ */
+export const upsertTaxProfile = async (taxProfileInput: TaxProfileInput, options?: RequestInit): Promise<TaxProfile> => {
+
+  return customFetch<TaxProfile>(getUpsertTaxProfileUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      taxProfileInput,)
+  }
+);}
+
+
+
+
+export const getUpsertTaxProfileMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertTaxProfile>>, TError,{data: BodyType<TaxProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertTaxProfile>>, TError,{data: BodyType<TaxProfileInput>}, TContext> => {
+
+const mutationKey = ['upsertTaxProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertTaxProfile>>, {data: BodyType<TaxProfileInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertTaxProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertTaxProfileMutationResult = NonNullable<Awaited<ReturnType<typeof upsertTaxProfile>>>
+    export type UpsertTaxProfileMutationBody = BodyType<TaxProfileInput>
+    export type UpsertTaxProfileMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or update tax profile
+ */
+export const useUpsertTaxProfile = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertTaxProfile>>, TError,{data: BodyType<TaxProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertTaxProfile>>,
+        TError,
+        {data: BodyType<TaxProfileInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertTaxProfileMutationOptions(options));
+    }
+
+export const getListTaxBracketsUrl = (params?: ListTaxBracketsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/tax-brackets?${stringifiedParams}` : `/api/tax-brackets`
+}
+
+/**
+ * @summary List tax brackets for a tax year
+ */
+export const listTaxBrackets = async (params?: ListTaxBracketsParams, options?: RequestInit): Promise<TaxBracket[]> => {
+
+  return customFetch<TaxBracket[]>(getListTaxBracketsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTaxBracketsQueryKey = (params?: ListTaxBracketsParams,) => {
+    return [
+    `/api/tax-brackets`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTaxBracketsQueryOptions = <TData = Awaited<ReturnType<typeof listTaxBrackets>>, TError = ErrorType<unknown>>(params?: ListTaxBracketsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTaxBrackets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTaxBracketsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTaxBrackets>>> = ({ signal }) => listTaxBrackets(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTaxBrackets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTaxBracketsQueryResult = NonNullable<Awaited<ReturnType<typeof listTaxBrackets>>>
+export type ListTaxBracketsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List tax brackets for a tax year
+ */
+
+export function useListTaxBrackets<TData = Awaited<ReturnType<typeof listTaxBrackets>>, TError = ErrorType<unknown>>(
+ params?: ListTaxBracketsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTaxBrackets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTaxBracketsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateTaxBracketUrl = () => {
+
+
+
+
+  return `/api/tax-brackets`
+}
+
+/**
+ * @summary Create a tax bracket (Admin+)
+ */
+export const createTaxBracket = async (taxBracketInput: TaxBracketInput, options?: RequestInit): Promise<TaxBracket> => {
+
+  return customFetch<TaxBracket>(getCreateTaxBracketUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      taxBracketInput,)
+  }
+);}
+
+
+
+
+export const getCreateTaxBracketMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTaxBracket>>, TError,{data: BodyType<TaxBracketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTaxBracket>>, TError,{data: BodyType<TaxBracketInput>}, TContext> => {
+
+const mutationKey = ['createTaxBracket'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTaxBracket>>, {data: BodyType<TaxBracketInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTaxBracket(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTaxBracketMutationResult = NonNullable<Awaited<ReturnType<typeof createTaxBracket>>>
+    export type CreateTaxBracketMutationBody = BodyType<TaxBracketInput>
+    export type CreateTaxBracketMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a tax bracket (Admin+)
+ */
+export const useCreateTaxBracket = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTaxBracket>>, TError,{data: BodyType<TaxBracketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTaxBracket>>,
+        TError,
+        {data: BodyType<TaxBracketInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTaxBracketMutationOptions(options));
+    }
+
+export const getUpdateTaxBracketUrl = (id: string,) => {
+
+
+
+
+  return `/api/tax-brackets/${id}`
+}
+
+/**
+ * @summary Update a tax bracket (Admin+)
+ */
+export const updateTaxBracket = async (id: string,
+    taxBracketInput: TaxBracketInput, options?: RequestInit): Promise<TaxBracket> => {
+
+  return customFetch<TaxBracket>(getUpdateTaxBracketUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      taxBracketInput,)
+  }
+);}
+
+
+
+
+export const getUpdateTaxBracketMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTaxBracket>>, TError,{id: string;data: BodyType<TaxBracketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTaxBracket>>, TError,{id: string;data: BodyType<TaxBracketInput>}, TContext> => {
+
+const mutationKey = ['updateTaxBracket'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTaxBracket>>, {id: string;data: BodyType<TaxBracketInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateTaxBracket(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTaxBracketMutationResult = NonNullable<Awaited<ReturnType<typeof updateTaxBracket>>>
+    export type UpdateTaxBracketMutationBody = BodyType<TaxBracketInput>
+    export type UpdateTaxBracketMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a tax bracket (Admin+)
+ */
+export const useUpdateTaxBracket = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTaxBracket>>, TError,{id: string;data: BodyType<TaxBracketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTaxBracket>>,
+        TError,
+        {id: string;data: BodyType<TaxBracketInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTaxBracketMutationOptions(options));
+    }
+
+export const getDeleteTaxBracketUrl = (id: string,) => {
+
+
+
+
+  return `/api/tax-brackets/${id}`
+}
+
+/**
+ * @summary Delete a tax bracket (Admin+)
+ */
+export const deleteTaxBracket = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTaxBracketUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTaxBracketMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTaxBracket>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTaxBracket>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteTaxBracket'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTaxBracket>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTaxBracket(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTaxBracketMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTaxBracket>>>
+
+    export type DeleteTaxBracketMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a tax bracket (Admin+)
+ */
+export const useDeleteTaxBracket = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTaxBracket>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTaxBracket>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteTaxBracketMutationOptions(options));
+    }
+
+export const getListTaxRebatesUrl = (params?: ListTaxRebatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/tax-brackets/rebates?${stringifiedParams}` : `/api/tax-brackets/rebates`
+}
+
+/**
+ * @summary List rebates for a tax year
+ */
+export const listTaxRebates = async (params?: ListTaxRebatesParams, options?: RequestInit): Promise<TaxRebate[]> => {
+
+  return customFetch<TaxRebate[]>(getListTaxRebatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTaxRebatesQueryKey = (params?: ListTaxRebatesParams,) => {
+    return [
+    `/api/tax-brackets/rebates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTaxRebatesQueryOptions = <TData = Awaited<ReturnType<typeof listTaxRebates>>, TError = ErrorType<unknown>>(params?: ListTaxRebatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTaxRebates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTaxRebatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTaxRebates>>> = ({ signal }) => listTaxRebates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTaxRebates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTaxRebatesQueryResult = NonNullable<Awaited<ReturnType<typeof listTaxRebates>>>
+export type ListTaxRebatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List rebates for a tax year
+ */
+
+export function useListTaxRebates<TData = Awaited<ReturnType<typeof listTaxRebates>>, TError = ErrorType<unknown>>(
+ params?: ListTaxRebatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTaxRebates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTaxRebatesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateTaxRebateUrl = () => {
+
+
+
+
+  return `/api/tax-brackets/rebates`
+}
+
+/**
+ * @summary Create a tax rebate (Admin+)
+ */
+export const createTaxRebate = async (taxRebateInput: TaxRebateInput, options?: RequestInit): Promise<TaxRebate> => {
+
+  return customFetch<TaxRebate>(getCreateTaxRebateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      taxRebateInput,)
+  }
+);}
+
+
+
+
+export const getCreateTaxRebateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTaxRebate>>, TError,{data: BodyType<TaxRebateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTaxRebate>>, TError,{data: BodyType<TaxRebateInput>}, TContext> => {
+
+const mutationKey = ['createTaxRebate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTaxRebate>>, {data: BodyType<TaxRebateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTaxRebate(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTaxRebateMutationResult = NonNullable<Awaited<ReturnType<typeof createTaxRebate>>>
+    export type CreateTaxRebateMutationBody = BodyType<TaxRebateInput>
+    export type CreateTaxRebateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a tax rebate (Admin+)
+ */
+export const useCreateTaxRebate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTaxRebate>>, TError,{data: BodyType<TaxRebateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTaxRebate>>,
+        TError,
+        {data: BodyType<TaxRebateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTaxRebateMutationOptions(options));
+    }
+
+export const getUpdateTaxRebateUrl = (id: string,) => {
+
+
+
+
+  return `/api/tax-brackets/rebates/${id}`
+}
+
+/**
+ * @summary Update a tax rebate (Admin+)
+ */
+export const updateTaxRebate = async (id: string,
+    taxRebateInput: TaxRebateInput, options?: RequestInit): Promise<TaxRebate> => {
+
+  return customFetch<TaxRebate>(getUpdateTaxRebateUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      taxRebateInput,)
+  }
+);}
+
+
+
+
+export const getUpdateTaxRebateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTaxRebate>>, TError,{id: string;data: BodyType<TaxRebateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTaxRebate>>, TError,{id: string;data: BodyType<TaxRebateInput>}, TContext> => {
+
+const mutationKey = ['updateTaxRebate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTaxRebate>>, {id: string;data: BodyType<TaxRebateInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateTaxRebate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTaxRebateMutationResult = NonNullable<Awaited<ReturnType<typeof updateTaxRebate>>>
+    export type UpdateTaxRebateMutationBody = BodyType<TaxRebateInput>
+    export type UpdateTaxRebateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a tax rebate (Admin+)
+ */
+export const useUpdateTaxRebate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTaxRebate>>, TError,{id: string;data: BodyType<TaxRebateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTaxRebate>>,
+        TError,
+        {id: string;data: BodyType<TaxRebateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTaxRebateMutationOptions(options));
+    }
+
+export const getDeleteTaxRebateUrl = (id: string,) => {
+
+
+
+
+  return `/api/tax-brackets/rebates/${id}`
+}
+
+/**
+ * @summary Delete a tax rebate (Admin+)
+ */
+export const deleteTaxRebate = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTaxRebateUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTaxRebateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTaxRebate>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTaxRebate>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteTaxRebate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTaxRebate>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteTaxRebate(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTaxRebateMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTaxRebate>>>
+
+    export type DeleteTaxRebateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a tax rebate (Admin+)
+ */
+export const useDeleteTaxRebate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTaxRebate>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTaxRebate>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteTaxRebateMutationOptions(options));
+    }
+
+export const getEstimatePAYEUrl = () => {
+
+
+
+
+  return `/api/tax/estimate`
+}
+
+/**
+ * @summary Estimate PAYE tax impact of a commission payout
+ */
+export const estimatePAYE = async (taxEstimateRequest: TaxEstimateRequest, options?: RequestInit): Promise<TaxEstimateResult> => {
+
+  return customFetch<TaxEstimateResult>(getEstimatePAYEUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      taxEstimateRequest,)
+  }
+);}
+
+
+
+
+export const getEstimatePAYEMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof estimatePAYE>>, TError,{data: BodyType<TaxEstimateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof estimatePAYE>>, TError,{data: BodyType<TaxEstimateRequest>}, TContext> => {
+
+const mutationKey = ['estimatePAYE'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof estimatePAYE>>, {data: BodyType<TaxEstimateRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  estimatePAYE(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EstimatePAYEMutationResult = NonNullable<Awaited<ReturnType<typeof estimatePAYE>>>
+    export type EstimatePAYEMutationBody = BodyType<TaxEstimateRequest>
+    export type EstimatePAYEMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Estimate PAYE tax impact of a commission payout
+ */
+export const useEstimatePAYE = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof estimatePAYE>>, TError,{data: BodyType<TaxEstimateRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof estimatePAYE>>,
+        TError,
+        {data: BodyType<TaxEstimateRequest>},
+        TContext
+      > => {
+      return useMutation(getEstimatePAYEMutationOptions(options));
+    }
 

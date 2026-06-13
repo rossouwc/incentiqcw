@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Briefcase, Wallet, CreditCard, FileText, BarChart,
   CheckSquare, Users, Settings, ShieldAlert, LogOut, Sliders, Building2,
   ClipboardCheck, DollarSign, Package, Receipt, CreditCard as PayCard,
-  History, ListChecks, BadgeCheck, Star, UserCog,
+  History, ListChecks, BadgeCheck, Star, UserCog, Percent,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -40,6 +40,7 @@ function getNavGroups(role: string): NavGroup[] {
             { name: "Approval Workflow", path: "/approval-workflow",  icon: ClipboardCheck },
             { name: "Company Settings",  path: "/company-settings",   icon: Settings },
             { name: "Reports",           path: "/reports",            icon: BarChart },
+            { name: "PAYE Tax Brackets", path: "/tax-brackets",       icon: Percent },
           ],
         },
       ];

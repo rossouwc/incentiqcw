@@ -26,6 +26,7 @@ import Reports from "@/pages/reports";
 
 import Payouts from "@/pages/payouts";
 import TaxProfile from "@/pages/tax-profile";
+import TaxBrackets from "@/pages/tax-brackets";
 
 import TeamDeals from "@/pages/team-deals";
 import AllDeals from "@/pages/all-deals";
@@ -80,6 +81,7 @@ function Router() {
 
       {/* Sales Executive */}
       <Route path="/tax-profile"><P component={TaxProfile} /></Route>
+      <Route path="/tax-brackets"><P component={TaxBrackets} /></Route>
 
       {/* Admin */}
       <Route path="/all-deals"><P component={AllDeals} /></Route>

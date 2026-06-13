@@ -685,6 +685,138 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface TaxProfile {
+  id: string;
+  userId: string;
+  monthlySalary: number;
+  annualSalary: number;
+  medicalAidCredits: number;
+  retirementContribution: number;
+  taxYear: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TaxProfileInput {
+  /** @minimum 0 */
+  monthlySalary: number;
+  /** @minimum 0 */
+  annualSalary: number;
+  /** @minimum 0 */
+  medicalAidCredits: number;
+  /** @minimum 0 */
+  retirementContribution: number;
+  /**
+     * @minimum 2020
+     * @maximum 2099
+     */
+  taxYear: number;
+}
+
+export interface TaxBracket {
+  id: string;
+  taxYear: number;
+  fromIncome: number;
+  /** @nullable */
+  toIncome?: number | null;
+  rate: number;
+  baseAmount: number;
+  /** @nullable */
+  description?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TaxBracketInput {
+  /**
+     * @minimum 2020
+     * @maximum 2099
+     */
+  taxYear: number;
+  /** @minimum 0 */
+  fromIncome: number;
+  /** @nullable */
+  toIncome?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  rate: number;
+  /** @minimum 0 */
+  baseAmount: number;
+  description?: string;
+}
+
+export type TaxRebateType = typeof TaxRebateType[keyof typeof TaxRebateType];
+
+
+export const TaxRebateType = {
+  PRIMARY: 'PRIMARY',
+  SECONDARY: 'SECONDARY',
+  TERTIARY: 'TERTIARY',
+} as const;
+
+export interface TaxRebate {
+  id: string;
+  taxYear: number;
+  type: TaxRebateType;
+  amount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type TaxRebateInputType = typeof TaxRebateInputType[keyof typeof TaxRebateInputType];
+
+
+export const TaxRebateInputType = {
+  PRIMARY: 'PRIMARY',
+  SECONDARY: 'SECONDARY',
+  TERTIARY: 'TERTIARY',
+} as const;
+
+export interface TaxRebateInput {
+  /**
+     * @minimum 2020
+     * @maximum 2099
+     */
+  taxYear: number;
+  type: TaxRebateInputType;
+  /** @minimum 0 */
+  amount: number;
+}
+
+export interface TaxEstimateRequest {
+  /** @minimum 0 */
+  annualSalary: number;
+  /** @minimum 0 */
+  commissionPayout: number;
+  /** @minimum 0 */
+  medicalAidCredits?: number;
+  /** @minimum 0 */
+  retirementContribution?: number;
+  /**
+     * @minimum 2020
+     * @maximum 2099
+     */
+  taxYear: number;
+}
+
+export interface TaxEstimateResult {
+  taxYear: number;
+  annualSalary: number;
+  commissionPayout: number;
+  retirementContribution: number;
+  medicalAidCreditAnnual: number;
+  taxableIncomeBase: number;
+  taxableIncomeWithCommission: number;
+  netTaxBase: number;
+  netTaxWithCommission: number;
+  additionalTax: number;
+  estimatedNetPayout: number;
+  effectiveRateOnCommission: number;
+  primaryRebateApplied: number;
+}
+
 export interface AuditLog {
   id: string;
   tenantId: string;
@@ -737,5 +869,13 @@ to?: string;
 export type ListAuditLogsParams = {
 page?: number;
 limit?: number;
+};
+
+export type ListTaxBracketsParams = {
+year?: number;
+};
+
+export type ListTaxRebatesParams = {
+year?: number;
 };
 

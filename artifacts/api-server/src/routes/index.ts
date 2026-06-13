@@ -14,6 +14,8 @@ import { dashboardRouter } from "./dashboard";
 import { reportsRouter } from "./reports";
 import { notificationsRouter } from "./notifications";
 import { auditRouter } from "./audit";
+import { taxProfileRouter } from "./tax-profile";
+import { taxBracketsRouter } from "./tax-brackets";
 
 const router: IRouter = Router();
 
@@ -32,5 +34,8 @@ router.use("/dashboard", dashboardRouter);
 router.use("/reports", reportsRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/audit-logs", auditRouter);
+router.use("/tax-profile", taxProfileRouter);
+router.use("/tax-brackets", taxBracketsRouter);
+router.use("/tax", taxBracketsRouter);
 
 export default router;

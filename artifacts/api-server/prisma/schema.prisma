@@ -343,6 +343,31 @@ model TaxProfile {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model TaxBracket {
+  id          String   @id @default(cuid())
+  taxYear     Int
+  fromIncome  Float
+  toIncome    Float?
+  rate        Float
+  baseAmount  Float    @default(0)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([taxYear])
+}
+
+model TaxRebate {
+  id        String   @id @default(cuid())
+  taxYear   Int
+  type      String
+  amount    Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taxYear])
+}
+
 model AuditLog {
   id         String   @id @default(cuid())
   tenantId   String
