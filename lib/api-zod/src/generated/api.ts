@@ -377,32 +377,136 @@ export const DeleteDealResponse = zod.object({
  * @summary Get wallet balances for current user
  */
 export const GetWalletResponse = zod.object({
+  "id": zod.string(),
   "userId": zod.string(),
-  "available": zod.number(),
-  "pending": zod.number(),
-  "deferred": zod.number(),
-  "paidYtd": zod.number()
+  "availableBalance": zod.number(),
+  "pendingBalance": zod.number(),
+  "deferredBalance": zod.number(),
+  "paidOutBalance": zod.number(),
+  "paidYtd": zod.number(),
+  "updatedAt": zod.string(),
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "role": zod.string()
+}).optional()
 })
 
 
 /**
- * @summary List wallet transactions
+ * @summary List own wallet transactions (paginated)
  */
 export const ListTransactionsQueryParams = zod.object({
   "page": zod.coerce.number().optional(),
-  "limit": zod.coerce.number().optional()
+  "limit": zod.coerce.number().optional(),
+  "type": zod.coerce.string().optional()
 })
 
-export const ListTransactionsResponseItem = zod.object({
+export const ListTransactionsResponse = zod.object({
+  "data": zod.array(zod.object({
   "id": zod.string(),
-  "userId": zod.string(),
-  "type": zod.enum(['CREDIT', 'DEBIT', 'TRANSFER', 'PAYOUT']),
+  "walletId": zod.string(),
+  "transactionType": zod.enum(['CREDIT', 'DEBIT', 'TRANSFER', 'PAYOUT', 'ADJUSTMENT', 'PENDING_COMMISSION_ADDED', 'PENDING_COMMISSION_REMOVED', 'COMMISSION_APPROVED', 'PAYOUT_REQUESTED', 'PAYOUT_APPROVED', 'PAYOUT_PAID', 'PAYOUT_DEFERRED', 'MANUAL_ADJUSTMENT']),
   "amount": zod.number(),
-  "description": zod.string(),
+  "referenceType": zod.string().nullish(),
   "referenceId": zod.string().nullish(),
+  "description": zod.string(),
+  "createdAt": zod.string()
+})),
+  "total": zod.number(),
+  "page": zod.number()
+})
+
+
+/**
+ * @summary List deals linked to the current user's wallet
+ */
+export const ListWalletDealsResponseItem = zod.object({
+  "id": zod.string(),
+  "dealName": zod.string(),
+  "customerName": zod.string(),
+  "dealType": zod.string().optional(),
+  "status": zod.string(),
+  "calculatedCommission": zod.number(),
+  "grossProfit": zod.number().optional(),
+  "submittedAt": zod.string().nullish(),
   "createdAt": zod.string()
 })
-export const ListTransactionsResponse = zod.array(ListTransactionsResponseItem)
+export const ListWalletDealsResponse = zod.array(ListWalletDealsResponseItem)
+
+
+/**
+ * @summary List all wallets in the tenant (manager/admin/finance/executive)
+ */
+export const ListTeamWalletsResponseItem = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "availableBalance": zod.number(),
+  "pendingBalance": zod.number(),
+  "deferredBalance": zod.number(),
+  "paidOutBalance": zod.number(),
+  "paidYtd": zod.number(),
+  "updatedAt": zod.string(),
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "role": zod.string()
+}).optional()
+})
+export const ListTeamWalletsResponse = zod.array(ListTeamWalletsResponseItem)
+
+
+/**
+ * @summary Get a specific user's wallet
+ */
+export const GetUserWalletParams = zod.object({
+  "userId": zod.coerce.string()
+})
+
+export const GetUserWalletResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "availableBalance": zod.number(),
+  "pendingBalance": zod.number(),
+  "deferredBalance": zod.number(),
+  "paidOutBalance": zod.number(),
+  "paidYtd": zod.number(),
+  "updatedAt": zod.string(),
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "role": zod.string()
+}).optional()
+})
+
+
+/**
+ * @summary List a specific user's wallet transactions
+ */
+export const ListWalletUserTransactionsParams = zod.object({
+  "userId": zod.coerce.string()
+})
+
+export const ListWalletUserTransactionsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "walletId": zod.string(),
+  "transactionType": zod.enum(['CREDIT', 'DEBIT', 'TRANSFER', 'PAYOUT', 'ADJUSTMENT', 'PENDING_COMMISSION_ADDED', 'PENDING_COMMISSION_REMOVED', 'COMMISSION_APPROVED', 'PAYOUT_REQUESTED', 'PAYOUT_APPROVED', 'PAYOUT_PAID', 'PAYOUT_DEFERRED', 'MANUAL_ADJUSTMENT']),
+  "amount": zod.number(),
+  "referenceType": zod.string().nullish(),
+  "referenceId": zod.string().nullish(),
+  "description": zod.string(),
+  "createdAt": zod.string()
+})),
+  "total": zod.number(),
+  "page": zod.number()
+})
 
 
 /**

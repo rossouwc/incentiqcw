@@ -60,12 +60,13 @@ import type {
   RegisterInput,
   Tenant,
   TenantUpdate,
-  Transaction,
+  TransactionPage,
   TrendPoint,
   User,
   UserInput,
   UserUpdate,
-  Wallet
+  Wallet,
+  WalletDeal
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1505,11 +1506,11 @@ export const getListTransactionsUrl = (params?: ListTransactionsParams,) => {
 }
 
 /**
- * @summary List wallet transactions
+ * @summary List own wallet transactions (paginated)
  */
-export const listTransactions = async (params?: ListTransactionsParams, options?: RequestInit): Promise<Transaction[]> => {
+export const listTransactions = async (params?: ListTransactionsParams, options?: RequestInit): Promise<TransactionPage> => {
 
-  return customFetch<Transaction[]>(getListTransactionsUrl(params),
+  return customFetch<TransactionPage>(getListTransactionsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1552,7 +1553,7 @@ export type ListTransactionsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List wallet transactions
+ * @summary List own wallet transactions (paginated)
  */
 
 export function useListTransactions<TData = Awaited<ReturnType<typeof listTransactions>>, TError = ErrorType<unknown>>(
@@ -1561,6 +1562,314 @@ export function useListTransactions<TData = Awaited<ReturnType<typeof listTransa
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTransactionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListWalletDealsUrl = () => {
+
+
+
+
+  return `/api/wallet/deals`
+}
+
+/**
+ * @summary List deals linked to the current user's wallet
+ */
+export const listWalletDeals = async ( options?: RequestInit): Promise<WalletDeal[]> => {
+
+  return customFetch<WalletDeal[]>(getListWalletDealsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWalletDealsQueryKey = () => {
+    return [
+    `/api/wallet/deals`
+    ] as const;
+    }
+
+
+export const getListWalletDealsQueryOptions = <TData = Awaited<ReturnType<typeof listWalletDeals>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWalletDeals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWalletDealsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWalletDeals>>> = ({ signal }) => listWalletDeals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWalletDeals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWalletDealsQueryResult = NonNullable<Awaited<ReturnType<typeof listWalletDeals>>>
+export type ListWalletDealsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List deals linked to the current user's wallet
+ */
+
+export function useListWalletDeals<TData = Awaited<ReturnType<typeof listWalletDeals>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWalletDeals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWalletDealsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListTeamWalletsUrl = () => {
+
+
+
+
+  return `/api/wallet/users`
+}
+
+/**
+ * @summary List all wallets in the tenant (manager/admin/finance/executive)
+ */
+export const listTeamWallets = async ( options?: RequestInit): Promise<Wallet[]> => {
+
+  return customFetch<Wallet[]>(getListTeamWalletsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamWalletsQueryKey = () => {
+    return [
+    `/api/wallet/users`
+    ] as const;
+    }
+
+
+export const getListTeamWalletsQueryOptions = <TData = Awaited<ReturnType<typeof listTeamWallets>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamWallets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamWalletsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamWallets>>> = ({ signal }) => listTeamWallets({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamWallets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamWalletsQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamWallets>>>
+export type ListTeamWalletsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all wallets in the tenant (manager/admin/finance/executive)
+ */
+
+export function useListTeamWallets<TData = Awaited<ReturnType<typeof listTeamWallets>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamWallets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamWalletsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetUserWalletUrl = (userId: string,) => {
+
+
+
+
+  return `/api/wallet/users/${userId}`
+}
+
+/**
+ * @summary Get a specific user's wallet
+ */
+export const getUserWallet = async (userId: string, options?: RequestInit): Promise<Wallet> => {
+
+  return customFetch<Wallet>(getGetUserWalletUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUserWalletQueryKey = (userId: string,) => {
+    return [
+    `/api/wallet/users/${userId}`
+    ] as const;
+    }
+
+
+export const getGetUserWalletQueryOptions = <TData = Awaited<ReturnType<typeof getUserWallet>>, TError = ErrorType<unknown>>(userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUserWalletQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUserWallet>>> = ({ signal }) => getUserWallet(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(userId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUserWallet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUserWalletQueryResult = NonNullable<Awaited<ReturnType<typeof getUserWallet>>>
+export type GetUserWalletQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a specific user's wallet
+ */
+
+export function useGetUserWallet<TData = Awaited<ReturnType<typeof getUserWallet>>, TError = ErrorType<unknown>>(
+ userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUserWalletQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListWalletUserTransactionsUrl = (userId: string,) => {
+
+
+
+
+  return `/api/wallet/users/${userId}/transactions`
+}
+
+/**
+ * @summary List a specific user's wallet transactions
+ */
+export const listWalletUserTransactions = async (userId: string, options?: RequestInit): Promise<TransactionPage> => {
+
+  return customFetch<TransactionPage>(getListWalletUserTransactionsUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWalletUserTransactionsQueryKey = (userId: string,) => {
+    return [
+    `/api/wallet/users/${userId}/transactions`
+    ] as const;
+    }
+
+
+export const getListWalletUserTransactionsQueryOptions = <TData = Awaited<ReturnType<typeof listWalletUserTransactions>>, TError = ErrorType<unknown>>(userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWalletUserTransactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWalletUserTransactionsQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWalletUserTransactions>>> = ({ signal }) => listWalletUserTransactions(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(userId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWalletUserTransactions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWalletUserTransactionsQueryResult = NonNullable<Awaited<ReturnType<typeof listWalletUserTransactions>>>
+export type ListWalletUserTransactionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List a specific user's wallet transactions
+ */
+
+export function useListWalletUserTransactions<TData = Awaited<ReturnType<typeof listWalletUserTransactions>>, TError = ErrorType<unknown>>(
+ userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWalletUserTransactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWalletUserTransactionsQueryOptions(userId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -190,33 +190,75 @@ export interface DealsPage {
   limit: number;
 }
 
-export interface Wallet {
-  userId: string;
-  available: number;
-  pending: number;
-  deferred: number;
-  paidYtd: number;
+export interface WalletUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
 }
 
-export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
+export interface Wallet {
+  id: string;
+  userId: string;
+  availableBalance: number;
+  pendingBalance: number;
+  deferredBalance: number;
+  paidOutBalance: number;
+  paidYtd: number;
+  updatedAt: string;
+  user?: WalletUser;
+}
+
+export interface WalletDeal {
+  id: string;
+  dealName: string;
+  customerName: string;
+  dealType?: string;
+  status: string;
+  calculatedCommission: number;
+  grossProfit?: number;
+  /** @nullable */
+  submittedAt?: string | null;
+  createdAt: string;
+}
+
+export type TransactionTransactionType = typeof TransactionTransactionType[keyof typeof TransactionTransactionType];
 
 
-export const TransactionType = {
+export const TransactionTransactionType = {
   CREDIT: 'CREDIT',
   DEBIT: 'DEBIT',
   TRANSFER: 'TRANSFER',
   PAYOUT: 'PAYOUT',
+  ADJUSTMENT: 'ADJUSTMENT',
+  PENDING_COMMISSION_ADDED: 'PENDING_COMMISSION_ADDED',
+  PENDING_COMMISSION_REMOVED: 'PENDING_COMMISSION_REMOVED',
+  COMMISSION_APPROVED: 'COMMISSION_APPROVED',
+  PAYOUT_REQUESTED: 'PAYOUT_REQUESTED',
+  PAYOUT_APPROVED: 'PAYOUT_APPROVED',
+  PAYOUT_PAID: 'PAYOUT_PAID',
+  PAYOUT_DEFERRED: 'PAYOUT_DEFERRED',
+  MANUAL_ADJUSTMENT: 'MANUAL_ADJUSTMENT',
 } as const;
 
 export interface Transaction {
   id: string;
-  userId: string;
-  type: TransactionType;
+  walletId: string;
+  transactionType: TransactionTransactionType;
   amount: number;
-  description: string;
+  /** @nullable */
+  referenceType?: string | null;
   /** @nullable */
   referenceId?: string | null;
+  description: string;
   createdAt: string;
+}
+
+export interface TransactionPage {
+  data: Transaction[];
+  total: number;
+  page: number;
 }
 
 export type PayoutRequestStatus = typeof PayoutRequestStatus[keyof typeof PayoutRequestStatus];
@@ -629,6 +671,7 @@ limit?: number;
 export type ListTransactionsParams = {
 page?: number;
 limit?: number;
+type?: string;
 };
 
 export type ListPayoutsParams = {

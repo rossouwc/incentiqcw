@@ -48,14 +48,14 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
 
 // POST /api/payouts
 router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { requestedAmount, payoutMonth } = req.body;
-  if (!requestedAmount || parseFloat(requestedAmount) <= 0) {
-    res.status(400).json({ error: "Valid requestedAmount required" }); return;
+  const { requestedAmount, amount: amountAlias, payoutMonth: payoutMonthBody } = req.body;
+  const rawAmount = requestedAmount ?? amountAlias;
+  if (!rawAmount || parseFloat(rawAmount) <= 0) {
+    res.status(400).json({ error: "Valid amount required" }); return;
   }
-  if (!payoutMonth) {
-    res.status(400).json({ error: "payoutMonth required (YYYY-MM)" }); return;
-  }
-  const amount = parseFloat(requestedAmount);
+  // Auto-generate payoutMonth as current YYYY-MM if not provided
+  const payoutMonth = payoutMonthBody || new Date().toISOString().slice(0, 7);
+  const amount = parseFloat(rawAmount);
   const estimatedTax = Math.round(amount * TAX_RATE * 100) / 100;
   const estimatedNetPayout = Math.round((amount - estimatedTax) * 100) / 100;
   try {
@@ -166,7 +166,7 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId: req.user!.tenantId,
           walletId: wallet.id,
-          transactionType: "PAYOUT",
+          transactionType: "PAYOUT_PAID",
           amount: existing.requestedAmount,
           referenceType: "PAYOUT_REQUEST",
           referenceId: payout.id,

@@ -64,7 +64,7 @@ async function deductPendingBalance(
       data: {
         tenantId,
         walletId: wallet.id,
-        transactionType: "DEBIT",
+        transactionType: "PENDING_COMMISSION_REMOVED",
         amount: deduction,
         referenceType: "DEAL",
         referenceId: dealId,
@@ -246,7 +246,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
             data: {
               tenantId: req.user!.tenantId,
               walletId: wallet.id,
-              transactionType: "CREDIT",
+              transactionType: "COMMISSION_APPROVED",
               amount: commission,
               referenceType: "DEAL",
               referenceId: aw.dealId,

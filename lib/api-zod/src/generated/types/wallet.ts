@@ -5,11 +5,16 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { WalletUser } from './walletUser';
 
 export interface Wallet {
+  id: string;
   userId: string;
-  available: number;
-  pending: number;
-  deferred: number;
+  availableBalance: number;
+  pendingBalance: number;
+  deferredBalance: number;
+  paidOutBalance: number;
   paidYtd: number;
+  updatedAt: string;
+  user?: WalletUser;
 }

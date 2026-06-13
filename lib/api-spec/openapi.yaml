@@ -388,7 +388,7 @@ paths:
     get:
       operationId: listTransactions
       tags: [wallet]
-      summary: List wallet transactions
+      summary: List own wallet transactions (paginated)
       parameters:
         - name: page
           in: query
@@ -398,15 +398,85 @@ paths:
           in: query
           schema:
             type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
       responses:
         "200":
-          description: Transactions
+          description: Transaction page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
+
+  /wallet/deals:
+    get:
+      operationId: listWalletDeals
+      tags: [wallet]
+      summary: List deals linked to the current user's wallet
+      responses:
+        "200":
+          description: Deals
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Transaction"
+                  $ref: "#/components/schemas/WalletDeal"
+
+  /wallet/users:
+    get:
+      operationId: listTeamWallets
+      tags: [wallet]
+      summary: List all wallets in the tenant (manager/admin/finance/executive)
+      responses:
+        "200":
+          description: Team wallets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Wallet"
+
+  /wallet/users/{userId}:
+    get:
+      operationId: getUserWallet
+      tags: [wallet]
+      summary: Get a specific user's wallet
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+
+  /wallet/users/{userId}/transactions:
+    get:
+      operationId: listWalletUserTransactions
+      tags: [wallet]
+      summary: List a specific user's wallet transactions
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transaction page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionPage"
 
   # ─── PAYOUTS ─────────────────────────────────────────
   /payouts:
@@ -1189,36 +1259,110 @@ components:
     # ─── WALLET ───────────────────────────────────────────
     Wallet:
       type: object
-      required: [userId, available, pending, deferred, paidYtd]
-      properties:
-        userId:
-          type: string
-        available:
-          type: number
-        pending:
-          type: number
-        deferred:
-          type: number
-        paidYtd:
-          type: number
-
-    Transaction:
-      type: object
-      required: [id, userId, type, amount, description, createdAt]
+      required: [id, userId, availableBalance, pendingBalance, deferredBalance, paidOutBalance, paidYtd, updatedAt]
       properties:
         id:
           type: string
         userId:
           type: string
-        type:
+        availableBalance:
+          type: number
+        pendingBalance:
+          type: number
+        deferredBalance:
+          type: number
+        paidOutBalance:
+          type: number
+        paidYtd:
+          type: number
+        updatedAt:
           type: string
-          enum: [CREDIT, DEBIT, TRANSFER, PAYOUT]
+        user:
+          $ref: "#/components/schemas/WalletUser"
+
+    WalletUser:
+      type: object
+      required: [id, firstName, lastName, email, role]
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    WalletDeal:
+      type: object
+      required: [id, dealName, customerName, status, calculatedCommission, createdAt]
+      properties:
+        id:
+          type: string
+        dealName:
+          type: string
+        customerName:
+          type: string
+        dealType:
+          type: string
+        status:
+          type: string
+        calculatedCommission:
+          type: number
+        grossProfit:
+          type: number
+        submittedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    TransactionPage:
+      type: object
+      required: [data, total, page]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total:
+          type: integer
+        page:
+          type: integer
+
+    Transaction:
+      type: object
+      required: [id, walletId, transactionType, amount, description, createdAt]
+      properties:
+        id:
+          type: string
+        walletId:
+          type: string
+        transactionType:
+          type: string
+          enum:
+            - CREDIT
+            - DEBIT
+            - TRANSFER
+            - PAYOUT
+            - ADJUSTMENT
+            - PENDING_COMMISSION_ADDED
+            - PENDING_COMMISSION_REMOVED
+            - COMMISSION_APPROVED
+            - PAYOUT_REQUESTED
+            - PAYOUT_APPROVED
+            - PAYOUT_PAID
+            - PAYOUT_DEFERRED
+            - MANUAL_ADJUSTMENT
         amount:
           type: number
-        description:
-          type: string
+        referenceType:
+          type: ["string", "null"]
         referenceId:
           type: ["string", "null"]
+        description:
+          type: string
         createdAt:
           type: string
 

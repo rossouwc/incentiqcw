@@ -5,15 +5,17 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
-import type { TransactionType } from './transactionType';
+import type { TransactionTransactionType } from './transactionTransactionType';
 
 export interface Transaction {
   id: string;
-  userId: string;
-  type: TransactionType;
+  walletId: string;
+  transactionType: TransactionTransactionType;
   amount: number;
-  description: string;
+  /** @nullable */
+  referenceType?: string | null;
   /** @nullable */
   referenceId?: string | null;
+  description: string;
   createdAt: string;
 }

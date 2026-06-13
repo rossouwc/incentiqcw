@@ -9,4 +9,5 @@
 export type ListTransactionsParams = {
 page?: number;
 limit?: number;
+type?: string;
 };
