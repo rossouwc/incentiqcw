@@ -27,13 +27,18 @@ const ACTION_COLORS: Record<string, string> = {
 
 export default function AuditLogs() {
   const [search, setSearch] = useState("");
-  const { data: logs, isLoading } = useListAuditLogs({ limit: 50 });
+  const { data: logsResponse, isLoading } = useListAuditLogs({ limit: 50 });
 
-  const filtered = logs?.filter((l: any) =>
+  // The server returns a paginated wrapper { data, total } even though the spec says AuditLog[]
+  const rawLogs: any[] = Array.isArray(logsResponse)
+    ? logsResponse
+    : ((logsResponse as any)?.data ?? []);
+
+  const filtered = rawLogs.filter((l: any) =>
     !search ||
     l.action?.toLowerCase().includes(search.toLowerCase()) ||
-    l.actorEmail?.toLowerCase().includes(search.toLowerCase())
-  ) ?? [];
+    l.userName?.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
