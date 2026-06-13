@@ -5,9 +5,16 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { CommissionRuleUpdateStatus } from './commissionRuleUpdateStatus';
 
 export interface CommissionRuleUpdate {
-  name?: string;
-  rateValue?: number;
-  isActive?: boolean;
+  ruleName?: string;
+  commissionPercentage?: number;
+  /** @nullable */
+  minGrossProfit?: number | null;
+  /** @nullable */
+  maxGrossProfit?: number | null;
+  /** @nullable */
+  effectiveTo?: string | null;
+  status?: CommissionRuleUpdateStatus;
 }

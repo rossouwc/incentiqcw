@@ -222,42 +222,82 @@ export interface PayoutStatusUpdate {
   notes?: string;
 }
 
-export type CommissionRuleRateType = typeof CommissionRuleRateType[keyof typeof CommissionRuleRateType];
+export type CommissionRuleDealType = typeof CommissionRuleDealType[keyof typeof CommissionRuleDealType];
 
 
-export const CommissionRuleRateType = {
-  PERCENTAGE: 'PERCENTAGE',
-  FLAT: 'FLAT',
+export const CommissionRuleDealType = {
+  NET_NEW: 'NET_NEW',
+  RENEWAL: 'RENEWAL',
+  UPSELL: 'UPSELL',
+  CROSS_SELL: 'CROSS_SELL',
+} as const;
+
+export type CommissionRuleStatus = typeof CommissionRuleStatus[keyof typeof CommissionRuleStatus];
+
+
+export const CommissionRuleStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
 } as const;
 
 export interface CommissionRule {
   id: string;
   tenantId: string;
-  name: string;
-  dealType: string;
-  rateType: CommissionRuleRateType;
-  rateValue: number;
+  ruleName: string;
+  dealType: CommissionRuleDealType;
+  commissionPercentage: number;
+  appliesToRole?: string;
   /** @nullable */
   minGrossProfit?: number | null;
   /** @nullable */
   maxGrossProfit?: number | null;
-  isActive: boolean;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveTo?: string | null;
+  status: CommissionRuleStatus;
   createdAt: string;
+  updatedAt: string;
 }
+
+export type CommissionRuleInputDealType = typeof CommissionRuleInputDealType[keyof typeof CommissionRuleInputDealType];
+
+
+export const CommissionRuleInputDealType = {
+  NET_NEW: 'NET_NEW',
+  RENEWAL: 'RENEWAL',
+  UPSELL: 'UPSELL',
+  CROSS_SELL: 'CROSS_SELL',
+} as const;
 
 export interface CommissionRuleInput {
-  name: string;
-  dealType: string;
-  rateType: string;
-  rateValue: number;
+  ruleName: string;
+  dealType: CommissionRuleInputDealType;
+  commissionPercentage: number;
+  appliesToRole?: string;
   minGrossProfit?: number;
   maxGrossProfit?: number;
+  effectiveFrom: string;
+  effectiveTo?: string;
 }
 
+export type CommissionRuleUpdateStatus = typeof CommissionRuleUpdateStatus[keyof typeof CommissionRuleUpdateStatus];
+
+
+export const CommissionRuleUpdateStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
 export interface CommissionRuleUpdate {
-  name?: string;
-  rateValue?: number;
-  isActive?: boolean;
+  ruleName?: string;
+  commissionPercentage?: number;
+  /** @nullable */
+  minGrossProfit?: number | null;
+  /** @nullable */
+  maxGrossProfit?: number | null;
+  /** @nullable */
+  effectiveTo?: string | null;
+  status?: CommissionRuleUpdateStatus;
 }
 
 export type ApprovalType = typeof ApprovalType[keyof typeof ApprovalType];

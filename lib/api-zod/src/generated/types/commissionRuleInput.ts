@@ -5,12 +5,15 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { CommissionRuleInputDealType } from './commissionRuleInputDealType';
 
 export interface CommissionRuleInput {
-  name: string;
-  dealType: string;
-  rateType: string;
-  rateValue: number;
+  ruleName: string;
+  dealType: CommissionRuleInputDealType;
+  commissionPercentage: number;
+  appliesToRole?: string;
   minGrossProfit?: number;
   maxGrossProfit?: number;
+  effectiveFrom: string;
+  effectiveTo?: string;
 }

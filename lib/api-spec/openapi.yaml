@@ -1055,56 +1055,75 @@ components:
     # ─── COMMISSION RULE ──────────────────────────────────
     CommissionRule:
       type: object
-      required: [id, tenantId, name, dealType, rateType, rateValue, isActive, createdAt]
+      required: [id, tenantId, ruleName, dealType, commissionPercentage, status, effectiveFrom, createdAt, updatedAt]
       properties:
         id:
           type: string
         tenantId:
           type: string
-        name:
+        ruleName:
           type: string
         dealType:
           type: string
-        rateType:
-          type: string
-          enum: [PERCENTAGE, FLAT]
-        rateValue:
+          enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        commissionPercentage:
           type: number
+        appliesToRole:
+          type: string
         minGrossProfit:
           type: ["number", "null"]
         maxGrossProfit:
           type: ["number", "null"]
-        isActive:
-          type: boolean
+        effectiveFrom:
+          type: string
+        effectiveTo:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
         createdAt:
+          type: string
+        updatedAt:
           type: string
 
     CommissionRuleInput:
       type: object
-      required: [name, dealType, rateType, rateValue]
+      required: [ruleName, dealType, commissionPercentage, effectiveFrom]
       properties:
-        name:
+        ruleName:
           type: string
         dealType:
           type: string
-        rateType:
-          type: string
-        rateValue:
+          enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        commissionPercentage:
           type: number
+        appliesToRole:
+          type: string
         minGrossProfit:
           type: number
         maxGrossProfit:
           type: number
+        effectiveFrom:
+          type: string
+        effectiveTo:
+          type: string
 
     CommissionRuleUpdate:
       type: object
       properties:
-        name:
+        ruleName:
           type: string
-        rateValue:
+        commissionPercentage:
           type: number
-        isActive:
-          type: boolean
+        minGrossProfit:
+          type: ["number", "null"]
+        maxGrossProfit:
+          type: ["number", "null"]
+        effectiveTo:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
 
     # ─── APPROVAL ─────────────────────────────────────────
     Approval:

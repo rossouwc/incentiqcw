@@ -424,14 +424,17 @@ export const UpdatePayoutStatusResponse = zod.object({
 export const ListCommissionRulesResponseItem = zod.object({
   "id": zod.string(),
   "tenantId": zod.string(),
-  "name": zod.string(),
-  "dealType": zod.string(),
-  "rateType": zod.enum(['PERCENTAGE', 'FLAT']),
-  "rateValue": zod.number(),
+  "ruleName": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "appliesToRole": zod.string().optional(),
   "minGrossProfit": zod.number().nullish(),
   "maxGrossProfit": zod.number().nullish(),
-  "isActive": zod.boolean(),
-  "createdAt": zod.string()
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().nullish(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 export const ListCommissionRulesResponse = zod.array(ListCommissionRulesResponseItem)
 
@@ -440,12 +443,14 @@ export const ListCommissionRulesResponse = zod.array(ListCommissionRulesResponse
  * @summary Create a commission rule
  */
 export const CreateCommissionRuleBody = zod.object({
-  "name": zod.string(),
-  "dealType": zod.string(),
-  "rateType": zod.string(),
-  "rateValue": zod.number(),
+  "ruleName": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "appliesToRole": zod.string().optional(),
   "minGrossProfit": zod.number().optional(),
-  "maxGrossProfit": zod.number().optional()
+  "maxGrossProfit": zod.number().optional(),
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().optional()
 })
 
 
@@ -457,22 +462,28 @@ export const UpdateCommissionRuleParams = zod.object({
 })
 
 export const UpdateCommissionRuleBody = zod.object({
-  "name": zod.string().optional(),
-  "rateValue": zod.number().optional(),
-  "isActive": zod.boolean().optional()
+  "ruleName": zod.string().optional(),
+  "commissionPercentage": zod.number().optional(),
+  "minGrossProfit": zod.number().nullish(),
+  "maxGrossProfit": zod.number().nullish(),
+  "effectiveTo": zod.string().nullish(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']).optional()
 })
 
 export const UpdateCommissionRuleResponse = zod.object({
   "id": zod.string(),
   "tenantId": zod.string(),
-  "name": zod.string(),
-  "dealType": zod.string(),
-  "rateType": zod.enum(['PERCENTAGE', 'FLAT']),
-  "rateValue": zod.number(),
+  "ruleName": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "appliesToRole": zod.string().optional(),
   "minGrossProfit": zod.number().nullish(),
   "maxGrossProfit": zod.number().nullish(),
-  "isActive": zod.boolean(),
-  "createdAt": zod.string()
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().nullish(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 
