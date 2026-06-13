@@ -511,18 +511,13 @@ export const ListCommissionRuleGroupsResponseItem = zod.object({
   "status": zod.enum(['ACTIVE', 'INACTIVE']),
   "rules": zod.array(zod.object({
   "id": zod.string(),
-  "tenantId": zod.string(),
-  "ruleName": zod.string(),
   "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
   "commissionPercentage": zod.number(),
-  "appliesToRole": zod.string().optional(),
   "minGrossProfit": zod.number().nullish(),
   "maxGrossProfit": zod.number().nullish(),
   "effectiveFrom": zod.string(),
   "effectiveTo": zod.string().nullish(),
-  "status": zod.enum(['ACTIVE', 'INACTIVE']),
-  "createdAt": zod.string(),
-  "updatedAt": zod.string()
+  "status": zod.enum(['ACTIVE', 'INACTIVE'])
 })),
   "members": zod.array(zod.object({
   "id": zod.string(),
@@ -544,8 +539,16 @@ export const CreateCommissionRuleGroupBody = zod.object({
   "groupName": zod.string(),
   "description": zod.string().optional(),
   "assignToAll": zod.boolean().optional(),
-  "ruleIds": zod.array(zod.string()).optional(),
-  "memberUserIds": zod.array(zod.string()).optional()
+  "memberUserIds": zod.array(zod.string()).optional(),
+  "rules": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "minGrossProfit": zod.number().nullish(),
+  "maxGrossProfit": zod.number().nullish(),
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().nullish()
+})).optional()
 })
 
 
@@ -560,8 +563,16 @@ export const UpdateCommissionRuleGroupBody = zod.object({
   "groupName": zod.string().optional(),
   "description": zod.string().nullish(),
   "assignToAll": zod.boolean().optional(),
-  "ruleIds": zod.array(zod.string()).optional(),
   "memberUserIds": zod.array(zod.string()).optional(),
+  "rules": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "minGrossProfit": zod.number().nullish(),
+  "maxGrossProfit": zod.number().nullish(),
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().nullish()
+})).optional(),
   "status": zod.enum(['ACTIVE', 'INACTIVE']).optional()
 })
 
@@ -574,18 +585,13 @@ export const UpdateCommissionRuleGroupResponse = zod.object({
   "status": zod.enum(['ACTIVE', 'INACTIVE']),
   "rules": zod.array(zod.object({
   "id": zod.string(),
-  "tenantId": zod.string(),
-  "ruleName": zod.string(),
   "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
   "commissionPercentage": zod.number(),
-  "appliesToRole": zod.string().optional(),
   "minGrossProfit": zod.number().nullish(),
   "maxGrossProfit": zod.number().nullish(),
   "effectiveFrom": zod.string(),
   "effectiveTo": zod.string().nullish(),
-  "status": zod.enum(['ACTIVE', 'INACTIVE']),
-  "createdAt": zod.string(),
-  "updatedAt": zod.string()
+  "status": zod.enum(['ACTIVE', 'INACTIVE'])
 })),
   "members": zod.array(zod.object({
   "id": zod.string(),

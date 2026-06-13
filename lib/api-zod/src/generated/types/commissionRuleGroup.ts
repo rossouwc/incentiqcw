@@ -5,9 +5,9 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
-import type { CommissionRule } from './commissionRule';
 import type { CommissionRuleGroupMember } from './commissionRuleGroupMember';
 import type { CommissionRuleGroupStatus } from './commissionRuleGroupStatus';
+import type { CommissionRuleInline } from './commissionRuleInline';
 
 export interface CommissionRuleGroup {
   id: string;
@@ -17,7 +17,7 @@ export interface CommissionRuleGroup {
   description?: string | null;
   assignToAll: boolean;
   status: CommissionRuleGroupStatus;
-  rules: CommissionRule[];
+  rules: CommissionRuleInline[];
   members: CommissionRuleGroupMember[];
   createdAt: string;
   updatedAt: string;

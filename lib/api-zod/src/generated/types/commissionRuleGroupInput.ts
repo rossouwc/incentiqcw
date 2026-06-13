@@ -5,11 +5,12 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { CommissionRuleInlineInput } from './commissionRuleInlineInput';
 
 export interface CommissionRuleGroupInput {
   groupName: string;
   description?: string;
   assignToAll?: boolean;
-  ruleIds?: string[];
   memberUserIds?: string[];
+  rules?: CommissionRuleInlineInput[];
 }

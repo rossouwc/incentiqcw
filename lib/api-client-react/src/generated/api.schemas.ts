@@ -238,6 +238,101 @@ export const CommissionRuleGroupStatus = {
   INACTIVE: 'INACTIVE',
 } as const;
 
+export type CommissionRuleInlineDealType = typeof CommissionRuleInlineDealType[keyof typeof CommissionRuleInlineDealType];
+
+
+export const CommissionRuleInlineDealType = {
+  NET_NEW: 'NET_NEW',
+  RENEWAL: 'RENEWAL',
+  UPSELL: 'UPSELL',
+  CROSS_SELL: 'CROSS_SELL',
+} as const;
+
+export type CommissionRuleInlineStatus = typeof CommissionRuleInlineStatus[keyof typeof CommissionRuleInlineStatus];
+
+
+export const CommissionRuleInlineStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
+export interface CommissionRuleInline {
+  id: string;
+  dealType: CommissionRuleInlineDealType;
+  commissionPercentage: number;
+  /** @nullable */
+  minGrossProfit?: number | null;
+  /** @nullable */
+  maxGrossProfit?: number | null;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveTo?: string | null;
+  status: CommissionRuleInlineStatus;
+}
+
+export interface CommissionRuleGroup {
+  id: string;
+  tenantId: string;
+  groupName: string;
+  /** @nullable */
+  description?: string | null;
+  assignToAll: boolean;
+  status: CommissionRuleGroupStatus;
+  rules: CommissionRuleInline[];
+  members: CommissionRuleGroupMember[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CommissionRuleInlineInputDealType = typeof CommissionRuleInlineInputDealType[keyof typeof CommissionRuleInlineInputDealType];
+
+
+export const CommissionRuleInlineInputDealType = {
+  NET_NEW: 'NET_NEW',
+  RENEWAL: 'RENEWAL',
+  UPSELL: 'UPSELL',
+  CROSS_SELL: 'CROSS_SELL',
+} as const;
+
+export interface CommissionRuleInlineInput {
+  id?: string;
+  dealType: CommissionRuleInlineInputDealType;
+  commissionPercentage: number;
+  /** @nullable */
+  minGrossProfit?: number | null;
+  /** @nullable */
+  maxGrossProfit?: number | null;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveTo?: string | null;
+}
+
+export interface CommissionRuleGroupInput {
+  groupName: string;
+  description?: string;
+  assignToAll?: boolean;
+  memberUserIds?: string[];
+  rules?: CommissionRuleInlineInput[];
+}
+
+export type CommissionRuleGroupUpdateStatus = typeof CommissionRuleGroupUpdateStatus[keyof typeof CommissionRuleGroupUpdateStatus];
+
+
+export const CommissionRuleGroupUpdateStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
+export interface CommissionRuleGroupUpdate {
+  groupName?: string;
+  /** @nullable */
+  description?: string | null;
+  assignToAll?: boolean;
+  memberUserIds?: string[];
+  rules?: CommissionRuleInlineInput[];
+  status?: CommissionRuleGroupUpdateStatus;
+}
+
 export type CommissionRuleDealType = typeof CommissionRuleDealType[keyof typeof CommissionRuleDealType];
 
 
@@ -273,46 +368,6 @@ export interface CommissionRule {
   status: CommissionRuleStatus;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface CommissionRuleGroup {
-  id: string;
-  tenantId: string;
-  groupName: string;
-  /** @nullable */
-  description?: string | null;
-  assignToAll: boolean;
-  status: CommissionRuleGroupStatus;
-  rules: CommissionRule[];
-  members: CommissionRuleGroupMember[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CommissionRuleGroupInput {
-  groupName: string;
-  description?: string;
-  assignToAll?: boolean;
-  ruleIds?: string[];
-  memberUserIds?: string[];
-}
-
-export type CommissionRuleGroupUpdateStatus = typeof CommissionRuleGroupUpdateStatus[keyof typeof CommissionRuleGroupUpdateStatus];
-
-
-export const CommissionRuleGroupUpdateStatus = {
-  ACTIVE: 'ACTIVE',
-  INACTIVE: 'INACTIVE',
-} as const;
-
-export interface CommissionRuleGroupUpdate {
-  groupName?: string;
-  /** @nullable */
-  description?: string | null;
-  assignToAll?: boolean;
-  ruleIds?: string[];
-  memberUserIds?: string[];
-  status?: CommissionRuleGroupUpdateStatus;
 }
 
 export type CommissionRuleInputDealType = typeof CommissionRuleInputDealType[keyof typeof CommissionRuleInputDealType];

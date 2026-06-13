@@ -1164,7 +1164,7 @@ components:
         rules:
           type: array
           items:
-            $ref: "#/components/schemas/CommissionRule"
+            $ref: "#/components/schemas/CommissionRuleInline"
         members:
           type: array
           items:
@@ -1173,6 +1173,49 @@ components:
           type: string
         updatedAt:
           type: string
+
+    CommissionRuleInlineInput:
+      type: object
+      required: [dealType, commissionPercentage, effectiveFrom]
+      properties:
+        id:
+          type: string
+        dealType:
+          type: string
+          enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        commissionPercentage:
+          type: number
+        minGrossProfit:
+          type: ["number", "null"]
+        maxGrossProfit:
+          type: ["number", "null"]
+        effectiveFrom:
+          type: string
+        effectiveTo:
+          type: ["string", "null"]
+
+    CommissionRuleInline:
+      type: object
+      required: [id, dealType, commissionPercentage, effectiveFrom, status]
+      properties:
+        id:
+          type: string
+        dealType:
+          type: string
+          enum: [NET_NEW, RENEWAL, UPSELL, CROSS_SELL]
+        commissionPercentage:
+          type: number
+        minGrossProfit:
+          type: ["number", "null"]
+        maxGrossProfit:
+          type: ["number", "null"]
+        effectiveFrom:
+          type: string
+        effectiveTo:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
 
     CommissionRuleGroupInput:
       type: object
@@ -1184,14 +1227,14 @@ components:
           type: string
         assignToAll:
           type: boolean
-        ruleIds:
-          type: array
-          items:
-            type: string
         memberUserIds:
           type: array
           items:
             type: string
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommissionRuleInlineInput"
 
     CommissionRuleGroupUpdate:
       type: object
@@ -1202,14 +1245,14 @@ components:
           type: ["string", "null"]
         assignToAll:
           type: boolean
-        ruleIds:
-          type: array
-          items:
-            type: string
         memberUserIds:
           type: array
           items:
             type: string
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommissionRuleInlineInput"
         status:
           type: string
           enum: [ACTIVE, INACTIVE]

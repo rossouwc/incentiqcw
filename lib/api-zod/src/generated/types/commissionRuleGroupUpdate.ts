@@ -6,13 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CommissionRuleGroupUpdateStatus } from './commissionRuleGroupUpdateStatus';
+import type { CommissionRuleInlineInput } from './commissionRuleInlineInput';
 
 export interface CommissionRuleGroupUpdate {
   groupName?: string;
   /** @nullable */
   description?: string | null;
   assignToAll?: boolean;
-  ruleIds?: string[];
   memberUserIds?: string[];
+  rules?: CommissionRuleInlineInput[];
   status?: CommissionRuleGroupUpdateStatus;
 }
