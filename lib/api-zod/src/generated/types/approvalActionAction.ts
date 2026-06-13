@@ -12,4 +12,5 @@ export type ApprovalActionAction = typeof ApprovalActionAction[keyof typeof Appr
 export const ApprovalActionAction = {
   APPROVE: 'APPROVE',
   REJECT: 'REJECT',
+  REQUEST_CHANGES: 'REQUEST_CHANGES',
 } as const;

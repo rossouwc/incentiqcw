@@ -23,6 +23,9 @@ import type {
   ActivityItem,
   Approval,
   ApprovalAction,
+  ApprovalConfig,
+  ApprovalConfigInput,
+  ApprovalConfigUpdate,
   AuditLog,
   AuthResponse,
   CommissionByType,
@@ -2538,6 +2541,83 @@ export function useListApprovals<TData = Awaited<ReturnType<typeof listApprovals
 
 
 
+export const getGetDealApprovalsUrl = (dealId: string,) => {
+
+
+
+
+  return `/api/approvals/deal/${dealId}`
+}
+
+/**
+ * @summary Get approval chain for a deal
+ */
+export const getDealApprovals = async (dealId: string, options?: RequestInit): Promise<Approval[]> => {
+
+  return customFetch<Approval[]>(getGetDealApprovalsUrl(dealId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDealApprovalsQueryKey = (dealId: string,) => {
+    return [
+    `/api/approvals/deal/${dealId}`
+    ] as const;
+    }
+
+
+export const getGetDealApprovalsQueryOptions = <TData = Awaited<ReturnType<typeof getDealApprovals>>, TError = ErrorType<unknown>>(dealId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDealApprovals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDealApprovalsQueryKey(dealId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDealApprovals>>> = ({ signal }) => getDealApprovals(dealId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(dealId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDealApprovals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDealApprovalsQueryResult = NonNullable<Awaited<ReturnType<typeof getDealApprovals>>>
+export type GetDealApprovalsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get approval chain for a deal
+ */
+
+export function useGetDealApprovals<TData = Awaited<ReturnType<typeof getDealApprovals>>, TError = ErrorType<unknown>>(
+ dealId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDealApprovals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDealApprovalsQueryOptions(dealId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getActionApprovalUrl = (approvalId: string,) => {
 
 
@@ -2547,7 +2627,7 @@ export const getActionApprovalUrl = (approvalId: string,) => {
 }
 
 /**
- * @summary Approve or reject an item
+ * @summary Approve, reject or request changes
  */
 export const actionApproval = async (approvalId: string,
     approvalAction: ApprovalAction, options?: RequestInit): Promise<Approval> => {
@@ -2597,7 +2677,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ActionApprovalMutationError = ErrorType<unknown>
 
     /**
- * @summary Approve or reject an item
+ * @summary Approve, reject or request changes
  */
 export const useActionApproval = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof actionApproval>>, TError,{approvalId: string;data: BodyType<ApprovalAction>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -2608,6 +2688,296 @@ export const useActionApproval = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getActionApprovalMutationOptions(options));
+    }
+
+export const getListApprovalConfigsUrl = () => {
+
+
+
+
+  return `/api/approval-configs`
+}
+
+/**
+ * @summary List approval workflow steps for this tenant
+ */
+export const listApprovalConfigs = async ( options?: RequestInit): Promise<ApprovalConfig[]> => {
+
+  return customFetch<ApprovalConfig[]>(getListApprovalConfigsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListApprovalConfigsQueryKey = () => {
+    return [
+    `/api/approval-configs`
+    ] as const;
+    }
+
+
+export const getListApprovalConfigsQueryOptions = <TData = Awaited<ReturnType<typeof listApprovalConfigs>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApprovalConfigs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListApprovalConfigsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listApprovalConfigs>>> = ({ signal }) => listApprovalConfigs({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listApprovalConfigs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListApprovalConfigsQueryResult = NonNullable<Awaited<ReturnType<typeof listApprovalConfigs>>>
+export type ListApprovalConfigsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List approval workflow steps for this tenant
+ */
+
+export function useListApprovalConfigs<TData = Awaited<ReturnType<typeof listApprovalConfigs>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApprovalConfigs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListApprovalConfigsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateApprovalConfigUrl = () => {
+
+
+
+
+  return `/api/approval-configs`
+}
+
+/**
+ * @summary Create a new approval workflow step
+ */
+export const createApprovalConfig = async (approvalConfigInput: ApprovalConfigInput, options?: RequestInit): Promise<ApprovalConfig> => {
+
+  return customFetch<ApprovalConfig>(getCreateApprovalConfigUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      approvalConfigInput,)
+  }
+);}
+
+
+
+
+export const getCreateApprovalConfigMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApprovalConfig>>, TError,{data: BodyType<ApprovalConfigInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createApprovalConfig>>, TError,{data: BodyType<ApprovalConfigInput>}, TContext> => {
+
+const mutationKey = ['createApprovalConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createApprovalConfig>>, {data: BodyType<ApprovalConfigInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createApprovalConfig(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateApprovalConfigMutationResult = NonNullable<Awaited<ReturnType<typeof createApprovalConfig>>>
+    export type CreateApprovalConfigMutationBody = BodyType<ApprovalConfigInput>
+    export type CreateApprovalConfigMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a new approval workflow step
+ */
+export const useCreateApprovalConfig = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApprovalConfig>>, TError,{data: BodyType<ApprovalConfigInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createApprovalConfig>>,
+        TError,
+        {data: BodyType<ApprovalConfigInput>},
+        TContext
+      > => {
+      return useMutation(getCreateApprovalConfigMutationOptions(options));
+    }
+
+export const getUpdateApprovalConfigUrl = (configId: string,) => {
+
+
+
+
+  return `/api/approval-configs/${configId}`
+}
+
+/**
+ * @summary Update an approval workflow step
+ */
+export const updateApprovalConfig = async (configId: string,
+    approvalConfigUpdate: ApprovalConfigUpdate, options?: RequestInit): Promise<ApprovalConfig> => {
+
+  return customFetch<ApprovalConfig>(getUpdateApprovalConfigUrl(configId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      approvalConfigUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateApprovalConfigMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateApprovalConfig>>, TError,{configId: string;data: BodyType<ApprovalConfigUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateApprovalConfig>>, TError,{configId: string;data: BodyType<ApprovalConfigUpdate>}, TContext> => {
+
+const mutationKey = ['updateApprovalConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateApprovalConfig>>, {configId: string;data: BodyType<ApprovalConfigUpdate>}> = (props) => {
+          const {configId,data} = props ?? {};
+
+          return  updateApprovalConfig(configId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateApprovalConfigMutationResult = NonNullable<Awaited<ReturnType<typeof updateApprovalConfig>>>
+    export type UpdateApprovalConfigMutationBody = BodyType<ApprovalConfigUpdate>
+    export type UpdateApprovalConfigMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update an approval workflow step
+ */
+export const useUpdateApprovalConfig = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateApprovalConfig>>, TError,{configId: string;data: BodyType<ApprovalConfigUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateApprovalConfig>>,
+        TError,
+        {configId: string;data: BodyType<ApprovalConfigUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateApprovalConfigMutationOptions(options));
+    }
+
+export const getDeleteApprovalConfigUrl = (configId: string,) => {
+
+
+
+
+  return `/api/approval-configs/${configId}`
+}
+
+/**
+ * @summary Delete an approval workflow step
+ */
+export const deleteApprovalConfig = async (configId: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteApprovalConfigUrl(configId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteApprovalConfigMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApprovalConfig>>, TError,{configId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteApprovalConfig>>, TError,{configId: string}, TContext> => {
+
+const mutationKey = ['deleteApprovalConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteApprovalConfig>>, {configId: string}> = (props) => {
+          const {configId} = props ?? {};
+
+          return  deleteApprovalConfig(configId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteApprovalConfigMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApprovalConfig>>>
+
+    export type DeleteApprovalConfigMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete an approval workflow step
+ */
+export const useDeleteApprovalConfig = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApprovalConfig>>, TError,{configId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteApprovalConfig>>,
+        TError,
+        {configId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteApprovalConfigMutationOptions(options));
     }
 
 export const getGetDashboardSummaryUrl = () => {

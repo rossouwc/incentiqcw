@@ -441,15 +441,6 @@ export interface CommissionRuleUpdate {
   status?: CommissionRuleUpdateStatus;
 }
 
-export type ApprovalType = typeof ApprovalType[keyof typeof ApprovalType];
-
-
-export const ApprovalType = {
-  DEAL: 'DEAL',
-  PAYOUT: 'PAYOUT',
-  COMMISSION_RULE: 'COMMISSION_RULE',
-} as const;
-
 export type ApprovalStatus = typeof ApprovalStatus[keyof typeof ApprovalStatus];
 
 
@@ -457,20 +448,31 @@ export const ApprovalStatus = {
   PENDING: 'PENDING',
   APPROVED: 'APPROVED',
   REJECTED: 'REJECTED',
+  ESCALATED: 'ESCALATED',
+  CHANGES_REQUESTED: 'CHANGES_REQUESTED',
 } as const;
 
 export interface Approval {
   id: string;
-  type: ApprovalType;
-  referenceId: string;
-  referenceName?: string;
-  requestedBy: string;
-  requestedByName?: string;
+  tenantId: string;
+  dealId: string;
+  dealName: string;
+  customerName: string;
+  calculatedCommission: number;
+  salesExecutiveName: string;
+  approvalLevel: number;
+  /** @nullable */
+  stepName?: string | null;
+  approverRole: string;
+  /** @nullable */
+  approverUserId?: string | null;
+  /** @nullable */
+  approverName?: string | null;
   status: ApprovalStatus;
   /** @nullable */
-  reviewedBy?: string | null;
+  comments?: string | null;
   /** @nullable */
-  notes?: string | null;
+  approvedAt?: string | null;
   createdAt: string;
 }
 
@@ -480,11 +482,47 @@ export type ApprovalActionAction = typeof ApprovalActionAction[keyof typeof Appr
 export const ApprovalActionAction = {
   APPROVE: 'APPROVE',
   REJECT: 'REJECT',
+  REQUEST_CHANGES: 'REQUEST_CHANGES',
 } as const;
 
 export interface ApprovalAction {
   action: ApprovalActionAction;
-  notes?: string;
+  comments?: string;
+}
+
+export interface ApprovalConfig {
+  id: string;
+  tenantId: string;
+  stepOrder: number;
+  stepName: string;
+  approverRole: string;
+  /** @nullable */
+  approverUserId?: string | null;
+  /** @nullable */
+  approverName?: string | null;
+  /** @nullable */
+  approverEmail?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ApprovalConfigInput {
+  stepOrder?: number;
+  stepName: string;
+  approverRole: string;
+  /** @nullable */
+  approverUserId?: string | null;
+  isActive?: boolean;
+}
+
+export interface ApprovalConfigUpdate {
+  stepOrder?: number;
+  stepName?: string;
+  approverRole?: string;
+  /** @nullable */
+  approverUserId?: string | null;
+  isActive?: boolean;
 }
 
 export interface DashboardSummary {

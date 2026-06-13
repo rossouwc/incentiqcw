@@ -162,8 +162,8 @@ export default function ManagerDashboard() {
               ) : approvalList.slice(0, 8).map(a => (
                 <div key={a.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate">{a.referenceName ?? a.referenceId?.slice(0, 14)}</div>
-                    <div className="text-xs text-muted-foreground">{a.requestedByName ?? a.requestedBy}</div>
+                    <div className="text-sm font-medium text-foreground truncate">{a.dealName}</div>
+                    <div className="text-xs text-muted-foreground">{a.salesExecutiveName}</div>
                   </div>
                   <StatusBadge status={a.status} />
                 </div>

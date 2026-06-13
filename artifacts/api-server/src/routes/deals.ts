@@ -244,20 +244,37 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       },
     });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
-    if (!["DRAFT", "SUBMITTED"].includes(existing.status)) {
-      res.status(400).json({ error: "Only DRAFT deals can be submitted for approval" });
+    if (!["DRAFT", "SUBMITTED", "CHANGES_REQUESTED"].includes(existing.status)) {
+      res.status(400).json({ error: "Only DRAFT or CHANGES_REQUESTED deals can be submitted for approval" });
       return;
     }
 
+    // Load ApprovalConfig; fall back to default 3-level if none configured
+    const configs = await prisma.approvalConfig.findMany({
+      where: { tenantId: req.user!.tenantId, isActive: true },
+      orderBy: { stepOrder: "asc" },
+    });
+
+    const steps =
+      configs.length > 0
+        ? configs.map((c) => ({
+            tenantId: req.user!.tenantId,
+            dealId: existing.id,
+            approvalLevel: c.stepOrder,
+            stepName: c.stepName,
+            approverRole: c.approverRole as any,
+            approverUserId: c.approverUserId ?? null,
+            status: "PENDING" as const,
+          }))
+        : [
+            { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, stepName: "Sales Manager Approval", approverRole: "MANAGER" as any, approverUserId: null, status: "PENDING" as const },
+            { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, stepName: "Finance Approval",        approverRole: "FINANCE" as any, approverUserId: null, status: "PENDING" as const },
+            { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, stepName: "Executive Approval",     approverRole: "EXECUTIVE" as any, approverUserId: null, status: "PENDING" as const },
+          ];
+
     const deal = await prisma.$transaction(async (tx) => {
       await tx.approvalWorkflow.deleteMany({ where: { dealId: existing.id } });
-      await tx.approvalWorkflow.createMany({
-        data: [
-          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 1, approverRole: "MANAGER", status: "PENDING" },
-          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 2, approverRole: "FINANCE",  status: "PENDING" },
-          { tenantId: req.user!.tenantId, dealId: existing.id, approvalLevel: 3, approverRole: "ADMIN",    status: "PENDING" },
-        ],
-      });
+      await tx.approvalWorkflow.createMany({ data: steps });
 
       const updatedDeal = await tx.deal.update({
         where: { id: req.params.id },
@@ -290,20 +307,35 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       return updatedDeal;
     });
 
-    const managers = await prisma.user.findMany({
-      where: { tenantId: req.user!.tenantId, role: "MANAGER", status: "ACTIVE" },
-    });
-    if (managers.length > 0) {
-      await prisma.notification.createMany({
-        data: managers.map((m) => ({
+    // Notify first-level approver(s)
+    const firstStep = steps[0];
+    if (firstStep.approverUserId) {
+      await prisma.notification.create({
+        data: {
           tenantId: req.user!.tenantId,
-          userId: m.id,
+          userId: firstStep.approverUserId,
           title: "New Deal Approval Required",
           message: `${deal.dealName} for ${deal.customerName} requires your approval`,
-          type: "DEAL_SUBMITTED" as const,
+          type: "DEAL_SUBMITTED",
           readStatus: false,
-        })),
+        },
       });
+    } else {
+      const roleUsers = await prisma.user.findMany({
+        where: { tenantId: req.user!.tenantId, role: firstStep.approverRole, status: "ACTIVE" },
+      });
+      if (roleUsers.length > 0) {
+        await prisma.notification.createMany({
+          data: roleUsers.map((u) => ({
+            tenantId: req.user!.tenantId,
+            userId: u.id,
+            title: "New Deal Approval Required",
+            message: `${deal.dealName} for ${deal.customerName} requires your approval`,
+            type: "DEAL_SUBMITTED" as const,
+            readStatus: false,
+          })),
+        });
+      }
     }
 
     res.json(dealToResponse(deal));

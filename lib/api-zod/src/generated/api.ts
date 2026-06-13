@@ -686,42 +686,151 @@ export const ListApprovalsQueryParams = zod.object({
 
 export const ListApprovalsResponseItem = zod.object({
   "id": zod.string(),
-  "type": zod.enum(['DEAL', 'PAYOUT', 'COMMISSION_RULE']),
-  "referenceId": zod.string(),
-  "referenceName": zod.string().optional(),
-  "requestedBy": zod.string(),
-  "requestedByName": zod.string().optional(),
-  "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED']),
-  "reviewedBy": zod.string().nullish(),
-  "notes": zod.string().nullish(),
+  "tenantId": zod.string(),
+  "dealId": zod.string(),
+  "dealName": zod.string(),
+  "customerName": zod.string(),
+  "calculatedCommission": zod.number(),
+  "salesExecutiveName": zod.string(),
+  "approvalLevel": zod.number(),
+  "stepName": zod.string().nullish(),
+  "approverRole": zod.string(),
+  "approverUserId": zod.string().nullish(),
+  "approverName": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'ESCALATED', 'CHANGES_REQUESTED']),
+  "comments": zod.string().nullish(),
+  "approvedAt": zod.string().nullish(),
   "createdAt": zod.string()
 })
 export const ListApprovalsResponse = zod.array(ListApprovalsResponseItem)
 
 
 /**
- * @summary Approve or reject an item
+ * @summary Get approval chain for a deal
+ */
+export const GetDealApprovalsParams = zod.object({
+  "dealId": zod.coerce.string()
+})
+
+export const GetDealApprovalsResponseItem = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "dealId": zod.string(),
+  "dealName": zod.string(),
+  "customerName": zod.string(),
+  "calculatedCommission": zod.number(),
+  "salesExecutiveName": zod.string(),
+  "approvalLevel": zod.number(),
+  "stepName": zod.string().nullish(),
+  "approverRole": zod.string(),
+  "approverUserId": zod.string().nullish(),
+  "approverName": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'ESCALATED', 'CHANGES_REQUESTED']),
+  "comments": zod.string().nullish(),
+  "approvedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const GetDealApprovalsResponse = zod.array(GetDealApprovalsResponseItem)
+
+
+/**
+ * @summary Approve, reject or request changes
  */
 export const ActionApprovalParams = zod.object({
   "approvalId": zod.coerce.string()
 })
 
 export const ActionApprovalBody = zod.object({
-  "action": zod.enum(['APPROVE', 'REJECT']),
-  "notes": zod.string().optional()
+  "action": zod.enum(['APPROVE', 'REJECT', 'REQUEST_CHANGES']),
+  "comments": zod.string().optional()
 })
 
 export const ActionApprovalResponse = zod.object({
   "id": zod.string(),
-  "type": zod.enum(['DEAL', 'PAYOUT', 'COMMISSION_RULE']),
-  "referenceId": zod.string(),
-  "referenceName": zod.string().optional(),
-  "requestedBy": zod.string(),
-  "requestedByName": zod.string().optional(),
-  "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED']),
-  "reviewedBy": zod.string().nullish(),
-  "notes": zod.string().nullish(),
+  "tenantId": zod.string(),
+  "dealId": zod.string(),
+  "dealName": zod.string(),
+  "customerName": zod.string(),
+  "calculatedCommission": zod.number(),
+  "salesExecutiveName": zod.string(),
+  "approvalLevel": zod.number(),
+  "stepName": zod.string().nullish(),
+  "approverRole": zod.string(),
+  "approverUserId": zod.string().nullish(),
+  "approverName": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'ESCALATED', 'CHANGES_REQUESTED']),
+  "comments": zod.string().nullish(),
+  "approvedAt": zod.string().nullish(),
   "createdAt": zod.string()
+})
+
+
+/**
+ * @summary List approval workflow steps for this tenant
+ */
+export const ListApprovalConfigsResponseItem = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "stepOrder": zod.number(),
+  "stepName": zod.string(),
+  "approverRole": zod.string(),
+  "approverUserId": zod.string().nullish(),
+  "approverName": zod.string().nullish(),
+  "approverEmail": zod.string().nullish(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string().optional()
+})
+export const ListApprovalConfigsResponse = zod.array(ListApprovalConfigsResponseItem)
+
+
+/**
+ * @summary Create a new approval workflow step
+ */
+export const CreateApprovalConfigBody = zod.object({
+  "stepOrder": zod.number().optional(),
+  "stepName": zod.string(),
+  "approverRole": zod.string(),
+  "approverUserId": zod.string().nullish(),
+  "isActive": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Update an approval workflow step
+ */
+export const UpdateApprovalConfigParams = zod.object({
+  "configId": zod.coerce.string()
+})
+
+export const UpdateApprovalConfigBody = zod.object({
+  "stepOrder": zod.number().optional(),
+  "stepName": zod.string().optional(),
+  "approverRole": zod.string().optional(),
+  "approverUserId": zod.string().nullish(),
+  "isActive": zod.boolean().optional()
+})
+
+export const UpdateApprovalConfigResponse = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "stepOrder": zod.number(),
+  "stepName": zod.string(),
+  "approverRole": zod.string(),
+  "approverUserId": zod.string().nullish(),
+  "approverName": zod.string().nullish(),
+  "approverEmail": zod.string().nullish(),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete an approval workflow step
+ */
+export const DeleteApprovalConfigParams = zod.object({
+  "configId": zod.coerce.string()
 })
 
 

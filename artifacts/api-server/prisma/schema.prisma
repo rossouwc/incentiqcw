@@ -52,6 +52,8 @@ enum DealStatus {
   MANAGER_APPROVED
   FINANCE_APPROVED
   EXECUTIVE_APPROVED
+  APPROVED
+  CHANGES_REQUESTED
   REJECTED
   CANCELLED
 }
@@ -61,6 +63,7 @@ enum ApprovalStatus {
   APPROVED
   REJECTED
   ESCALATED
+  CHANGES_REQUESTED
 }
 
 enum PayoutStatus {
@@ -82,6 +85,7 @@ enum NotificationType {
   DEAL_SUBMITTED
   DEAL_APPROVED
   DEAL_REJECTED
+  DEAL_CHANGES_REQUESTED
   PAYOUT_REQUESTED
   PAYOUT_APPROVED
   PAYOUT_PAID
@@ -110,6 +114,7 @@ model Tenant {
   commissionRuleGroups CommissionRuleGroup[]
   deals                Deal[]
   approvalWorkflows    ApprovalWorkflow[]
+  approvalConfigs      ApprovalConfig[]
   wallets              Wallet[]
   walletTransactions   WalletTransaction[]
   payoutRequests       PayoutRequest[]
@@ -133,7 +138,8 @@ model User {
   tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dealsAsExecutive     Deal[]             @relation("SalesExecutive")
   dealsSubmitted       Deal[]             @relation("SubmittedBy")
-  approvalWorkflows    ApprovalWorkflow[]
+  approvalWorkflows         ApprovalWorkflow[]
+  approvalConfigsAssigned   ApprovalConfig[]  @relation("ApprovalConfigAssignee")
   wallet               Wallet?
   payoutRequests       PayoutRequest[]
   taxProfile           TaxProfile?
@@ -226,20 +232,38 @@ model Deal {
 }
 
 model ApprovalWorkflow {
-  id            String         @id @default(cuid())
-  tenantId      String
-  dealId        String
-  approvalLevel Int
-  approverRole  UserRole
+  id             String         @id @default(cuid())
+  tenantId       String
+  dealId         String
+  approvalLevel  Int
+  stepName       String?
+  approverRole   UserRole
   approverUserId String?
-  status        ApprovalStatus @default(PENDING)
-  comments      String?
-  approvedAt    DateTime?
-  createdAt     DateTime       @default(now())
+  status         ApprovalStatus @default(PENDING)
+  comments       String?
+  approvedAt     DateTime?
+  createdAt      DateTime       @default(now())
 
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   deal     Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
   approver User?  @relation(fields: [approverUserId], references: [id])
+}
+
+model ApprovalConfig {
+  id             String   @id @default(cuid())
+  tenantId       String
+  stepOrder      Int
+  stepName       String
+  approverRole   UserRole
+  approverUserId String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  approver User?  @relation("ApprovalConfigAssignee", fields: [approverUserId], references: [id])
+
+  @@unique([tenantId, stepOrder])
 }
 
 model Wallet {

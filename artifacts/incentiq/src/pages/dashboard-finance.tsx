@@ -157,9 +157,9 @@ export default function FinanceDashboard() {
                     <div key={a.id} className="flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors">
                       <div className="min-w-0">
                         <div className="font-medium text-sm text-foreground truncate">
-                          {a.referenceName ?? a.referenceId?.slice(0, 16)}
+                          {a.dealName}
                         </div>
-                        <div className="text-xs text-muted-foreground">{a.requestedByName ?? a.requestedBy} · {a.type}</div>
+                        <div className="text-xs text-muted-foreground">{a.salesExecutiveName} · {a.stepName ?? `Level ${a.approvalLevel}`}</div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0 ml-4">
                         <span className={`text-xs ${ageHrs > 24 ? "text-red-500 font-medium" : "text-muted-foreground"}`}>

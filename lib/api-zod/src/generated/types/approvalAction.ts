@@ -9,5 +9,5 @@ import type { ApprovalActionAction } from './approvalActionAction';
 
 export interface ApprovalAction {
   action: ApprovalActionAction;
-  notes?: string;
+  comments?: string;
 }

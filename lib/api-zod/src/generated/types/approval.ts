@@ -6,19 +6,27 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ApprovalStatus } from './approvalStatus';
-import type { ApprovalType } from './approvalType';
 
 export interface Approval {
   id: string;
-  type: ApprovalType;
-  referenceId: string;
-  referenceName?: string;
-  requestedBy: string;
-  requestedByName?: string;
+  tenantId: string;
+  dealId: string;
+  dealName: string;
+  customerName: string;
+  calculatedCommission: number;
+  salesExecutiveName: string;
+  approvalLevel: number;
+  /** @nullable */
+  stepName?: string | null;
+  approverRole: string;
+  /** @nullable */
+  approverUserId?: string | null;
+  /** @nullable */
+  approverName?: string | null;
   status: ApprovalStatus;
   /** @nullable */
-  reviewedBy?: string | null;
+  comments?: string | null;
   /** @nullable */
-  notes?: string | null;
+  approvedAt?: string | null;
   createdAt: string;
 }

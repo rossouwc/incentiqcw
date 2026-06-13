@@ -663,11 +663,32 @@ paths:
                 items:
                   $ref: "#/components/schemas/Approval"
 
+  /approvals/deal/{dealId}:
+    get:
+      operationId: getDealApprovals
+      tags: [approvals]
+      summary: Get approval chain for a deal
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approval chain
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Approval"
+
   /approvals/{approvalId}/action:
     post:
       operationId: actionApproval
       tags: [approvals]
-      summary: Approve or reject an item
+      summary: Approve, reject or request changes
       parameters:
         - name: approvalId
           in: path
@@ -687,6 +708,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Approval"
+
+  # ─── APPROVAL CONFIG ─────────────────────────────────────
+  /approval-configs:
+    get:
+      operationId: listApprovalConfigs
+      tags: [approvals]
+      summary: List approval workflow steps for this tenant
+      responses:
+        "200":
+          description: Approval configs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalConfig"
+    post:
+      operationId: createApprovalConfig
+      tags: [approvals]
+      summary: Create a new approval workflow step
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalConfigInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalConfig"
+
+  /approval-configs/{configId}:
+    patch:
+      operationId: updateApprovalConfig
+      tags: [approvals]
+      summary: Update an approval workflow step
+      parameters:
+        - name: configId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalConfigUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalConfig"
+    delete:
+      operationId: deleteApprovalConfig
+      tags: [approvals]
+      summary: Delete an approval workflow step
+      parameters:
+        - name: configId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
 
   # ─── DASHBOARD SUMMARY (wow endpoints) ───────────────
   /dashboard/summary:
@@ -1377,27 +1469,38 @@ components:
     # ─── APPROVAL ─────────────────────────────────────────
     Approval:
       type: object
-      required: [id, type, referenceId, requestedBy, status, createdAt]
+      required: [id, tenantId, dealId, dealName, customerName, calculatedCommission, salesExecutiveName, approvalLevel, approverRole, status, createdAt]
       properties:
         id:
           type: string
-        type:
+        tenantId:
           type: string
-          enum: [DEAL, PAYOUT, COMMISSION_RULE]
-        referenceId:
+        dealId:
           type: string
-        referenceName:
+        dealName:
           type: string
-        requestedBy:
+        customerName:
           type: string
-        requestedByName:
+        calculatedCommission:
+          type: number
+        salesExecutiveName:
           type: string
+        approvalLevel:
+          type: number
+        stepName:
+          type: ["string", "null"]
+        approverRole:
+          type: string
+        approverUserId:
+          type: ["string", "null"]
+        approverName:
+          type: ["string", "null"]
         status:
           type: string
-          enum: [PENDING, APPROVED, REJECTED]
-        reviewedBy:
+          enum: [PENDING, APPROVED, REJECTED, ESCALATED, CHANGES_REQUESTED]
+        comments:
           type: ["string", "null"]
-        notes:
+        approvedAt:
           type: ["string", "null"]
         createdAt:
           type: string
@@ -1408,9 +1511,65 @@ components:
       properties:
         action:
           type: string
-          enum: [APPROVE, REJECT]
-        notes:
+          enum: [APPROVE, REJECT, REQUEST_CHANGES]
+        comments:
           type: string
+
+    ApprovalConfig:
+      type: object
+      required: [id, tenantId, stepOrder, stepName, approverRole, isActive, createdAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        stepOrder:
+          type: number
+        stepName:
+          type: string
+        approverRole:
+          type: string
+        approverUserId:
+          type: ["string", "null"]
+        approverName:
+          type: ["string", "null"]
+        approverEmail:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ApprovalConfigInput:
+      type: object
+      required: [stepName, approverRole]
+      properties:
+        stepOrder:
+          type: number
+        stepName:
+          type: string
+        approverRole:
+          type: string
+        approverUserId:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+
+    ApprovalConfigUpdate:
+      type: object
+      properties:
+        stepOrder:
+          type: number
+        stepName:
+          type: string
+        approverRole:
+          type: string
+        approverUserId:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
 
     # ─── DASHBOARD / WOW ──────────────────────────────────
     DashboardSummary:

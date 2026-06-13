@@ -235,10 +235,10 @@ export default function AdminDashboard() {
                     return (
                       <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                         <td className="px-6 py-4">
-                          <div className="font-medium text-foreground">{a.referenceName ?? a.referenceId?.slice(0, 12)}</div>
+                          <div className="font-medium text-foreground">{a.dealName}</div>
                         </td>
-                        <td className="px-6 py-4 text-muted-foreground">{a.type?.replace(/_/g, " ")}</td>
-                        <td className="px-6 py-4 text-muted-foreground">{a.requestedByName ?? a.requestedBy}</td>
+                        <td className="px-6 py-4 text-muted-foreground">{a.stepName ?? `Level ${a.approvalLevel}`}</td>
+                        <td className="px-6 py-4 text-muted-foreground">{a.salesExecutiveName}</td>
                         <td className="px-6 py-4">
                           <span className={`text-sm ${isStale ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
                             {isStale ? `${ageHrs}h ago ⚠` : formatDate(a.createdAt)}
