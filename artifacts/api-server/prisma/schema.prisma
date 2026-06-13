@@ -28,6 +28,8 @@ enum UserRole {
   MANAGER
   SALES_EXECUTIVE
   FINANCE
+  EXECUTIVE
+  PAYROLL
 }
 
 enum UserStatus {

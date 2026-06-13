@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireRole, isSuperAdmin, ADMIN_ROLES } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -34,8 +34,8 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/tenant
-router.patch("/", requireAuth, async (req: Request, res: Response) => {
+// PATCH /api/tenant — ADMIN+ only
+router.patch("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const { companyName, registrationNumber, vatNumber, industry, contactName, contactEmail, contactPhone, subscriptionPlan } = req.body;
   try {
     const tenant = await prisma.tenant.update({

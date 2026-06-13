@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireRole, ADMIN_ROLES } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -37,8 +37,8 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/commission-rules
-router.post("/", requireAuth, async (req: Request, res: Response) => {
+// POST /api/commission-rules — ADMIN+ only
+router.post("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const { ruleName, dealType, commissionPercentage, appliesToRole, minGrossProfit, maxGrossProfit, effectiveFrom, effectiveTo } = req.body;
   if (!ruleName || !dealType || commissionPercentage == null || !effectiveFrom) {
     res.status(400).json({ error: "ruleName, dealType, commissionPercentage, effectiveFrom required" }); return;
@@ -65,8 +65,8 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/commission-rules/:id
-router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
+// PATCH /api/commission-rules/:id — ADMIN+ only
+router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const { ruleName, commissionPercentage, minGrossProfit, maxGrossProfit, effectiveTo, status } = req.body;
   try {
     const rule = await prisma.commissionRule.update({
@@ -87,8 +87,8 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/commission-rules/:id
-router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+// DELETE /api/commission-rules/:id — ADMIN+ only
+router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   try {
     await prisma.commissionRule.delete({ where: { id: req.params.id } });
     res.json({ message: "Rule deleted" });

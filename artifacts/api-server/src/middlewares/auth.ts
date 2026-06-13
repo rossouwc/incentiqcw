@@ -19,6 +19,15 @@ declare global {
   }
 }
 
+export const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN"] as const;
+export const MANAGER_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
+export const FINANCE_ROLES = ["SUPER_ADMIN", "ADMIN", "FINANCE"] as const;
+export const PAYROLL_ROLES = ["SUPER_ADMIN", "ADMIN", "FINANCE", "PAYROLL"] as const;
+
+export function isSuperAdmin(req: Request): boolean {
+  return req.user?.role === "SUPER_ADMIN";
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
@@ -43,7 +52,7 @@ export function requireRole(...roles: string[]) {
       return;
     }
     if (!roles.includes(req.user.role)) {
-      res.status(403).json({ error: "Forbidden" });
+      res.status(403).json({ error: "Forbidden: insufficient permissions" });
       return;
     }
     next();

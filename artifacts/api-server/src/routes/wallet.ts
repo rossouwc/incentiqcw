@@ -54,20 +54,16 @@ router.get("/transactions", requireAuth, async (req: Request, res: Response) => 
       }),
       prisma.walletTransaction.count({ where }),
     ]);
-    res.json({
-      data: txns.map(t => ({
-        id: t.id, walletId: t.walletId,
-        transactionType: t.transactionType,
-        amount: t.amount,
-        referenceType: t.referenceType,
-        referenceId: t.referenceId,
-        description: t.description,
-        createdAt: t.createdAt.toISOString(),
-      })),
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-    });
+    res.json(txns.map(t => ({
+      id: t.id, walletId: t.walletId,
+      transactionType: t.transactionType,
+      type: t.transactionType,
+      amount: t.amount,
+      referenceType: t.referenceType,
+      referenceId: t.referenceId,
+      description: t.description,
+      createdAt: t.createdAt.toISOString(),
+    })));
   } catch (err) {
     logger.error({ err }, "ListTransactions error");
     res.status(500).json({ error: "Server error" });

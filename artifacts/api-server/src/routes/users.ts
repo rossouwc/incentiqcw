@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireRole, isSuperAdmin, ADMIN_ROLES } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -19,25 +19,26 @@ function userToResponse(user: {
   };
 }
 
+const WALLET_ROLES = ["SALES_EXECUTIVE", "EXECUTIVE"];
+
 // GET /api/users
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   const { role, status, search } = req.query as { role?: string; status?: string; search?: string };
   try {
-    const users = await prisma.user.findMany({
-      where: {
-        tenantId: req.user!.tenantId,
-        ...(role && { role: role as any }),
-        ...(status && { status: status as any }),
-        ...(search && {
-          OR: [
-            { firstName: { contains: search, mode: "insensitive" } },
-            { lastName: { contains: search, mode: "insensitive" } },
-            { email: { contains: search, mode: "insensitive" } },
-          ],
-        }),
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const where: any = {
+      // SUPER_ADMIN can see all users; others are scoped to their tenant
+      ...(!isSuperAdmin(req) && { tenantId: req.user!.tenantId }),
+      ...(role && { role: role as any }),
+      ...(status && { status: status as any }),
+      ...(search && {
+        OR: [
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+        ],
+      }),
+    };
+    const users = await prisma.user.findMany({ where, orderBy: { createdAt: "desc" } });
     res.json(users.map(userToResponse));
   } catch (err) {
     logger.error({ err }, "ListUsers error");
@@ -45,8 +46,8 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/users
-router.post("/", requireAuth, async (req: Request, res: Response) => {
+// POST /api/users — ADMIN+ only
+router.post("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const { email, firstName, lastName, role, password } = req.body;
   if (!email || !firstName || !lastName || !role) {
     res.status(400).json({ error: "email, firstName, lastName, role required" }); return;
@@ -57,14 +58,12 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       data: {
         tenantId: req.user!.tenantId,
         email: email.toLowerCase().trim(),
-        passwordHash,
-        firstName, lastName,
+        passwordHash, firstName, lastName,
         role: role as any,
         status: "ACTIVE",
       },
     });
-    // Create wallet if sales executive
-    if (role === "SALES_EXECUTIVE") {
+    if (WALLET_ROLES.includes(role)) {
       await prisma.wallet.create({ data: { tenantId: req.user!.tenantId, userId: user.id } });
     }
     res.status(201).json(userToResponse(user));
@@ -78,7 +77,10 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
 // GET /api/users/:id
 router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    const user = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.user!.tenantId } });
+    const where = isSuperAdmin(req)
+      ? { id: req.params.id }
+      : { id: req.params.id, tenantId: req.user!.tenantId };
+    const user = await prisma.user.findFirst({ where });
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
     res.json(userToResponse(user));
   } catch (err) {
@@ -87,10 +89,14 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/users/:id
-router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
+// PATCH /api/users/:id — ADMIN+ only
+router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const { firstName, lastName, role, status } = req.body;
   try {
+    const existing = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+    });
+    if (!existing) { res.status(404).json({ error: "User not found" }); return; }
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: {
@@ -107,9 +113,13 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/users/:id
-router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+// DELETE /api/users/:id — ADMIN+ only
+router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   try {
+    const existing = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.user!.tenantId },
+    });
+    if (!existing) { res.status(404).json({ error: "User not found" }); return; }
     await prisma.user.delete({ where: { id: req.params.id } });
     res.json({ message: "User deleted" });
   } catch (err) {
