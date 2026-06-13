@@ -1,104 +1,146 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  LayoutDashboard,
-  Briefcase,
-  Wallet,
-  CreditCard,
-  FileText,
-  BarChart,
-  CheckSquare,
-  Users,
-  History,
-  Settings,
-  Bell,
-  ShieldAlert,
-  HelpCircle,
-  LogOut,
-  Sliders,
-  Building2,
+  LayoutDashboard, Briefcase, Wallet, CreditCard, FileText, BarChart,
+  CheckSquare, Users, Settings, ShieldAlert, LogOut, Sliders, Building2,
+  ClipboardCheck, DollarSign, Package, Receipt, CreditCard as PayCard,
+  History, ListChecks, BadgeCheck, Star, UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 
-type NavItem = {
-  name: string;
-  path: string;
-  icon: React.ElementType;
-  roles?: string[];
-};
+type NavItem = { name: string; path: string; icon: React.ElementType };
+type NavGroup = { label: string; items: NavItem[] };
 
-const ALL_ROLES = undefined; // visible to everyone
+function getNavGroups(role: string): NavGroup[] {
+  switch (role) {
+    case "SUPER_ADMIN":
+      return [
+        {
+          label: "Platform",
+          items: [
+            { name: "Platform Dashboard", path: "/platform-dashboard", icon: LayoutDashboard },
+            { name: "Tenants",            path: "/tenants",            icon: Building2 },
+            { name: "Subscription Plans", path: "/subscription-plans", icon: Package },
+            { name: "Platform Users",     path: "/platform-users",     icon: Users },
+            { name: "Audit Logs",         path: "/audit-logs",         icon: ShieldAlert },
+          ],
+        },
+      ];
 
-const MAIN_NAV: NavItem[] = [
-  { name: "Dashboard",       path: "/dashboard",  icon: LayoutDashboard },
-  { name: "Deals",           path: "/deals",       icon: Briefcase,       roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SALES_EXECUTIVE", "FINANCE", "EXECUTIVE"] },
-  { name: "My Wallet",       path: "/wallet",      icon: Wallet,          roles: ["SALES_EXECUTIVE"] },
-  { name: "Payout Requests", path: "/payouts",     icon: CreditCard,      roles: ["SALES_EXECUTIVE", "FINANCE", "PAYROLL", "ADMIN", "SUPER_ADMIN"] },
-  { name: "Tax Profile",     path: "/tax-profile", icon: FileText,        roles: ["SALES_EXECUTIVE"] },
-  { name: "Reports",         path: "/reports",     icon: BarChart,        roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "FINANCE", "EXECUTIVE", "PAYROLL"] },
-];
+    case "ADMIN":
+      return [
+        {
+          label: "Company",
+          items: [
+            { name: "Dashboard",         path: "/dashboard",          icon: LayoutDashboard },
+            { name: "Users",             path: "/users",              icon: Users },
+            { name: "Commission Rules",  path: "/commission-rules",   icon: Sliders },
+            { name: "Approval Workflow", path: "/approval-workflow",  icon: ClipboardCheck },
+            { name: "Company Settings",  path: "/company-settings",   icon: Settings },
+            { name: "Reports",           path: "/reports",            icon: BarChart },
+          ],
+        },
+      ];
 
-const APPROVALS_NAV: NavItem[] = [
-  { name: "Pending Approvals", path: "/approvals/pending",    icon: CheckSquare, roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"] },
-  { name: "Team Deals",        path: "/approvals/team-deals", icon: Users,       roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"] },
-  { name: "Approval History",  path: "/approvals/history",    icon: History,     roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"] },
-];
+    case "SALES_EXECUTIVE":
+      return [
+        {
+          label: "My Work",
+          items: [
+            { name: "My Dashboard",       path: "/dashboard", icon: LayoutDashboard },
+            { name: "My Deals",           path: "/deals",     icon: Briefcase },
+            { name: "My Commission Wallet", path: "/wallet",  icon: Wallet },
+            { name: "Payout Requests",    path: "/payouts",   icon: CreditCard },
+            { name: "Tax Profile",        path: "/tax-profile", icon: FileText },
+          ],
+        },
+      ];
 
-const MANAGEMENT_NAV: NavItem[] = [
-  { name: "Commission Rules", path: "/commission-rules", icon: Sliders,   roles: ["SUPER_ADMIN", "ADMIN"] },
-  { name: "Users",            path: "/users",            icon: Users,     roles: ["SUPER_ADMIN", "ADMIN"] },
-  { name: "Company Settings", path: "/company-settings", icon: Settings,  roles: ["SUPER_ADMIN", "ADMIN"] },
-  { name: "All Tenants",      path: "/tenants",          icon: Building2, roles: ["SUPER_ADMIN"] },
-];
+    case "MANAGER":
+      return [
+        {
+          label: "Management",
+          items: [
+            { name: "Dashboard",         path: "/dashboard",        icon: LayoutDashboard },
+            { name: "Team Deals",        path: "/team-deals",       icon: Users },
+            { name: "Pending Approvals", path: "/approvals",        icon: CheckSquare },
+            { name: "Reports",           path: "/reports",          icon: BarChart },
+          ],
+        },
+      ];
 
-const SUPPORT_NAV: NavItem[] = [
-  { name: "Notifications", path: "/notifications", icon: Bell },
-  { name: "Audit Logs",    path: "/audit-logs",    icon: ShieldAlert, roles: ["SUPER_ADMIN", "ADMIN", "MANAGER"] },
-  { name: "Help & Support",path: "#",              icon: HelpCircle },
-];
+    case "FINANCE":
+      return [
+        {
+          label: "Finance",
+          items: [
+            { name: "Dashboard",                path: "/dashboard",            icon: LayoutDashboard },
+            { name: "Commission Validation",    path: "/commission-validation",icon: ListChecks },
+            { name: "Pending Finance Approvals",path: "/finance-approvals",    icon: ClipboardCheck },
+            { name: "Payout Requests",          path: "/payouts",              icon: DollarSign },
+            { name: "Payroll Export",           path: "/payroll-export",       icon: Receipt },
+          ],
+        },
+      ];
+
+    case "EXECUTIVE":
+      return [
+        {
+          label: "Executive",
+          items: [
+            { name: "Dashboard",       path: "/dashboard",      icon: LayoutDashboard },
+            { name: "Final Approvals", path: "/final-approvals",icon: BadgeCheck },
+            { name: "Reports",         path: "/reports",        icon: BarChart },
+          ],
+        },
+      ];
+
+    case "PAYROLL":
+      return [
+        {
+          label: "Payroll",
+          items: [
+            { name: "Approved Payouts", path: "/approved-payouts", icon: PayCard },
+            { name: "Payroll Export",   path: "/payroll-export",   icon: Receipt },
+            { name: "Payout History",   path: "/payout-history",   icon: History },
+          ],
+        },
+      ];
+
+    default:
+      return [
+        {
+          label: "Main",
+          items: [{ name: "Dashboard", path: "/dashboard", icon: LayoutDashboard }],
+        },
+      ];
+  }
+}
 
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
-  SUPER_ADMIN:    { label: "Super Admin",    color: "bg-purple-500/20 text-purple-400" },
-  ADMIN:          { label: "Admin",          color: "bg-indigo-500/20 text-indigo-400" },
-  MANAGER:        { label: "Manager",        color: "bg-blue-500/20 text-blue-400" },
-  FINANCE:        { label: "Finance",        color: "bg-cyan-500/20 text-cyan-400" },
-  SALES_EXECUTIVE:{ label: "Sales Exec",     color: "bg-green-500/20 text-green-400" },
-  EXECUTIVE:      { label: "Executive",      color: "bg-amber-500/20 text-amber-400" },
-  PAYROLL:        { label: "Payroll",        color: "bg-orange-500/20 text-orange-400" },
+  SUPER_ADMIN:     { label: "Super Admin",    color: "bg-purple-500/20 text-purple-300" },
+  ADMIN:           { label: "Admin",          color: "bg-indigo-500/20 text-indigo-300" },
+  MANAGER:         { label: "Manager",        color: "bg-blue-500/20 text-blue-300" },
+  FINANCE:         { label: "Finance",        color: "bg-cyan-500/20 text-cyan-300" },
+  SALES_EXECUTIVE: { label: "Sales Exec",     color: "bg-green-500/20 text-green-300" },
+  EXECUTIVE:       { label: "Executive",      color: "bg-amber-500/20 text-amber-300" },
+  PAYROLL:         { label: "Payroll",        color: "bg-orange-500/20 text-orange-300" },
 };
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const role = user?.role ?? "";
-
-  const isVisible = (item: NavItem) => !item.roles || item.roles.includes(role);
-  const hasVisibleItems = (items: NavItem[]) => items.some(isVisible);
-
-  const renderNavItems = (items: NavItem[]) =>
-    items.filter(isVisible).map((item) => {
-      const isActive = location === item.path ||
-        (item.path !== "/" && item.path !== "#" && location.startsWith(item.path));
-      return (
-        <Link key={item.name} href={item.path}>
-          <div className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer text-sm ${
-            isActive
-              ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          }`}>
-            <item.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`} />
-            <span>{item.name}</span>
-          </div>
-        </Link>
-      );
-    });
-
+  const groups = getNavGroups(role);
   const roleInfo = ROLE_LABELS[role] ?? { label: role, color: "bg-muted text-muted-foreground" };
+
+  const isActive = (path: string) =>
+    location === path || (path !== "/" && location.startsWith(path));
 
   return (
     <div className="w-64 bg-sidebar flex flex-col h-full border-r border-sidebar-border shadow-sm shrink-0">
+      {/* Logo */}
       <div className="p-4 flex items-center gap-2.5 border-b border-sidebar-border">
         <div className="bg-sidebar-primary p-1.5 rounded-md">
           <Wallet className="h-5 w-5 text-white" />
@@ -106,32 +148,35 @@ export function Sidebar() {
         <span className="text-sidebar-foreground font-bold text-lg tracking-tight">Incentiq</span>
       </div>
 
+      {/* Nav */}
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
-        <div>
-          <div className="px-3 mb-1.5 text-xs font-semibold text-sidebar-foreground/40 tracking-wider uppercase">Main</div>
-          <div className="space-y-0.5">{renderNavItems(MAIN_NAV)}</div>
-        </div>
-
-        {hasVisibleItems(APPROVALS_NAV) && (
-          <div>
-            <div className="px-3 mb-1.5 text-xs font-semibold text-sidebar-foreground/40 tracking-wider uppercase">Approvals</div>
-            <div className="space-y-0.5">{renderNavItems(APPROVALS_NAV)}</div>
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="px-3 mb-1.5 text-xs font-semibold text-sidebar-foreground/40 tracking-wider uppercase">
+              {group.label}
+            </div>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = isActive(item.path);
+                return (
+                  <Link key={item.path} href={item.path}>
+                    <div className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer text-sm ${
+                      active
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    }`}>
+                      <item.icon className={`h-4 w-4 shrink-0 ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`} />
+                      <span>{item.name}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        )}
-
-        {hasVisibleItems(MANAGEMENT_NAV) && (
-          <div>
-            <div className="px-3 mb-1.5 text-xs font-semibold text-sidebar-foreground/40 tracking-wider uppercase">Management</div>
-            <div className="space-y-0.5">{renderNavItems(MANAGEMENT_NAV)}</div>
-          </div>
-        )}
-
-        <div>
-          <div className="px-3 mb-1.5 text-xs font-semibold text-sidebar-foreground/40 tracking-wider uppercase">Support</div>
-          <div className="space-y-0.5">{renderNavItems(SUPPORT_NAV)}</div>
-        </div>
+        ))}
       </div>
 
+      {/* User footer */}
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3">
           <Avatar className="h-9 w-9 border border-sidebar-border shrink-0">

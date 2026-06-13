@@ -6,6 +6,7 @@ import { useEffect } from "react";
 export function useAuth() {
   const { data: user, error, isLoading } = useGetMe({
     query: {
+      queryKey: getGetMeQueryKey(),
       retry: false,
     }
   });

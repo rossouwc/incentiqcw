@@ -1,0 +1,135 @@
+import { useListApprovals, useActionApproval } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { BadgeCheck, XCircle, Clock, DollarSign, TrendingUp } from "lucide-react";
+import { useState } from "react";
+
+export default function FinalApprovals() {
+  const { data: approvals, isLoading, refetch } = useListApprovals({ type: "EXECUTIVE", status: "PENDING" });
+  const actionApproval = useActionApproval();
+  const list = Array.isArray(approvals) ? approvals : (approvals as any)?.data ?? [];
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  const handleAction = async (id: string, action: "APPROVE" | "REJECT") => {
+    setProcessing(id);
+    try {
+      await actionApproval.mutateAsync({ approvalId: id, data: { action, notes: "" } });
+      refetch();
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const totalComm = list.reduce((s: number, a: any) => s + (a.commissionAmount ?? a.deal?.commission ?? 0), 0);
+  const totalGp   = list.reduce((s: number, a: any) => s + (a.deal?.grossProfit ?? a.grossProfit ?? 0), 0);
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+      <div>
+        <h1 className="text-3xl font-bold text-foreground">Final Approvals</h1>
+        <p className="text-muted-foreground">Finance-approved deals requiring your executive sign-off</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="border-l-4 border-l-amber-400 shadow-sm">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Awaiting Sign-off</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-12" /> : <div className="text-2xl font-bold">{list.length}</div>}</CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-primary shadow-sm">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Commission to Approve</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold">{formatCurrency(totalComm)}</div>}</CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-blue-400 shadow-sm">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total GP</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold">{formatCurrency(totalGp)}</div>}</CardContent>
+        </Card>
+      </div>
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Deals Requiring Executive Approval</CardTitle>
+              <CardDescription>Finance-validated and approved. Final step before wallet credit.</CardDescription>
+            </div>
+            {list.length > 0 && (
+              <Button className="gap-2 bg-green-600 hover:bg-green-700">
+                <BadgeCheck className="h-4 w-4" /> Approve All
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-6 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="px-6 py-4 font-medium">Deal</th>
+                    <th className="px-6 py-4 font-medium">Sales Rep</th>
+                    <th className="px-6 py-4 font-medium">Type</th>
+                    <th className="px-6 py-4 font-medium text-right">GP</th>
+                    <th className="px-6 py-4 font-medium text-right">Commission</th>
+                    <th className="px-6 py-4 font-medium">Submitted</th>
+                    <th className="px-6 py-4 font-medium">Status</th>
+                    <th className="px-6 py-4 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                        <BadgeCheck className="h-8 w-8 mx-auto mb-2 text-green-500 opacity-60" />
+                        No deals awaiting executive approval
+                      </td>
+                    </tr>
+                  ) : list.map((a: any) => {
+                    const deal = a.deal ?? a;
+                    return (
+                      <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-foreground">{deal.dealName ?? a.dealName}</div>
+                          <div className="text-xs text-muted-foreground">{deal.customerName}</div>
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground">{a.userName ?? deal.userName}</td>
+                        <td className="px-6 py-4 text-muted-foreground">{(deal.dealType ?? a.dealType)?.replace(/_/g, " ")}</td>
+                        <td className="px-6 py-4 text-right">{formatCurrency(deal.grossProfit ?? a.grossProfit ?? 0)}</td>
+                        <td className="px-6 py-4 text-right font-semibold text-primary">{formatCurrency(a.commissionAmount ?? deal.commission ?? 0)}</td>
+                        <td className="px-6 py-4 text-muted-foreground">{formatDate(a.createdAt)}</td>
+                        <td className="px-6 py-4"><StatusBadge status={a.status ?? "FINANCE_APPROVED"} /></td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button size="sm" className="h-8 gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleAction(a.id, "APPROVE")} disabled={processing === a.id}>
+                              <BadgeCheck className="h-3.5 w-3.5" /> Sign Off
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 gap-1 text-red-700 border-red-300 hover:bg-red-50" onClick={() => handleAction(a.id, "REJECT")} disabled={processing === a.id}>
+                              <XCircle className="h-3.5 w-3.5" /> Reject
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

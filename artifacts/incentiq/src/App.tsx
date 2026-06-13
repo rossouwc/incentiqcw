@@ -6,14 +6,42 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/layout/Layout";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
+import NotFound from "@/pages/not-found";
+
 import Dashboard from "@/pages/dashboard";
 import Deals from "@/pages/deals";
 import Wallet from "@/pages/wallet";
-import NotFound from "@/pages/not-found";
+
+import PlatformDashboard from "@/pages/platform-dashboard";
+import Tenants from "@/pages/tenants";
+import SubscriptionPlans from "@/pages/subscription-plans";
+import PlatformUsers from "@/pages/platform-users";
+import AuditLogs from "@/pages/audit-logs";
+
+import Users from "@/pages/users";
+import CommissionRules from "@/pages/commission-rules";
+import ApprovalWorkflow from "@/pages/approval-workflow";
+import CompanySettings from "@/pages/company-settings";
+import Reports from "@/pages/reports";
+
+import Payouts from "@/pages/payouts";
+import TaxProfile from "@/pages/tax-profile";
+
+import TeamDeals from "@/pages/team-deals";
+import Approvals from "@/pages/approvals";
+
+import CommissionValidation from "@/pages/commission-validation";
+import FinanceApprovals from "@/pages/finance-approvals";
+import PayrollExport from "@/pages/payroll-export";
+
+import FinalApprovals from "@/pages/final-approvals";
+
+import ApprovedPayouts from "@/pages/approved-payouts";
+import PayoutHistory from "@/pages/payout-history";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ component: Component }: { component: any }) {
+function P({ component: Component }: { component: React.ComponentType }) {
   return (
     <Layout>
       <Component />
@@ -21,80 +49,52 @@ function ProtectedRoute({ component: Component }: { component: any }) {
   );
 }
 
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full">
-      <h1 className="text-2xl font-bold">{title}</h1>
-      <p className="text-muted-foreground mt-2">This page is under construction.</p>
-    </div>
-  );
-}
-
 function Router() {
   return (
     <Switch>
+      {/* Public */}
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
-      
-      <Route path="/">
-        <Redirect to="/dashboard" />
-      </Route>
+      <Route path="/"><Redirect to="/dashboard" /></Route>
 
-      <Route path="/dashboard">
-        <ProtectedRoute component={Dashboard} />
-      </Route>
+      {/* Shared / role-aware */}
+      <Route path="/dashboard"><P component={Dashboard} /></Route>
+      <Route path="/deals"><P component={Deals} /></Route>
+      <Route path="/wallet"><P component={Wallet} /></Route>
+      <Route path="/payouts"><P component={Payouts} /></Route>
+      <Route path="/reports"><P component={Reports} /></Route>
 
-      <Route path="/deals">
-        <ProtectedRoute component={Deals} />
-      </Route>
+      {/* Super Admin */}
+      <Route path="/platform-dashboard"><P component={PlatformDashboard} /></Route>
+      <Route path="/tenants"><P component={Tenants} /></Route>
+      <Route path="/subscription-plans"><P component={SubscriptionPlans} /></Route>
+      <Route path="/platform-users"><P component={PlatformUsers} /></Route>
+      <Route path="/audit-logs"><P component={AuditLogs} /></Route>
 
-      <Route path="/wallet">
-        <ProtectedRoute component={Wallet} />
-      </Route>
+      {/* Company Admin */}
+      <Route path="/users"><P component={Users} /></Route>
+      <Route path="/commission-rules"><P component={CommissionRules} /></Route>
+      <Route path="/approval-workflow"><P component={ApprovalWorkflow} /></Route>
+      <Route path="/company-settings"><P component={CompanySettings} /></Route>
 
-      <Route path="/payouts">
-        <ProtectedRoute component={() => <PlaceholderPage title="Payout Requests" />} />
-      </Route>
+      {/* Sales Executive */}
+      <Route path="/tax-profile"><P component={TaxProfile} /></Route>
 
-      <Route path="/approvals/pending">
-        <ProtectedRoute component={() => <PlaceholderPage title="Pending Approvals" />} />
-      </Route>
+      {/* Manager */}
+      <Route path="/team-deals"><P component={TeamDeals} /></Route>
+      <Route path="/approvals"><P component={Approvals} /></Route>
 
-      <Route path="/approvals/team-deals">
-        <ProtectedRoute component={() => <PlaceholderPage title="Team Deals" />} />
-      </Route>
+      {/* Finance */}
+      <Route path="/commission-validation"><P component={CommissionValidation} /></Route>
+      <Route path="/finance-approvals"><P component={FinanceApprovals} /></Route>
+      <Route path="/payroll-export"><P component={PayrollExport} /></Route>
 
-      <Route path="/approvals/history">
-        <ProtectedRoute component={() => <PlaceholderPage title="Approval History" />} />
-      </Route>
+      {/* Executive */}
+      <Route path="/final-approvals"><P component={FinalApprovals} /></Route>
 
-      <Route path="/commission-rules">
-        <ProtectedRoute component={() => <PlaceholderPage title="Commission Rules" />} />
-      </Route>
-
-      <Route path="/users">
-        <ProtectedRoute component={() => <PlaceholderPage title="Users" />} />
-      </Route>
-
-      <Route path="/reports">
-        <ProtectedRoute component={() => <PlaceholderPage title="Reports" />} />
-      </Route>
-
-      <Route path="/notifications">
-        <ProtectedRoute component={() => <PlaceholderPage title="Notifications" />} />
-      </Route>
-
-      <Route path="/audit-logs">
-        <ProtectedRoute component={() => <PlaceholderPage title="Audit Logs" />} />
-      </Route>
-
-      <Route path="/company-settings">
-        <ProtectedRoute component={() => <PlaceholderPage title="Company Settings" />} />
-      </Route>
-
-      <Route path="/tax-profile">
-        <ProtectedRoute component={() => <PlaceholderPage title="Tax Profile" />} />
-      </Route>
+      {/* Payroll */}
+      <Route path="/approved-payouts"><P component={ApprovedPayouts} /></Route>
+      <Route path="/payout-history"><P component={PayoutHistory} /></Route>
 
       <Route component={NotFound} />
     </Switch>

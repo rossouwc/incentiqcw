@@ -86,21 +86,21 @@ export default function Wallet() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <div className={`p-1.5 rounded-full ${
-                            tx.transactionType === 'CREDIT' ? 'bg-green-100 text-green-600' :
-                            tx.transactionType === 'DEBIT' ? 'bg-red-100 text-red-600' :
-                            tx.transactionType === 'PAYOUT' ? 'bg-blue-100 text-blue-600' :
+                            tx.type === 'CREDIT' ? 'bg-green-100 text-green-600' :
+                            tx.type === 'DEBIT' ? 'bg-red-100 text-red-600' :
+                            tx.type === 'PAYOUT' ? 'bg-blue-100 text-blue-600' :
                             'bg-gray-100 text-gray-600'
                           }`}>
-                            {tx.transactionType === 'CREDIT' ? <ArrowDownRight className="w-4 h-4" /> :
-                             tx.transactionType === 'DEBIT' || tx.transactionType === 'PAYOUT' ? <ArrowUpRight className="w-4 h-4" /> :
+                            {tx.type === 'CREDIT' ? <ArrowDownRight className="w-4 h-4" /> :
+                             tx.type === 'DEBIT' || tx.type === 'PAYOUT' ? <ArrowUpRight className="w-4 h-4" /> :
                              <ArrowRightLeft className="w-4 h-4" />}
                           </div>
-                          <span className="font-medium text-foreground">{tx.transactionType}</span>
+                          <span className="font-medium text-foreground">{tx.type}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">{tx.description}</td>
-                      <td className={`px-6 py-4 text-right font-medium ${tx.transactionType === 'CREDIT' ? 'text-green-600' : 'text-foreground'}`}>
-                        {tx.transactionType === 'CREDIT' ? '+' : '-'}{formatCurrency(tx.amount)}
+                      <td className={`px-6 py-4 text-right font-medium ${tx.type === 'CREDIT' ? 'text-green-600' : 'text-foreground'}`}>
+                        {tx.type === 'CREDIT' ? '+' : '-'}{formatCurrency(tx.amount)}
                       </td>
                       <td className="px-6 py-4 text-right text-muted-foreground">{formatDateTime(tx.createdAt)}</td>
                     </tr>
