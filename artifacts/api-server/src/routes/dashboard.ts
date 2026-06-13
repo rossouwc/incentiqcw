@@ -11,10 +11,11 @@ router.get("/summary", requireAuth, async (req: Request, res: Response) => {
   const tenantId = req.user!.tenantId;
   try {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, lastName: true } });
-    let wallet = await prisma.wallet.findUnique({ where: { userId } });
-    if (!wallet) {
-      wallet = await prisma.wallet.create({ data: { tenantId, userId } });
-    }
+    const wallet = await prisma.wallet.upsert({
+      where: { userId },
+      update: {},
+      create: { tenantId, userId },
+    });
     const ytdStart = new Date(new Date().getFullYear(), 0, 1);
     const paidYtd = await prisma.walletTransaction.aggregate({
       where: { walletId: wallet.id, transactionType: "PAYOUT", createdAt: { gte: ytdStart } },
@@ -99,10 +100,11 @@ router.get("/payout-summary", requireAuth, async (req: Request, res: Response) =
   const userId = req.user!.userId;
   const TAX_RATE = 0.25;
   try {
-    let wallet = await prisma.wallet.findUnique({ where: { userId } });
-    if (!wallet) {
-      wallet = await prisma.wallet.create({ data: { tenantId: req.user!.tenantId, userId } });
-    }
+    const wallet = await prisma.wallet.upsert({
+      where: { userId },
+      update: {},
+      create: { tenantId: req.user!.tenantId, userId },
+    });
     const available = wallet.availableBalance;
     const estimatedTax = Math.round(available * TAX_RATE * 100) / 100;
     const estimatedNetPayout = available - estimatedTax;

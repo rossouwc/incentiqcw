@@ -35,7 +35,9 @@ export default function Login() {
     loginMutation.mutate({ data: values }, {
       onSuccess: (res) => {
         localStorage.setItem("incentiq_token", res.token);
-        queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        // Remove cached me query entirely so Layout sees isLoading=true
+        // (not null data) while the fresh /me fetch completes.
+        queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
         toast({ title: "Logged in successfully" });
         setLocation("/dashboard");
       },
