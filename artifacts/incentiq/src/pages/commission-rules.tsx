@@ -47,8 +47,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Plus, Search, Users, Pencil, Trash2, Power, PowerOff,
-  Layers, CheckCircle2, Globe, X, Sliders,
+  Layers, CheckCircle2, Globe, X, Sliders, CalendarIcon,
 } from "lucide-react";
+import { format, parseISO, isValid } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -71,6 +74,82 @@ function formatGP(v: number | null | undefined) {
 }
 function formatDate(s: string) {
   return new Date(s).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// ─── date picker ─────────────────────────────────────────────────────────────
+
+function DatePickerField({
+  value,
+  onChange,
+  placeholder = "Pick a date",
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const parsed = value && isValid(parseISO(value)) ? parseISO(value) : undefined;
+  const display = parsed ? format(parsed, "d MMM yyyy") : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={[
+            "flex h-8 w-full items-center gap-1.5 rounded-md border px-2.5 text-xs",
+            "bg-slate-900/50 border-slate-700 hover:border-slate-500",
+            "transition-colors focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40",
+            display ? "text-slate-200" : "text-slate-500",
+          ].join(" ")}
+        >
+          <CalendarIcon className="h-3 w-3 shrink-0 text-slate-500" />
+          <span className="truncate">{display ?? placeholder}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-auto p-0 bg-slate-900 border-slate-700 shadow-xl"
+        align="start"
+        sideOffset={6}
+      >
+        <Calendar
+          mode="single"
+          selected={parsed}
+          onSelect={(date) => {
+            if (date) {
+              onChange(format(date, "yyyy-MM-dd"));
+              setOpen(false);
+            }
+          }}
+          defaultMonth={parsed ?? new Date()}
+          className="[--cell-size:2rem] text-slate-100"
+          classNames={{
+            root: "bg-slate-900",
+            month_caption: "text-slate-200",
+            caption_label: "text-slate-200 font-medium",
+            weekday: "text-slate-500",
+            day: "hover:bg-slate-700/50 rounded",
+            today: "bg-slate-700/60 text-slate-100 rounded",
+            outside: "text-slate-600 opacity-50",
+            button_previous: "text-slate-400 hover:text-slate-100 hover:bg-slate-700/50",
+            button_next: "text-slate-400 hover:text-slate-100 hover:bg-slate-700/50",
+          }}
+        />
+        {value && (
+          <div className="border-t border-slate-700 px-3 py-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => { onChange(""); setOpen(false); }}
+              className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -197,19 +276,17 @@ function RulesEditor({
           </div>
 
           {/* Eff. From */}
-          <Input
-            type="date"
+          <DatePickerField
             value={row.effectiveFrom}
-            onChange={e => updateRow(row._key, { effectiveFrom: e.target.value })}
-            className="h-8 text-xs bg-slate-900/50 border-slate-700"
+            onChange={v => updateRow(row._key, { effectiveFrom: v })}
+            placeholder="From"
           />
 
           {/* Eff. To */}
-          <Input
-            type="date"
+          <DatePickerField
             value={row.effectiveTo}
-            onChange={e => updateRow(row._key, { effectiveTo: e.target.value })}
-            className="h-8 text-xs bg-slate-900/50 border-slate-700"
+            onChange={v => updateRow(row._key, { effectiveTo: v })}
+            placeholder="To (optional)"
           />
 
           {/* Remove */}
