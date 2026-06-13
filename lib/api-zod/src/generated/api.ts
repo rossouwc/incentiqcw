@@ -500,6 +500,118 @@ export const DeleteCommissionRuleResponse = zod.object({
 
 
 /**
+ * @summary List commission rule groups
+ */
+export const ListCommissionRuleGroupsResponseItem = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "groupName": zod.string(),
+  "description": zod.string().nullish(),
+  "assignToAll": zod.boolean(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']),
+  "rules": zod.array(zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "ruleName": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "appliesToRole": zod.string().optional(),
+  "minGrossProfit": zod.number().nullish(),
+  "maxGrossProfit": zod.number().nullish(),
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().nullish(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "members": zod.array(zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "role": zod.string()
+})),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListCommissionRuleGroupsResponse = zod.array(ListCommissionRuleGroupsResponseItem)
+
+
+/**
+ * @summary Create a commission rule group
+ */
+export const CreateCommissionRuleGroupBody = zod.object({
+  "groupName": zod.string(),
+  "description": zod.string().optional(),
+  "assignToAll": zod.boolean().optional(),
+  "ruleIds": zod.array(zod.string()).optional(),
+  "memberUserIds": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Update a commission rule group
+ */
+export const UpdateCommissionRuleGroupParams = zod.object({
+  "groupId": zod.coerce.string()
+})
+
+export const UpdateCommissionRuleGroupBody = zod.object({
+  "groupName": zod.string().optional(),
+  "description": zod.string().nullish(),
+  "assignToAll": zod.boolean().optional(),
+  "ruleIds": zod.array(zod.string()).optional(),
+  "memberUserIds": zod.array(zod.string()).optional(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']).optional()
+})
+
+export const UpdateCommissionRuleGroupResponse = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "groupName": zod.string(),
+  "description": zod.string().nullish(),
+  "assignToAll": zod.boolean(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']),
+  "rules": zod.array(zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string(),
+  "ruleName": zod.string(),
+  "dealType": zod.enum(['NET_NEW', 'RENEWAL', 'UPSELL', 'CROSS_SELL']),
+  "commissionPercentage": zod.number(),
+  "appliesToRole": zod.string().optional(),
+  "minGrossProfit": zod.number().nullish(),
+  "maxGrossProfit": zod.number().nullish(),
+  "effectiveFrom": zod.string(),
+  "effectiveTo": zod.string().nullish(),
+  "status": zod.enum(['ACTIVE', 'INACTIVE']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "members": zod.array(zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "role": zod.string()
+})),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a commission rule group
+ */
+export const DeleteCommissionRuleGroupParams = zod.object({
+  "groupId": zod.coerce.string()
+})
+
+export const DeleteCommissionRuleGroupResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
  * @summary List pending approvals
  */
 export const ListApprovalsQueryParams = zod.object({

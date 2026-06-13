@@ -544,6 +544,81 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
 
+  # ─── COMMISSION RULE GROUPS ──────────────────────────
+  /commission-rule-groups:
+    get:
+      operationId: listCommissionRuleGroups
+      tags: [commission-rule-groups]
+      summary: List commission rule groups
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommissionRuleGroup"
+    post:
+      operationId: createCommissionRuleGroup
+      tags: [commission-rule-groups]
+      summary: Create a commission rule group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommissionRuleGroupInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionRuleGroup"
+
+  /commission-rule-groups/{groupId}:
+    patch:
+      operationId: updateCommissionRuleGroup
+      tags: [commission-rule-groups]
+      summary: Update a commission rule group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommissionRuleGroupUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionRuleGroup"
+    delete:
+      operationId: deleteCommissionRuleGroup
+      tags: [commission-rule-groups]
+      summary: Delete a commission rule group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
   # ─── APPROVALS ───────────────────────────────────────
   /approvals:
     get:
@@ -1051,6 +1126,93 @@ components:
           type: string
         notes:
           type: string
+
+    # ─── COMMISSION RULE GROUP ────────────────────────────
+
+    CommissionRuleGroupMember:
+      type: object
+      required: [id, firstName, lastName, email, role]
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    CommissionRuleGroup:
+      type: object
+      required: [id, tenantId, groupName, assignToAll, status, rules, members, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        groupName:
+          type: string
+        description:
+          type: ["string", "null"]
+        assignToAll:
+          type: boolean
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommissionRule"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommissionRuleGroupMember"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    CommissionRuleGroupInput:
+      type: object
+      required: [groupName]
+      properties:
+        groupName:
+          type: string
+        description:
+          type: string
+        assignToAll:
+          type: boolean
+        ruleIds:
+          type: array
+          items:
+            type: string
+        memberUserIds:
+          type: array
+          items:
+            type: string
+
+    CommissionRuleGroupUpdate:
+      type: object
+      properties:
+        groupName:
+          type: string
+        description:
+          type: ["string", "null"]
+        assignToAll:
+          type: boolean
+        ruleIds:
+          type: array
+          items:
+            type: string
+        memberUserIds:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
 
     # ─── COMMISSION RULE ──────────────────────────────────
     CommissionRule:

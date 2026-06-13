@@ -410,6 +410,81 @@ async function main() {
   }
   console.log("✅ Notifications created");
 
+  // ─── Commission Rule Groups: TechSales ZA ──────────────────────────────────
+  const groupsData = [
+    {
+      id: "group-001",
+      groupName: "Enterprise Team",
+      description: "High-value deal rules for enterprise sales executives",
+      assignToAll: false,
+      ruleIds: ["rule-002", "rule-003", "rule-004"],
+      memberUserIds: ["user-exec-001", "user-exec-002"],
+    },
+    {
+      id: "group-002",
+      groupName: "SMB Team",
+      description: "Standard commission rules for SMB-focused sales reps",
+      assignToAll: false,
+      ruleIds: ["rule-001", "rule-003", "rule-005"],
+      memberUserIds: ["user-exec-003"],
+    },
+    {
+      id: "group-003",
+      groupName: "Default (All Executives)",
+      description: "Baseline rules that apply to all sales executives",
+      assignToAll: true,
+      ruleIds: ["rule-001", "rule-003"],
+      memberUserIds: [],
+    },
+  ];
+  for (const g of groupsData) {
+    const existing = await prisma.commissionRuleGroup.findUnique({ where: { id: g.id } });
+    if (!existing) {
+      await prisma.commissionRuleGroup.create({
+        data: {
+          id: g.id,
+          tenantId: tenant.id,
+          groupName: g.groupName,
+          description: g.description,
+          assignToAll: g.assignToAll,
+          status: "ACTIVE",
+          rules: { create: g.ruleIds.map(ruleId => ({ ruleId })) },
+          members: { create: g.memberUserIds.map(userId => ({ userId })) },
+        },
+      });
+    }
+  }
+
+  // ─── Commission Rule Groups: Demo Corp ──────────────────────────────────────
+  const demoGroupsData = [
+    {
+      id: "demo-group-001",
+      groupName: "Standard (All Reps)",
+      description: "Default commission structure for all sales executives",
+      assignToAll: true,
+      ruleIds: ["demo-rule-001", "demo-rule-002"],
+      memberUserIds: [],
+    },
+  ];
+  for (const g of demoGroupsData) {
+    const existing = await prisma.commissionRuleGroup.findUnique({ where: { id: g.id } });
+    if (!existing) {
+      await prisma.commissionRuleGroup.create({
+        data: {
+          id: g.id,
+          tenantId: demoTenant.id,
+          groupName: g.groupName,
+          description: g.description,
+          assignToAll: g.assignToAll,
+          status: "ACTIVE",
+          rules: { create: g.ruleIds.map(ruleId => ({ ruleId })) },
+          members: { create: g.memberUserIds.map(userId => ({ userId })) },
+        },
+      });
+    }
+  }
+  console.log("✅ Commission rule groups created");
+
   // ─── Audit Logs ─────────────────────────────────────────────────────────────
   await prisma.auditLog.createMany({ data: [
     { tenantId: tenant.id,     userId: "user-admin-001",   action: "CREATE",  entityType: "Tenant", entityId: tenant.id,     newValue: JSON.stringify({ companyName: tenant.companyName }) },

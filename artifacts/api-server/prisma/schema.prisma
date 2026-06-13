@@ -105,16 +105,17 @@ model Tenant {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
-  users              User[]
-  commissionRules    CommissionRule[]
-  deals              Deal[]
-  approvalWorkflows  ApprovalWorkflow[]
-  wallets            Wallet[]
-  walletTransactions WalletTransaction[]
-  payoutRequests     PayoutRequest[]
-  taxProfiles        TaxProfile[]
-  auditLogs          AuditLog[]
-  notifications      Notification[]
+  users                User[]
+  commissionRules      CommissionRule[]
+  commissionRuleGroups CommissionRuleGroup[]
+  deals                Deal[]
+  approvalWorkflows    ApprovalWorkflow[]
+  wallets              Wallet[]
+  walletTransactions   WalletTransaction[]
+  payoutRequests       PayoutRequest[]
+  taxProfiles          TaxProfile[]
+  auditLogs            AuditLog[]
+  notifications        Notification[]
 }
 
 model User {
@@ -138,6 +139,7 @@ model User {
   taxProfile           TaxProfile?
   auditLogs            AuditLog[]
   notifications        Notification[]
+  commissionGroups     CommissionRuleGroupMember[]
 
   @@unique([tenantId, email])
 }
@@ -157,7 +159,43 @@ model CommissionRule {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  groups CommissionRuleGroupRule[]
+}
+
+model CommissionRuleGroup {
+  id          String   @id @default(cuid())
+  tenantId    String
+  groupName   String
+  description String?
+  assignToAll Boolean  @default(false)
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant  Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rules   CommissionRuleGroupRule[]
+  members CommissionRuleGroupMember[]
+}
+
+model CommissionRuleGroupRule {
+  groupId String
+  ruleId  String
+
+  group CommissionRuleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  rule  CommissionRule      @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, ruleId])
+}
+
+model CommissionRuleGroupMember {
+  groupId String
+  userId  String
+
+  group CommissionRuleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
 }
 
 model Deal {

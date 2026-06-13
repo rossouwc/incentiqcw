@@ -222,6 +222,22 @@ export interface PayoutStatusUpdate {
   notes?: string;
 }
 
+export interface CommissionRuleGroupMember {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+}
+
+export type CommissionRuleGroupStatus = typeof CommissionRuleGroupStatus[keyof typeof CommissionRuleGroupStatus];
+
+
+export const CommissionRuleGroupStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
 export type CommissionRuleDealType = typeof CommissionRuleDealType[keyof typeof CommissionRuleDealType];
 
 
@@ -257,6 +273,46 @@ export interface CommissionRule {
   status: CommissionRuleStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CommissionRuleGroup {
+  id: string;
+  tenantId: string;
+  groupName: string;
+  /** @nullable */
+  description?: string | null;
+  assignToAll: boolean;
+  status: CommissionRuleGroupStatus;
+  rules: CommissionRule[];
+  members: CommissionRuleGroupMember[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommissionRuleGroupInput {
+  groupName: string;
+  description?: string;
+  assignToAll?: boolean;
+  ruleIds?: string[];
+  memberUserIds?: string[];
+}
+
+export type CommissionRuleGroupUpdateStatus = typeof CommissionRuleGroupUpdateStatus[keyof typeof CommissionRuleGroupUpdateStatus];
+
+
+export const CommissionRuleGroupUpdateStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
+export interface CommissionRuleGroupUpdate {
+  groupName?: string;
+  /** @nullable */
+  description?: string | null;
+  assignToAll?: boolean;
+  ruleIds?: string[];
+  memberUserIds?: string[];
+  status?: CommissionRuleGroupUpdateStatus;
 }
 
 export type CommissionRuleInputDealType = typeof CommissionRuleInputDealType[keyof typeof CommissionRuleInputDealType];

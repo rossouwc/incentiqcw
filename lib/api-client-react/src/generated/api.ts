@@ -27,6 +27,9 @@ import type {
   AuthResponse,
   CommissionByType,
   CommissionRule,
+  CommissionRuleGroup,
+  CommissionRuleGroupInput,
+  CommissionRuleGroupUpdate,
   CommissionRuleInput,
   CommissionRuleUpdate,
   DashboardSummary,
@@ -2089,6 +2092,296 @@ export const useDeleteCommissionRule = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteCommissionRuleMutationOptions(options));
+    }
+
+export const getListCommissionRuleGroupsUrl = () => {
+
+
+
+
+  return `/api/commission-rule-groups`
+}
+
+/**
+ * @summary List commission rule groups
+ */
+export const listCommissionRuleGroups = async ( options?: RequestInit): Promise<CommissionRuleGroup[]> => {
+
+  return customFetch<CommissionRuleGroup[]>(getListCommissionRuleGroupsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCommissionRuleGroupsQueryKey = () => {
+    return [
+    `/api/commission-rule-groups`
+    ] as const;
+    }
+
+
+export const getListCommissionRuleGroupsQueryOptions = <TData = Awaited<ReturnType<typeof listCommissionRuleGroups>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCommissionRuleGroups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCommissionRuleGroupsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCommissionRuleGroups>>> = ({ signal }) => listCommissionRuleGroups({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCommissionRuleGroups>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCommissionRuleGroupsQueryResult = NonNullable<Awaited<ReturnType<typeof listCommissionRuleGroups>>>
+export type ListCommissionRuleGroupsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List commission rule groups
+ */
+
+export function useListCommissionRuleGroups<TData = Awaited<ReturnType<typeof listCommissionRuleGroups>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCommissionRuleGroups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCommissionRuleGroupsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateCommissionRuleGroupUrl = () => {
+
+
+
+
+  return `/api/commission-rule-groups`
+}
+
+/**
+ * @summary Create a commission rule group
+ */
+export const createCommissionRuleGroup = async (commissionRuleGroupInput: CommissionRuleGroupInput, options?: RequestInit): Promise<CommissionRuleGroup> => {
+
+  return customFetch<CommissionRuleGroup>(getCreateCommissionRuleGroupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      commissionRuleGroupInput,)
+  }
+);}
+
+
+
+
+export const getCreateCommissionRuleGroupMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCommissionRuleGroup>>, TError,{data: BodyType<CommissionRuleGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCommissionRuleGroup>>, TError,{data: BodyType<CommissionRuleGroupInput>}, TContext> => {
+
+const mutationKey = ['createCommissionRuleGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCommissionRuleGroup>>, {data: BodyType<CommissionRuleGroupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCommissionRuleGroup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCommissionRuleGroupMutationResult = NonNullable<Awaited<ReturnType<typeof createCommissionRuleGroup>>>
+    export type CreateCommissionRuleGroupMutationBody = BodyType<CommissionRuleGroupInput>
+    export type CreateCommissionRuleGroupMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a commission rule group
+ */
+export const useCreateCommissionRuleGroup = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCommissionRuleGroup>>, TError,{data: BodyType<CommissionRuleGroupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCommissionRuleGroup>>,
+        TError,
+        {data: BodyType<CommissionRuleGroupInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCommissionRuleGroupMutationOptions(options));
+    }
+
+export const getUpdateCommissionRuleGroupUrl = (groupId: string,) => {
+
+
+
+
+  return `/api/commission-rule-groups/${groupId}`
+}
+
+/**
+ * @summary Update a commission rule group
+ */
+export const updateCommissionRuleGroup = async (groupId: string,
+    commissionRuleGroupUpdate: CommissionRuleGroupUpdate, options?: RequestInit): Promise<CommissionRuleGroup> => {
+
+  return customFetch<CommissionRuleGroup>(getUpdateCommissionRuleGroupUrl(groupId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      commissionRuleGroupUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateCommissionRuleGroupMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCommissionRuleGroup>>, TError,{groupId: string;data: BodyType<CommissionRuleGroupUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCommissionRuleGroup>>, TError,{groupId: string;data: BodyType<CommissionRuleGroupUpdate>}, TContext> => {
+
+const mutationKey = ['updateCommissionRuleGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCommissionRuleGroup>>, {groupId: string;data: BodyType<CommissionRuleGroupUpdate>}> = (props) => {
+          const {groupId,data} = props ?? {};
+
+          return  updateCommissionRuleGroup(groupId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCommissionRuleGroupMutationResult = NonNullable<Awaited<ReturnType<typeof updateCommissionRuleGroup>>>
+    export type UpdateCommissionRuleGroupMutationBody = BodyType<CommissionRuleGroupUpdate>
+    export type UpdateCommissionRuleGroupMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a commission rule group
+ */
+export const useUpdateCommissionRuleGroup = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCommissionRuleGroup>>, TError,{groupId: string;data: BodyType<CommissionRuleGroupUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCommissionRuleGroup>>,
+        TError,
+        {groupId: string;data: BodyType<CommissionRuleGroupUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCommissionRuleGroupMutationOptions(options));
+    }
+
+export const getDeleteCommissionRuleGroupUrl = (groupId: string,) => {
+
+
+
+
+  return `/api/commission-rule-groups/${groupId}`
+}
+
+/**
+ * @summary Delete a commission rule group
+ */
+export const deleteCommissionRuleGroup = async (groupId: string, options?: RequestInit): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getDeleteCommissionRuleGroupUrl(groupId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCommissionRuleGroupMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCommissionRuleGroup>>, TError,{groupId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCommissionRuleGroup>>, TError,{groupId: string}, TContext> => {
+
+const mutationKey = ['deleteCommissionRuleGroup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCommissionRuleGroup>>, {groupId: string}> = (props) => {
+          const {groupId} = props ?? {};
+
+          return  deleteCommissionRuleGroup(groupId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCommissionRuleGroupMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCommissionRuleGroup>>>
+
+    export type DeleteCommissionRuleGroupMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a commission rule group
+ */
+export const useDeleteCommissionRuleGroup = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCommissionRuleGroup>>, TError,{groupId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCommissionRuleGroup>>,
+        TError,
+        {groupId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCommissionRuleGroupMutationOptions(options));
     }
 
 export const getListApprovalsUrl = (params?: ListApprovalsParams,) => {
