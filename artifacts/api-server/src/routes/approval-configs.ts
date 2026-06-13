@@ -87,7 +87,7 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
   const { stepName, approverRole, approverUserId, isActive, stepOrder } = req.body;
   try {
     const existing = await prisma.approvalConfig.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "Config not found" }); return; }
 
@@ -107,7 +107,7 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
     }
 
     const config = await prisma.approvalConfig.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         ...(stepName !== undefined && { stepName }),
         ...(approverRole !== undefined && { approverRole }),
@@ -128,10 +128,10 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
 router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   try {
     const existing = await prisma.approvalConfig.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "Config not found" }); return; }
-    await prisma.approvalConfig.delete({ where: { id: req.params.id } });
+    await prisma.approvalConfig.delete({ where: { id: req.params.id as string } });
     // Re-normalize stepOrder
     const remaining = await prisma.approvalConfig.findMany({
       where: { tenantId: req.user!.tenantId },

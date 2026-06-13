@@ -22,8 +22,8 @@ export default function PayrollDashboard() {
   const paidList    = paidPayouts    ?? [];
   const pendingList = pendingPayouts ?? [];
 
-  const totalReady  = readyList.reduce((s, p) => s + p.amount, 0);
-  const totalPaid   = paidList.reduce((s, p) => s + p.amount, 0);
+  const totalReady  = readyList.reduce((s, p) => s + p.requestedAmount, 0);
+  const totalPaid   = paidList.reduce((s, p) => s + p.requestedAmount, 0);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -130,10 +130,10 @@ export default function PayrollDashboard() {
                   <div key={p.id} className="flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors">
                     <div className="min-w-0">
                       <div className="font-medium text-sm text-foreground">{p.userName ?? p.userId.slice(0, 14)}</div>
-                      <div className="text-xs text-muted-foreground">Approved · {formatDate(p.createdAt)}</div>
+                      <div className="text-xs text-muted-foreground">Approved · {formatDate(p.requestedAt)}</div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 ml-4">
-                      <span className="font-semibold text-sm text-emerald-600">{formatCurrency(p.amount)}</span>
+                      <span className="font-semibold text-sm text-emerald-600">{formatCurrency(p.requestedAmount)}</span>
                       <StatusBadge status={p.status} />
                     </div>
                   </div>
@@ -168,10 +168,10 @@ export default function PayrollDashboard() {
                   <div key={p.id} className="flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors">
                     <div className="min-w-0">
                       <div className="font-medium text-sm text-foreground">{p.userName ?? p.userId.slice(0, 14)}</div>
-                      <div className="text-xs text-muted-foreground">{formatDate(p.createdAt)}</div>
+                      <div className="text-xs text-muted-foreground">{formatDate(p.requestedAt)}</div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 ml-4">
-                      <span className="font-semibold text-sm">{formatCurrency(p.amount)}</span>
+                      <span className="font-semibold text-sm">{formatCurrency(p.requestedAmount)}</span>
                       <StatusBadge status={p.status} />
                     </div>
                   </div>
@@ -191,9 +191,9 @@ export default function PayrollDashboard() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: "Pending",           count: pendingList.length, amount: pendingList.reduce((s,p) => s+p.amount,0),  color: "bg-amber-100 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-400" },
-              { label: "Finance Approved",  count: readyList.length,   amount: readyList.reduce((s,p) => s+p.amount,0),    color: "bg-blue-100 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-400"         },
-              { label: "Paid",              count: paidList.length,    amount: paidList.reduce((s,p) => s+p.amount,0),     color: "bg-green-100 dark:bg-green-950/30 border-green-200 dark:border-green-900 text-green-700 dark:text-green-400"    },
+              { label: "Pending",           count: pendingList.length, amount: pendingList.reduce((s,p) => s+p.requestedAmount,0),  color: "bg-amber-100 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-400" },
+              { label: "Finance Approved",  count: readyList.length,   amount: readyList.reduce((s,p) => s+p.requestedAmount,0),    color: "bg-blue-100 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-400"         },
+              { label: "Paid",              count: paidList.length,    amount: paidList.reduce((s,p) => s+p.requestedAmount,0),     color: "bg-green-100 dark:bg-green-950/30 border-green-200 dark:border-green-900 text-green-700 dark:text-green-400"    },
               { label: "Tasks Pending",     count: myTasks?.pendingApprovals ?? 0, amount: 0, color: "bg-muted/50 border-border text-foreground" },
             ].map(({ label, count, amount, color }) => (
               <div key={label} className={`p-4 rounded-xl border ${color}`}>

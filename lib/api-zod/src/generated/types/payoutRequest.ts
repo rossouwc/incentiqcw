@@ -9,13 +9,23 @@ import type { PayoutRequestStatus } from './payoutRequestStatus';
 
 export interface PayoutRequest {
   id: string;
+  tenantId?: string;
   userId: string;
   userName?: string;
-  amount: number;
+  requestedAmount: number;
+  estimatedTax: number;
+  estimatedNetPayout: number;
+  payoutMonth: string;
+  /** @nullable */
+  deferredToMonth?: string | null;
   status: PayoutRequestStatus;
   /** @nullable */
-  notes?: string | null;
+  comments?: string | null;
   /** @nullable */
-  reviewedBy?: string | null;
-  createdAt: string;
+  reviewerComments?: string | null;
+  requestedAt: string;
+  /** @nullable */
+  approvedAt?: string | null;
+  /** @nullable */
+  paidAt?: string | null;
 }

@@ -315,7 +315,10 @@ model PayoutRequest {
   estimatedTax        Float        @default(0)
   estimatedNetPayout  Float        @default(0)
   payoutMonth         String
+  deferredToMonth     String?
   status              PayoutStatus @default(PENDING)
+  comments            String?
+  reviewerComments    String?
   requestedAt         DateTime     @default(now())
   approvedAt          DateTime?
   paidAt              DateTime?

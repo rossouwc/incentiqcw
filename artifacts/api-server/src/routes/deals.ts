@@ -94,7 +94,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
 router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const deal = await prisma.deal.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
       include: {
         salesExecutive: { select: { firstName: true, lastName: true } },
         approvalWorkflows: {
@@ -179,7 +179,7 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
     req.body;
   try {
     const existing = await prisma.deal.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
 
@@ -195,7 +195,7 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
     const comm = Math.round(gp * (pct / 100) * 100) / 100;
 
     const deal = await prisma.deal.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         ...(customerName !== undefined && { customerName }),
         ...(dealName     !== undefined && { dealName }),
@@ -238,7 +238,7 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
   try {
     const existing = await prisma.deal.findFirst({
       where: {
-        id: req.params.id,
+        id: req.params.id as string,
         tenantId: req.user!.tenantId,
         salesExecutiveId: req.user!.userId,
       },
@@ -277,7 +277,7 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       await tx.approvalWorkflow.createMany({ data: steps });
 
       const updatedDeal = await tx.deal.update({
-        where: { id: req.params.id },
+        where: { id: req.params.id as string },
         data: { status: "PENDING_APPROVAL", submittedAt: new Date(), submittedById: req.user!.userId },
         include: { salesExecutive: { select: { firstName: true, lastName: true } } },
       });
@@ -349,10 +349,10 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
 router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const existing = await prisma.deal.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "Deal not found" }); return; }
-    await prisma.deal.delete({ where: { id: req.params.id } });
+    await prisma.deal.delete({ where: { id: req.params.id as string } });
     await prisma.auditLog.create({
       data: {
         tenantId: req.user!.tenantId,

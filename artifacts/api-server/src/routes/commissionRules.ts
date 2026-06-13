@@ -70,7 +70,7 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
   const { ruleName, commissionPercentage, minGrossProfit, maxGrossProfit, effectiveTo, status } = req.body;
   try {
     const rule = await prisma.commissionRule.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         ...(ruleName && { ruleName }),
         ...(commissionPercentage != null && { commissionPercentage: parseFloat(commissionPercentage) }),
@@ -90,7 +90,7 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
 // DELETE /api/commission-rules/:id — ADMIN+ only
 router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   try {
-    await prisma.commissionRule.delete({ where: { id: req.params.id } });
+    await prisma.commissionRule.delete({ where: { id: req.params.id as string } });
     res.json({ message: "Rule deleted" });
   } catch (err) {
     logger.error({ err }, "DeleteRule error");

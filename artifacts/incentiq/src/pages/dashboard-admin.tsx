@@ -40,7 +40,7 @@ export default function AdminDashboard() {
   const approvedList    = approvedApprovals ?? [];
   const payoutList      = pendingPayouts ?? [];
   const totalPendingComm = report?.totalCommission ?? 0;
-  const totalPayoutReq  = payoutList.reduce((s, p) => s + p.amount, 0);
+  const totalPayoutReq  = payoutList.reduce((s, p) => s + p.requestedAmount, 0);
 
   const isLoading = loadingUsers || loadingDeals || loadingApprovals || loadingReport;
 

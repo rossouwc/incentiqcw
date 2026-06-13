@@ -78,8 +78,8 @@ router.post("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, 
 router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const where = isSuperAdmin(req)
-      ? { id: req.params.id }
-      : { id: req.params.id, tenantId: req.user!.tenantId };
+      ? { id: req.params.id as string }
+      : { id: req.params.id as string, tenantId: req.user!.tenantId };
     const user = await prisma.user.findFirst({ where });
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
     res.json(userToResponse(user));
@@ -94,11 +94,11 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
   const { firstName, lastName, role, status } = req.body;
   try {
     const existing = await prisma.user.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "User not found" }); return; }
     const user = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: {
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
@@ -117,10 +117,10 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
 router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   try {
     const existing = await prisma.user.findFirst({
-      where: { id: req.params.id, tenantId: req.user!.tenantId },
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "User not found" }); return; }
-    await prisma.user.delete({ where: { id: req.params.id } });
+    await prisma.user.delete({ where: { id: req.params.id as string } });
     res.json({ message: "User deleted" });
   } catch (err) {
     logger.error({ err }, "DeleteUser error");

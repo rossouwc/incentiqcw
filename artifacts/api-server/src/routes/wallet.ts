@@ -97,7 +97,7 @@ router.get("/transactions", requireAuth, async (req: Request, res: Response) => 
 router.get("/deals", requireAuth, async (req: Request, res: Response) => {
   try {
     const deals = await prisma.deal.findMany({
-      where: { userId: req.user!.userId, tenantId: req.user!.tenantId },
+      where: { salesExecutiveId: req.user!.userId, tenantId: req.user!.tenantId },
       orderBy: { createdAt: "desc" },
       take: 50,
     });

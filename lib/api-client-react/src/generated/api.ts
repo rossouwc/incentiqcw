@@ -41,6 +41,7 @@ import type {
   DealUpdate,
   DealsPage,
   DealsReport,
+  ExportPayoutsParams,
   GetDealsReportParams,
   HealthStatus,
   ListApprovalsParams,
@@ -53,6 +54,7 @@ import type {
   MessageResponse,
   MyTasks,
   Notification,
+  PayoutExportRow,
   PayoutInput,
   PayoutRequest,
   PayoutStatusUpdate,
@@ -2037,6 +2039,90 @@ export const useCreatePayout = <TError = ErrorType<unknown>,
       return useMutation(getCreatePayoutMutationOptions(options));
     }
 
+export const getExportPayoutsUrl = (params?: ExportPayoutsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/payouts/export?${stringifiedParams}` : `/api/payouts/export`
+}
+
+/**
+ * @summary Export approved payouts data
+ */
+export const exportPayouts = async (params?: ExportPayoutsParams, options?: RequestInit): Promise<PayoutExportRow[]> => {
+
+  return customFetch<PayoutExportRow[]>(getExportPayoutsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportPayoutsQueryKey = (params?: ExportPayoutsParams,) => {
+    return [
+    `/api/payouts/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportPayoutsQueryOptions = <TData = Awaited<ReturnType<typeof exportPayouts>>, TError = ErrorType<unknown>>(params?: ExportPayoutsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportPayoutsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportPayouts>>> = ({ signal }) => exportPayouts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportPayouts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportPayoutsQueryResult = NonNullable<Awaited<ReturnType<typeof exportPayouts>>>
+export type ExportPayoutsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Export approved payouts data
+ */
+
+export function useExportPayouts<TData = Awaited<ReturnType<typeof exportPayouts>>, TError = ErrorType<unknown>>(
+ params?: ExportPayoutsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPayouts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportPayoutsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getGetPayoutUrl = (payoutId: string,) => {
 
 
@@ -2123,7 +2209,7 @@ export const getUpdatePayoutStatusUrl = (payoutId: string,) => {
 }
 
 /**
- * @summary Update payout status (approve/reject)
+ * @summary Approve or reject a payout (Finance)
  */
 export const updatePayoutStatus = async (payoutId: string,
     payoutStatusUpdate: PayoutStatusUpdate, options?: RequestInit): Promise<PayoutRequest> => {
@@ -2173,7 +2259,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdatePayoutStatusMutationError = ErrorType<unknown>
 
     /**
- * @summary Update payout status (approve/reject)
+ * @summary Approve or reject a payout (Finance)
  */
 export const useUpdatePayoutStatus = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePayoutStatus>>, TError,{payoutId: string;data: BodyType<PayoutStatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -2184,6 +2270,76 @@ export const useUpdatePayoutStatus = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdatePayoutStatusMutationOptions(options));
+    }
+
+export const getMarkPayoutPaidUrl = (payoutId: string,) => {
+
+
+
+
+  return `/api/payouts/${payoutId}/mark-paid`
+}
+
+/**
+ * @summary Mark approved payout as paid (Payroll)
+ */
+export const markPayoutPaid = async (payoutId: string, options?: RequestInit): Promise<PayoutRequest> => {
+
+  return customFetch<PayoutRequest>(getMarkPayoutPaidUrl(payoutId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getMarkPayoutPaidMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markPayoutPaid>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markPayoutPaid>>, TError,{payoutId: string}, TContext> => {
+
+const mutationKey = ['markPayoutPaid'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markPayoutPaid>>, {payoutId: string}> = (props) => {
+          const {payoutId} = props ?? {};
+
+          return  markPayoutPaid(payoutId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkPayoutPaidMutationResult = NonNullable<Awaited<ReturnType<typeof markPayoutPaid>>>
+
+    export type MarkPayoutPaidMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark approved payout as paid (Payroll)
+ */
+export const useMarkPayoutPaid = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markPayoutPaid>>, TError,{payoutId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markPayoutPaid>>,
+        TError,
+        {payoutId: string},
+        TContext
+      > => {
+      return useMutation(getMarkPayoutPaidMutationOptions(options));
     }
 
 export const getListCommissionRulesUrl = () => {

@@ -518,13 +518,20 @@ export const ListPayoutsQueryParams = zod.object({
 
 export const ListPayoutsResponseItem = zod.object({
   "id": zod.string(),
+  "tenantId": zod.string().optional(),
   "userId": zod.string(),
   "userName": zod.string().optional(),
-  "amount": zod.number(),
-  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID']),
-  "notes": zod.string().nullish(),
-  "reviewedBy": zod.string().nullish(),
-  "createdAt": zod.string()
+  "requestedAmount": zod.number(),
+  "estimatedTax": zod.number(),
+  "estimatedNetPayout": zod.number(),
+  "payoutMonth": zod.string(),
+  "deferredToMonth": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID', 'DEFERRED']),
+  "comments": zod.string().nullish(),
+  "reviewerComments": zod.string().nullish(),
+  "requestedAt": zod.string(),
+  "approvedAt": zod.string().nullish(),
+  "paidAt": zod.string().nullish()
 })
 export const ListPayoutsResponse = zod.array(ListPayoutsResponseItem)
 
@@ -533,9 +540,31 @@ export const ListPayoutsResponse = zod.array(ListPayoutsResponseItem)
  * @summary Request a payout
  */
 export const CreatePayoutBody = zod.object({
-  "amount": zod.number(),
-  "notes": zod.string().optional()
+  "requestedAmount": zod.number(),
+  "payoutMonth": zod.string(),
+  "deferredToMonth": zod.string().optional(),
+  "comments": zod.string().optional()
 })
+
+
+/**
+ * @summary Export approved payouts data
+ */
+export const ExportPayoutsQueryParams = zod.object({
+  "month": zod.coerce.string().optional()
+})
+
+export const ExportPayoutsResponseItem = zod.object({
+  "id": zod.string(),
+  "employeeName": zod.string(),
+  "email": zod.string(),
+  "requestedAmount": zod.number(),
+  "estimatedTax": zod.number(),
+  "estimatedNetPayout": zod.number(),
+  "payoutMonth": zod.string(),
+  "approvedAt": zod.string().nullish()
+})
+export const ExportPayoutsResponse = zod.array(ExportPayoutsResponseItem)
 
 
 /**
@@ -547,37 +576,77 @@ export const GetPayoutParams = zod.object({
 
 export const GetPayoutResponse = zod.object({
   "id": zod.string(),
+  "tenantId": zod.string().optional(),
   "userId": zod.string(),
   "userName": zod.string().optional(),
-  "amount": zod.number(),
-  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID']),
-  "notes": zod.string().nullish(),
-  "reviewedBy": zod.string().nullish(),
-  "createdAt": zod.string()
+  "requestedAmount": zod.number(),
+  "estimatedTax": zod.number(),
+  "estimatedNetPayout": zod.number(),
+  "payoutMonth": zod.string(),
+  "deferredToMonth": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID', 'DEFERRED']),
+  "comments": zod.string().nullish(),
+  "reviewerComments": zod.string().nullish(),
+  "requestedAt": zod.string(),
+  "approvedAt": zod.string().nullish(),
+  "paidAt": zod.string().nullish()
 })
 
 
 /**
- * @summary Update payout status (approve/reject)
+ * @summary Approve or reject a payout (Finance)
  */
 export const UpdatePayoutStatusParams = zod.object({
   "payoutId": zod.coerce.string()
 })
 
 export const UpdatePayoutStatusBody = zod.object({
-  "status": zod.string(),
-  "notes": zod.string().optional()
+  "status": zod.enum(['FINANCE_APPROVED', 'REJECTED']),
+  "reviewerComments": zod.string().optional()
 })
 
 export const UpdatePayoutStatusResponse = zod.object({
   "id": zod.string(),
+  "tenantId": zod.string().optional(),
   "userId": zod.string(),
   "userName": zod.string().optional(),
-  "amount": zod.number(),
-  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID']),
-  "notes": zod.string().nullish(),
-  "reviewedBy": zod.string().nullish(),
-  "createdAt": zod.string()
+  "requestedAmount": zod.number(),
+  "estimatedTax": zod.number(),
+  "estimatedNetPayout": zod.number(),
+  "payoutMonth": zod.string(),
+  "deferredToMonth": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID', 'DEFERRED']),
+  "comments": zod.string().nullish(),
+  "reviewerComments": zod.string().nullish(),
+  "requestedAt": zod.string(),
+  "approvedAt": zod.string().nullish(),
+  "paidAt": zod.string().nullish()
+})
+
+
+/**
+ * @summary Mark approved payout as paid (Payroll)
+ */
+export const MarkPayoutPaidParams = zod.object({
+  "payoutId": zod.coerce.string()
+})
+
+export const MarkPayoutPaidResponse = zod.object({
+  "id": zod.string(),
+  "tenantId": zod.string().optional(),
+  "userId": zod.string(),
+  "userName": zod.string().optional(),
+  "requestedAmount": zod.number(),
+  "estimatedTax": zod.number(),
+  "estimatedNetPayout": zod.number(),
+  "payoutMonth": zod.string(),
+  "deferredToMonth": zod.string().nullish(),
+  "status": zod.enum(['PENDING', 'FINANCE_APPROVED', 'REJECTED', 'PAID', 'DEFERRED']),
+  "comments": zod.string().nullish(),
+  "reviewerComments": zod.string().nullish(),
+  "requestedAt": zod.string(),
+  "approvedAt": zod.string().nullish(),
+  "paidAt": zod.string().nullish()
 })
 
 

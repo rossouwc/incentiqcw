@@ -23,7 +23,7 @@ export default function FinanceDashboard() {
   const approvalList = pendingApprovals ?? [];
   const payoutList   = pendingPayouts   ?? [];
   const readyList    = readyPayouts     ?? [];
-  const totalPendingComm = payoutList.reduce((s, p) => s + p.amount, 0);
+  const totalPendingComm = payoutList.reduce((s, p) => s + p.requestedAmount, 0);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -90,7 +90,7 @@ export default function FinanceDashboard() {
             {loadingReady ? <Skeleton className="h-8 w-20" /> : (
               <>
                 <div className="text-2xl font-bold text-emerald-600">{readyList.length}</div>
-                <p className="text-xs text-muted-foreground mt-1">{formatCurrency(readyList.reduce((s, p) => s + p.amount, 0))} approved</p>
+                <p className="text-xs text-muted-foreground mt-1">{formatCurrency(readyList.reduce((s, p) => s + p.requestedAmount, 0))} approved</p>
               </>
             )}
           </CardContent>
@@ -200,10 +200,10 @@ export default function FinanceDashboard() {
                   <div key={p.id} className="flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors">
                     <div className="min-w-0">
                       <div className="font-medium text-sm text-foreground">{p.userName ?? p.userId.slice(0, 12)}</div>
-                      <div className="text-xs text-muted-foreground">{formatDate(p.createdAt)}</div>
+                      <div className="text-xs text-muted-foreground">{formatDate(p.requestedAt)}</div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 ml-4">
-                      <span className="font-semibold text-sm">{formatCurrency(p.amount)}</span>
+                      <span className="font-semibold text-sm">{formatCurrency(p.requestedAmount)}</span>
                       <StatusBadge status={p.status} />
                     </div>
                   </div>
@@ -233,7 +233,7 @@ export default function FinanceDashboard() {
                 <div className="text-sm text-emerald-600 dark:text-emerald-500 font-medium">Approved, ready to export</div>
               </div>
               <div className="flex flex-col gap-1 p-4 bg-muted/50 rounded-xl border border-border">
-                <div className="text-2xl font-bold">{formatCurrency(readyList.reduce((s, p) => s + p.amount, 0))}</div>
+                <div className="text-2xl font-bold">{formatCurrency(readyList.reduce((s, p) => s + p.requestedAmount, 0))}</div>
                 <div className="text-sm text-muted-foreground">Total payroll value</div>
               </div>
               <div className="flex flex-col gap-1 p-4 bg-muted/50 rounded-xl border border-border">

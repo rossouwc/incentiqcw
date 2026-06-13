@@ -516,6 +516,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/PayoutRequest"
 
+  /payouts/export:
+    get:
+      operationId: exportPayouts
+      tags: [payouts]
+      summary: Export approved payouts data
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Export rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PayoutExportRow"
+
   /payouts/{payoutId}:
     get:
       operationId: getPayout
@@ -537,7 +557,7 @@ paths:
     patch:
       operationId: updatePayoutStatus
       tags: [payouts]
-      summary: Update payout status (approve/reject)
+      summary: Approve or reject a payout (Finance)
       parameters:
         - name: payoutId
           in: path
@@ -553,6 +573,25 @@ paths:
       responses:
         "200":
           description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutRequest"
+
+  /payouts/{payoutId}/mark-paid:
+    post:
+      operationId: markPayoutPaid
+      tags: [payouts]
+      summary: Mark approved payout as paid (Payroll)
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Marked paid
           content:
             application/json:
               schema:
@@ -1369,33 +1408,51 @@ components:
     # ─── PAYOUT ───────────────────────────────────────────
     PayoutRequest:
       type: object
-      required: [id, userId, amount, status, createdAt]
+      required: [id, userId, requestedAmount, estimatedTax, estimatedNetPayout, payoutMonth, status, requestedAt]
       properties:
         id:
+          type: string
+        tenantId:
           type: string
         userId:
           type: string
         userName:
           type: string
-        amount:
+        requestedAmount:
           type: number
+        estimatedTax:
+          type: number
+        estimatedNetPayout:
+          type: number
+        payoutMonth:
+          type: string
+        deferredToMonth:
+          type: ["string", "null"]
         status:
           type: string
-          enum: [PENDING, FINANCE_APPROVED, REJECTED, PAID]
-        notes:
+          enum: [PENDING, FINANCE_APPROVED, REJECTED, PAID, DEFERRED]
+        comments:
           type: ["string", "null"]
-        reviewedBy:
+        reviewerComments:
           type: ["string", "null"]
-        createdAt:
+        requestedAt:
           type: string
+        approvedAt:
+          type: ["string", "null"]
+        paidAt:
+          type: ["string", "null"]
 
     PayoutInput:
       type: object
-      required: [amount]
+      required: [requestedAmount, payoutMonth]
       properties:
-        amount:
+        requestedAmount:
           type: number
-        notes:
+        payoutMonth:
+          type: string
+        deferredToMonth:
+          type: string
+        comments:
           type: string
 
     PayoutStatusUpdate:
@@ -1404,8 +1461,41 @@ components:
       properties:
         status:
           type: string
-        notes:
+          enum: [FINANCE_APPROVED, REJECTED]
+        reviewerComments:
           type: string
+
+    PayoutMarkPaidResponse:
+      type: object
+      required: [id, status, paidAt]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        paidAt:
+          type: ["string", "null"]
+
+    PayoutExportRow:
+      type: object
+      required: [id, employeeName, email, requestedAmount, estimatedTax, estimatedNetPayout, payoutMonth]
+      properties:
+        id:
+          type: string
+        employeeName:
+          type: string
+        email:
+          type: string
+        requestedAmount:
+          type: number
+        estimatedTax:
+          type: number
+        estimatedNetPayout:
+          type: number
+        payoutMonth:
+          type: string
+        approvedAt:
+          type: ["string", "null"]
 
     # ─── COMMISSION RULE GROUP ────────────────────────────
 

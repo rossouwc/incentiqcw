@@ -14,4 +14,5 @@ export const PayoutRequestStatus = {
   FINANCE_APPROVED: 'FINANCE_APPROVED',
   REJECTED: 'REJECTED',
   PAID: 'PAID',
+  DEFERRED: 'DEFERRED',
 } as const;

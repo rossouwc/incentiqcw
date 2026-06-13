@@ -5,8 +5,9 @@
  * Incentiq Commission Wallet Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { PayoutStatusUpdateStatus } from './payoutStatusUpdateStatus';
 
 export interface PayoutStatusUpdate {
-  status: string;
-  notes?: string;
+  status: PayoutStatusUpdateStatus;
+  reviewerComments?: string;
 }

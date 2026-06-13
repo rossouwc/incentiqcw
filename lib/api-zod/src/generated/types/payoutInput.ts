@@ -7,6 +7,8 @@
  */
 
 export interface PayoutInput {
-  amount: number;
-  notes?: string;
+  requestedAmount: number;
+  payoutMonth: string;
+  deferredToMonth?: string;
+  comments?: string;
 }

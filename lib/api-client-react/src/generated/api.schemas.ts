@@ -269,29 +269,69 @@ export const PayoutRequestStatus = {
   FINANCE_APPROVED: 'FINANCE_APPROVED',
   REJECTED: 'REJECTED',
   PAID: 'PAID',
+  DEFERRED: 'DEFERRED',
 } as const;
 
 export interface PayoutRequest {
   id: string;
+  tenantId?: string;
   userId: string;
   userName?: string;
-  amount: number;
+  requestedAmount: number;
+  estimatedTax: number;
+  estimatedNetPayout: number;
+  payoutMonth: string;
+  /** @nullable */
+  deferredToMonth?: string | null;
   status: PayoutRequestStatus;
   /** @nullable */
-  notes?: string | null;
+  comments?: string | null;
   /** @nullable */
-  reviewedBy?: string | null;
-  createdAt: string;
+  reviewerComments?: string | null;
+  requestedAt: string;
+  /** @nullable */
+  approvedAt?: string | null;
+  /** @nullable */
+  paidAt?: string | null;
 }
 
 export interface PayoutInput {
-  amount: number;
-  notes?: string;
+  requestedAmount: number;
+  payoutMonth: string;
+  deferredToMonth?: string;
+  comments?: string;
 }
 
+export type PayoutStatusUpdateStatus = typeof PayoutStatusUpdateStatus[keyof typeof PayoutStatusUpdateStatus];
+
+
+export const PayoutStatusUpdateStatus = {
+  FINANCE_APPROVED: 'FINANCE_APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+
 export interface PayoutStatusUpdate {
+  status: PayoutStatusUpdateStatus;
+  reviewerComments?: string;
+}
+
+export interface PayoutMarkPaidResponse {
+  id: string;
   status: string;
-  notes?: string;
+  /** @nullable */
+  paidAt: string | null;
+}
+
+export interface PayoutExportRow {
+  id: string;
+  employeeName: string;
+  email: string;
+  requestedAmount: number;
+  estimatedTax: number;
+  estimatedNetPayout: number;
+  payoutMonth: string;
+  /** @nullable */
+  approvedAt?: string | null;
 }
 
 export interface CommissionRuleGroupMember {
@@ -678,6 +718,10 @@ type?: string;
 
 export type ListPayoutsParams = {
 status?: string;
+};
+
+export type ExportPayoutsParams = {
+month?: string;
 };
 
 export type ListApprovalsParams = {

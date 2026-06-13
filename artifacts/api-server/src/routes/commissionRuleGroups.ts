@@ -117,7 +117,7 @@ router.post("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, 
       });
 
       for (const r of (rules ?? [])) {
-        const rule = await tx.commissionRule.create({ data: buildRuleData(r, g.tenantId, g.groupName) });
+        const rule = await tx.commissionRule.create({ data: buildRuleData(r, g.tenantId, g.groupName) as any });
         await tx.commissionRuleGroupRule.create({ data: { groupId: g.id, ruleId: rule.id } });
       }
 
@@ -134,7 +134,7 @@ router.post("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, 
 // ─── PATCH /api/commission-rule-groups/:id ───────────────────────────────────
 router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const { groupName, description, assignToAll, memberUserIds, rules, status } = req.body;
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   const existing = await prisma.commissionRuleGroup.findFirst({
     where: { id, tenantId: req.user!.tenantId },
@@ -158,7 +158,7 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
 
       // Replace all rules if provided
       if (rules !== undefined) {
-        const existingRuleIds = existing.rules.map((r: any) => r.ruleId);
+        const existingRuleIds = (existing as any).rules.map((r: any) => r.ruleId);
 
         // Determine which existing rule IDs are kept (have an id in the new list)
         const keptIds = new Set(
@@ -191,7 +191,7 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
           } else {
             // Create new rule and link
             const newRule = await tx.commissionRule.create({
-              data: buildRuleData(r, req.user!.tenantId, effectiveName),
+              data: buildRuleData(r, req.user!.tenantId, effectiveName) as any,
             });
             await tx.commissionRuleGroupRule.create({ data: { groupId: id, ruleId: newRule.id } });
           }
@@ -224,15 +224,15 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
 // ─── DELETE /api/commission-rule-groups/:id ──────────────────────────────────
 router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   const existing = await prisma.commissionRuleGroup.findFirst({
-    where: { id: req.params.id, tenantId: req.user!.tenantId },
+    where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     include: { rules: { select: { ruleId: true } } },
   });
   if (!existing) { res.status(404).json({ error: "Group not found" }); return; }
 
   try {
-    const ruleIds = existing.rules.map((r: any) => r.ruleId);
+    const ruleIds = (existing as any).rules.map((r: any) => r.ruleId);
     await prisma.$transaction(async (tx) => {
-      await tx.commissionRuleGroup.delete({ where: { id: req.params.id } }); // cascades join records
+      await tx.commissionRuleGroup.delete({ where: { id: req.params.id as string } }); // cascades join records
       if (ruleIds.length > 0) {
         await tx.commissionRule.deleteMany({ where: { id: { in: ruleIds } } });
       }

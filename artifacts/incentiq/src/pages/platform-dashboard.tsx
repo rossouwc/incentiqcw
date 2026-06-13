@@ -36,7 +36,7 @@ export default function PlatformDashboard() {
 
   const totalUsers     = (allUsers ?? []).length;
   const pendingCount   = (approvals ?? []).length;
-  const payoutVolume   = (pendingPayouts ?? []).reduce((s, p) => s + p.amount, 0);
+  const payoutVolume   = (pendingPayouts ?? []).reduce((s, p) => s + p.requestedAmount, 0);
   const activeTenants  = TENANT_DATA.filter(t => t.status === "ACTIVE").length;
 
   return (
