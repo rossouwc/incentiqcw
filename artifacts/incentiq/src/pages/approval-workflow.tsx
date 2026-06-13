@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListApprovalConfigs,
   useCreateApprovalConfig,
   useUpdateApprovalConfig,
   useDeleteApprovalConfig,
   useListUsers,
+  getListApprovalConfigsQueryKey,
   type ApprovalConfig,
   type ApprovalConfigInput,
   type ApprovalConfigUpdate,
@@ -78,7 +80,10 @@ const emptyForm: StepFormState = {
 };
 
 export default function ApprovalWorkflow() {
-  const { data: configs, isLoading, refetch } = useListApprovalConfigs();
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListApprovalConfigsQueryKey() });
+
+  const { data: configs, isLoading } = useListApprovalConfigs();
   const createConfig = useCreateApprovalConfig();
   const updateConfig = useUpdateApprovalConfig();
   const deleteConfig = useDeleteApprovalConfig();
@@ -132,7 +137,7 @@ export default function ApprovalWorkflow() {
         toast({ title: "Step added" });
       }
       closeDialog();
-      refetch();
+      invalidate();
     } catch (err: any) {
       toast({ title: "Error", description: err?.message ?? "Something went wrong", variant: "destructive" });
     } finally {
@@ -146,9 +151,9 @@ export default function ApprovalWorkflow() {
       await deleteConfig.mutateAsync({ configId: deleteTarget.id });
       toast({ title: "Step deleted" });
       setDeleteTarget(null);
-      refetch();
-    } catch {
-      toast({ title: "Delete failed", variant: "destructive" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err?.message, variant: "destructive" });
     }
   };
 
@@ -160,22 +165,27 @@ export default function ApprovalWorkflow() {
     const swapWith = sorted[direction === "up" ? idx - 1 : idx + 1];
     try {
       await updateConfig.mutateAsync({ configId: config.id, data: { stepOrder: swapWith.stepOrder } });
-      refetch();
-    } catch {
-      toast({ title: "Reorder failed", variant: "destructive" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Reorder failed", description: err?.message, variant: "destructive" });
     }
   };
 
   const handleSeedDefaults = async () => {
     setSaving(true);
     try {
+      // Delete any existing steps first to avoid conflicts
+      for (const existing of list) {
+        await deleteConfig.mutateAsync({ configId: existing.id });
+      }
       for (const step of DEFAULT_STEPS) {
         await createConfig.mutateAsync({ data: { ...step, isActive: true } as ApprovalConfigInput });
       }
-      toast({ title: "Default workflow created", description: "4 approval steps have been configured." });
-      refetch();
+      toast({ title: "Default workflow loaded", description: "4 approval steps have been configured." });
+      invalidate();
     } catch (err: any) {
-      toast({ title: "Error seeding defaults", variant: "destructive" });
+      toast({ title: "Error loading defaults", description: err?.message ?? "Something went wrong", variant: "destructive" });
+      invalidate();
     } finally {
       setSaving(false);
     }
@@ -354,7 +364,7 @@ export default function ApprovalWorkflow() {
                             checked={step.isActive}
                             onCheckedChange={async (val) => {
                               await updateConfig.mutateAsync({ configId: step.id, data: { isActive: val } });
-                              refetch();
+                              invalidate();
                             }}
                           />
                         </td>
