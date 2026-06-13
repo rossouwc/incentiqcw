@@ -530,6 +530,8 @@ export const ApprovalActionAction = {
 export interface ApprovalAction {
   action: ApprovalActionAction;
   comments?: string;
+  /** Required when a Sales Executive Confirmation step is approved. The amount the sales exec wants paid out this salary cycle. */
+  payoutAmount?: number;
 }
 
 export interface ApprovalConfig {

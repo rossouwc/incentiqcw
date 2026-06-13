@@ -52,6 +52,7 @@ enum DealStatus {
   MANAGER_APPROVED
   FINANCE_APPROVED
   EXECUTIVE_APPROVED
+  PENDING_PAYROLL
   APPROVED
   CHANGES_REQUESTED
   REJECTED
@@ -251,6 +252,7 @@ model ApprovalWorkflow {
   status         ApprovalStatus @default(PENDING)
   comments       String?
   approvedAt     DateTime?
+  payoutAmount   Decimal?       @db.Decimal(15, 2)
   createdAt      DateTime       @default(now())
 
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

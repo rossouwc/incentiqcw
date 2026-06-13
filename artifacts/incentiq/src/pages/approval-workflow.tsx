@@ -30,32 +30,35 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ArrowRight, Plus, Pencil, Trash2, ChevronUp, ChevronDown,
-  CheckCircle2, Settings, UserCheck, DollarSign, Briefcase, BadgeCheck, Clock,
+  CheckCircle2, Settings, UserCheck, DollarSign, Briefcase, BadgeCheck, Clock, Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ROLE_OPTIONS = [
-  { value: "MANAGER",   label: "Sales Manager" },
-  { value: "FINANCE",   label: "Finance" },
-  { value: "EXECUTIVE", label: "Executive" },
-  { value: "ADMIN",     label: "Admin" },
-  { value: "PAYROLL",   label: "Payroll" },
+  { value: "MANAGER",         label: "Sales Manager" },
+  { value: "FINANCE",         label: "Finance" },
+  { value: "EXECUTIVE",       label: "Executive" },
+  { value: "SALES_EXECUTIVE", label: "Sales Exec Confirmation" },
+  { value: "ADMIN",           label: "Admin" },
+  { value: "PAYROLL",         label: "Payroll" },
 ];
 
 const ROLE_ICONS: Record<string, React.ElementType> = {
-  MANAGER:   UserCheck,
-  FINANCE:   DollarSign,
-  EXECUTIVE: BadgeCheck,
-  ADMIN:     Settings,
-  PAYROLL:   Briefcase,
+  MANAGER:         UserCheck,
+  FINANCE:         DollarSign,
+  EXECUTIVE:       BadgeCheck,
+  SALES_EXECUTIVE: Wallet,
+  ADMIN:           Settings,
+  PAYROLL:         Briefcase,
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  MANAGER:   "bg-amber-100 text-amber-700 border-amber-200",
-  FINANCE:   "bg-cyan-100 text-cyan-700 border-cyan-200",
-  EXECUTIVE: "bg-purple-100 text-purple-700 border-purple-200",
-  ADMIN:     "bg-indigo-100 text-indigo-700 border-indigo-200",
-  PAYROLL:   "bg-pink-100 text-pink-700 border-pink-200",
+  MANAGER:         "bg-amber-100 text-amber-700 border-amber-200",
+  FINANCE:         "bg-cyan-100 text-cyan-700 border-cyan-200",
+  EXECUTIVE:       "bg-purple-100 text-purple-700 border-purple-200",
+  SALES_EXECUTIVE: "bg-teal-100 text-teal-700 border-teal-200",
+  ADMIN:           "bg-indigo-100 text-indigo-700 border-indigo-200",
+  PAYROLL:         "bg-pink-100 text-pink-700 border-pink-200",
 };
 
 const DEFAULT_STEPS = [

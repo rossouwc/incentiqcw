@@ -846,7 +846,8 @@ export const ActionApprovalParams = zod.object({
 
 export const ActionApprovalBody = zod.object({
   "action": zod.enum(['APPROVE', 'REJECT', 'REQUEST_CHANGES']),
-  "comments": zod.string().optional()
+  "comments": zod.string().optional(),
+  "payoutAmount": zod.number().optional().describe('Required when a Sales Executive Confirmation step is approved. The amount the sales exec wants paid out this salary cycle.')
 })
 
 export const ActionApprovalResponse = zod.object({

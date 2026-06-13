@@ -1,2 +1,4 @@
 - [Incentiq stack decisions](incentiq-stack.md) — Prisma v5 (NOT v7), JWT via SESSION_SECRET, ZAR currency, dark mode applied via html class="dark"
 - [Prisma pnpm setup](prisma-pnpm.md) — must add @prisma/client to onlyBuiltDependencies; generate in dev script with --schema path; no custom output path
+- [DB force-reset data loss](db-force-reset.md) — `prisma db push --force-reset` wipes all data; re-seed with `npx ts-node --esm prisma/seed.ts` from `artifacts/api-server/`; approval configs not in seed — re-seed via API after reset
+- [Sales exec confirmation step](sales-exec-approval-step.md) — SALES_EXECUTIVE approverRole: wallet credited when step becomes active, payoutAmount required on APPROVE, auto-creates PayoutRequest; skip final-step wallet credit if already credited
