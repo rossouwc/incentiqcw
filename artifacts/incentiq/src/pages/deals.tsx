@@ -28,6 +28,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -549,23 +550,19 @@ export default function Deals() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="contractStart">Contract Start</Label>
-                <input
-                  id="contractStart"
-                  type="date"
+                <Label>Contract Start</Label>
+                <DatePicker
                   value={form.contractStartDate}
-                  onChange={(e) => setField("contractStartDate", e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={(v) => setField("contractStartDate", v)}
+                  placeholder="Select start date"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="contractEnd">Contract End</Label>
-                <input
-                  id="contractEnd"
-                  type="date"
+                <Label>Contract End</Label>
+                <DatePicker
                   value={form.contractEndDate}
-                  onChange={(e) => setField("contractEndDate", e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={(v) => setField("contractEndDate", v)}
+                  placeholder="Select end date"
                 />
               </div>
             </div>
