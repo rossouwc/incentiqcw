@@ -48,9 +48,14 @@ import {
 import {
   Plus, Search, Users, Pencil, Trash2, Power, PowerOff,
   Layers, CheckCircle2, Globe, X, Sliders, CalendarIcon,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { format, parseISO, isValid } from "date-fns";
-import { Calendar } from "@/components/ui/calendar";
+import {
+  format, parseISO, isValid, startOfMonth, endOfMonth,
+  eachDayOfInterval, addMonths, subMonths, isSameMonth,
+  isSameDay, isToday, getDay, addDays, subDays,
+} from "date-fns";
+import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -78,66 +83,139 @@ function formatDate(s: string) {
 
 // ─── date picker ─────────────────────────────────────────────────────────────
 
+const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
 function DatePickerField({
   value,
   onChange,
   placeholder = "Pick a date",
+  clearable = false,
 }: {
   value: string;
   onChange: (iso: string) => void;
   placeholder?: string;
+  clearable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const selected = value && isValid(parseISO(value)) ? parseISO(value) : null;
+  const [month, setMonth] = useState<Date>(() =>
+    startOfMonth(selected ?? new Date())
+  );
 
-  const parsed = value && isValid(parseISO(value)) ? parseISO(value) : undefined;
-  const display = parsed ? format(parsed, "d MMM yyyy") : null;
+  // Sync month when value changes externally
+  if (selected && !isSameMonth(selected, month) && !open) {
+    // only sync when closed to avoid jumpy nav
+  }
+
+  const display = selected ? format(selected, "d MMM yyyy") : null;
+
+  // Build 6-row grid always (42 cells)
+  const firstOfMonth = month;
+  const lastOfMonth = endOfMonth(month);
+  const gridStart = subDays(firstOfMonth, getDay(firstOfMonth));
+  const gridEnd = addDays(lastOfMonth, 6 - getDay(lastOfMonth));
+  const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
+
+  function pickDay(day: Date) {
+    onChange(format(day, "yyyy-MM-dd"));
+    setMonth(startOfMonth(day));
+    setOpen(false);
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={[
-            "flex h-8 w-full items-center gap-1.5 rounded-md border px-2.5 text-xs",
-            "bg-slate-900/50 border-slate-700 hover:border-slate-500",
-            "transition-colors focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40",
-            display ? "text-slate-200" : "text-slate-500",
-          ].join(" ")}
+          className={cn(
+            "flex h-8 w-full items-center gap-2 rounded-md border px-2.5 text-xs text-left",
+            "bg-slate-900/50 border-slate-700 transition-colors",
+            "hover:border-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30",
+            open && "border-indigo-500 ring-1 ring-indigo-500/30",
+          )}
         >
           <CalendarIcon className="h-3 w-3 shrink-0 text-slate-500" />
-          <span className="truncate">{display ?? placeholder}</span>
+          <span className={display ? "text-slate-200" : "text-slate-500"}>
+            {display ?? placeholder}
+          </span>
         </button>
       </PopoverTrigger>
+
       <PopoverContent
-        className="w-auto p-0 bg-slate-900 border-slate-700 shadow-xl"
         align="start"
         sideOffset={6}
+        className="w-[268px] p-0 bg-slate-900 border border-slate-700 shadow-2xl rounded-xl overflow-hidden"
       >
-        <Calendar
-          mode="single"
-          selected={parsed}
-          onSelect={(date) => {
-            if (date) {
-              onChange(format(date, "yyyy-MM-dd"));
-              setOpen(false);
-            }
-          }}
-          defaultMonth={parsed ?? new Date()}
-          className="[--cell-size:2rem] text-slate-100"
-          classNames={{
-            root: "bg-slate-900",
-            month_caption: "text-slate-200",
-            caption_label: "text-slate-200 font-medium",
-            weekday: "text-slate-500",
-            day: "hover:bg-slate-700/50 rounded",
-            today: "bg-slate-700/60 text-slate-100 rounded",
-            outside: "text-slate-600 opacity-50",
-            button_previous: "text-slate-400 hover:text-slate-100 hover:bg-slate-700/50",
-            button_next: "text-slate-400 hover:text-slate-100 hover:bg-slate-700/50",
-          }}
-        />
-        {value && (
-          <div className="border-t border-slate-700 px-3 py-2 flex justify-end">
+        {/* Month navigation */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <button
+            type="button"
+            onClick={() => setMonth(m => subMonths(m, 1))}
+            className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/70 transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-semibold text-slate-100 tracking-wide">
+            {format(month, "MMMM yyyy")}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMonth(m => addMonths(m, 1))}
+            className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/70 transition-colors"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-3 pb-3 pt-2">
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {WEEKDAYS.map(d => (
+              <div key={d} className="h-8 flex items-center justify-center text-[11px] font-medium text-slate-500 tracking-wide">
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-0.5">
+            {days.map(day => {
+              const inMonth = isSameMonth(day, month);
+              const sel = selected && isSameDay(day, selected);
+              const tod = isToday(day);
+              return (
+                <button
+                  key={day.toISOString()}
+                  type="button"
+                  onClick={() => pickDay(day)}
+                  className={cn(
+                    "h-8 w-full rounded-lg text-xs font-medium transition-colors",
+                    sel
+                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-900/50 hover:bg-indigo-500"
+                      : tod && inMonth
+                      ? "bg-slate-700/70 text-slate-100 ring-1 ring-slate-600 hover:bg-slate-600/70"
+                      : inMonth
+                      ? "text-slate-200 hover:bg-slate-700/60"
+                      : "text-slate-600 hover:bg-slate-800/60",
+                  )}
+                >
+                  {format(day, "d")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-2.5 border-t border-slate-800 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => pickDay(new Date())}
+            className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+          >
+            Today
+          </button>
+          {clearable && value && (
             <button
               type="button"
               onClick={() => { onChange(""); setOpen(false); }}
@@ -145,8 +223,8 @@ function DatePickerField({
             >
               Clear
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -287,6 +365,7 @@ function RulesEditor({
             value={row.effectiveTo}
             onChange={v => updateRow(row._key, { effectiveTo: v })}
             placeholder="To (optional)"
+            clearable
           />
 
           {/* Remove */}
