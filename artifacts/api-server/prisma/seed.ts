@@ -223,6 +223,20 @@ async function main() {
     },
   });
 
+  const demoDeal2 = await prisma.deal.upsert({
+    where: { id: "demo-deal-002" },
+    update: {},
+    create: {
+      id: "demo-deal-002", tenantId: demoTenant.id, salesExecutiveId: "demo-sales-001",
+      submittedById: "demo-sales-001", customerName: "Korridor",
+      dealName: "2 x Developer Licences", dealType: DealType.NET_NEW,
+      revenue: 180000, cost: 135000, grossProfit: 45000,
+      grossProfitPercentage: 25, commissionPercentage: 8, calculatedCommission: 3600,
+      status: DealStatus.APPROVED, submittedAt: new Date("2024-05-20"),
+      createdAt: new Date("2024-05-18"),
+    },
+  });
+
   // ─── Approval Workflows ─────────────────────────────────────────────────────
   type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
   const approvedDeals = dealsData.filter(d =>
@@ -261,7 +275,7 @@ async function main() {
     }
   }
 
-  // Demo Corp approval workflow
+  // Demo Corp approval workflow — Cloud ERP
   for (let lv = 1; lv <= 3; lv++) {
     await prisma.approvalWorkflow.upsert({
       where: { id: `aw-demo-deal-001-l${lv}` },
@@ -273,6 +287,27 @@ async function main() {
         approverUserId: lv === 1 ? "demo-manager-001" : lv === 2 ? "demo-finance-001" : "demo-admin-001",
         status: "APPROVED" as any,
         approvedAt: new Date("2024-05-05"),
+      },
+    });
+  }
+
+  // Demo Corp approval workflow — Korridor (all 5 steps approved, sales exec confirmed R3 600)
+  const korridorApprovers = [
+    { lv: 1, role: UserRole.MANAGER,         uid: "demo-manager-001",   at: new Date("2024-05-22") },
+    { lv: 2, role: UserRole.FINANCE,          uid: "demo-finance-001",   at: new Date("2024-05-23") },
+    { lv: 3, role: UserRole.EXECUTIVE,        uid: "demo-executive-001", at: new Date("2024-05-24") },
+    { lv: 4, role: UserRole.SALES_EXECUTIVE,  uid: "demo-sales-001",     at: new Date("2024-05-25") },
+    { lv: 5, role: UserRole.PAYROLL,          uid: "demo-payroll-001",   at: new Date("2024-05-28") },
+  ];
+  for (const a of korridorApprovers) {
+    await prisma.approvalWorkflow.upsert({
+      where: { id: `aw-demo-deal-002-l${a.lv}` },
+      update: {},
+      create: {
+        id: `aw-demo-deal-002-l${a.lv}`, tenantId: demoTenant.id, dealId: demoDeal2.id,
+        approvalLevel: a.lv, approverRole: a.role, approverUserId: a.uid,
+        status: "APPROVED" as any, approvedAt: a.at,
+        payoutAmount: a.role === UserRole.SALES_EXECUTIVE ? 3600 : null,
       },
     });
   }
@@ -322,7 +357,7 @@ async function main() {
     }
   }
 
-  // Demo Corp wallet transaction
+  // Demo Corp wallet transactions
   const demoWallet = await prisma.wallet.findUnique({ where: { userId: "demo-sales-001" } });
   if (demoWallet) {
     await prisma.walletTransaction.upsert({
@@ -334,6 +369,37 @@ async function main() {
         amount: 7000, referenceType: "DEAL", referenceId: demoDeal.id,
         description: "Commission for Cloud ERP Implementation",
         createdAt: new Date("2024-05-05"),
+      },
+    });
+    await prisma.walletTransaction.upsert({
+      where: { id: "wt-demo-deal-002" },
+      update: {},
+      create: {
+        id: "wt-demo-deal-002", tenantId: demoTenant.id, walletId: demoWallet.id,
+        transactionType: TransactionType.COMMISSION_APPROVED,
+        amount: 3600, referenceType: "DEAL", referenceId: demoDeal2.id,
+        description: "Commission approved: 2 x Developer Licences",
+        createdAt: new Date("2024-05-24"),
+      },
+    });
+    // Korridor payout was paid out — deduct from available
+    await prisma.walletTransaction.upsert({
+      where: { id: "wt-demo-deal-002-payout" },
+      update: {},
+      create: {
+        id: "wt-demo-deal-002-payout", tenantId: demoTenant.id, walletId: demoWallet.id,
+        transactionType: TransactionType.PAYOUT_PAID,
+        amount: 3600, referenceType: "PAYOUT", referenceId: "pr-demo-002",
+        description: "Salary payout: 2 x Developer Licences (Korridor)",
+        createdAt: new Date("2024-05-31"),
+      },
+    });
+    // Update wallet to reflect the Korridor commission was paid out
+    await prisma.wallet.update({
+      where: { id: demoWallet.id },
+      data: {
+        availableBalance: { decrement: 3600 },
+        paidOutBalance: { increment: 3600 },
       },
     });
   }
@@ -389,6 +455,16 @@ async function main() {
       payoutMonth: "2024-06", status: "PENDING", requestedAt: new Date("2024-06-12"),
     },
   });
+  await prisma.payoutRequest.upsert({
+    where: { id: "pr-demo-002" },
+    update: {},
+    create: {
+      id: "pr-demo-002", tenantId: demoTenant.id, userId: "demo-sales-001",
+      requestedAmount: 3600, estimatedTax: 900, estimatedNetPayout: 2700,
+      payoutMonth: "2024-05", status: "PAID",
+      requestedAt: new Date("2024-05-25"), approvedAt: new Date("2024-05-27"), paidAt: new Date("2024-05-31"),
+    },
+  });
   console.log("✅ Payout requests created");
 
   // ─── Notifications ──────────────────────────────────────────────────────────
@@ -401,6 +477,8 @@ async function main() {
     { userId: "user-manager-001", title: "New Approval Required",      message: "RST Industries deal 'New Contract 2024' awaits your approval",        type: "DEAL_SUBMITTED",    readStatus: false, tenantId: tenant.id },
     { userId: "user-finance-001", title: "New Approval Required",      message: "Payout request from James Ndlovu requires finance review",            type: "PAYOUT_REQUESTED",  readStatus: false, tenantId: tenant.id },
     { userId: "demo-sales-001",   title: "Deal Approved",              message: "Your deal 'Cloud ERP Implementation' has been fully approved",        type: "DEAL_APPROVED",     readStatus: false, tenantId: demoTenant.id },
+    { userId: "demo-sales-001",   title: "Commission Credited",        message: "R3 600.00 commission for 2 x Developer Licences (Korridor) credited to your wallet", type: "WALLET_CREDITED", readStatus: true, tenantId: demoTenant.id },
+    { userId: "demo-sales-001",   title: "Payout Paid",                message: "Your payout of R3 600.00 for May 2024 has been processed and paid",              type: "PAYOUT_PAID",       readStatus: true,  tenantId: demoTenant.id },
     { userId: "demo-admin-001",   title: "Welcome to Incentiq!",       message: "Demo Corporation account is active. Explore the platform features.",  type: "SYSTEM",            readStatus: false, tenantId: demoTenant.id },
   ];
   for (const n of notifs) {
