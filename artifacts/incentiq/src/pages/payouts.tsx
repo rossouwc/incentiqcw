@@ -235,7 +235,16 @@ export default function Payouts() {
                       max={availableBalance}
                       placeholder="e.g. 5000.00"
                       value={amount}
-                      onChange={(e) => { setAmount(e.target.value); setErrors((prev) => ({ ...prev, amount: "" })); }}
+                      onChange={(e) => {
+                          const val = e.target.value;
+                          setAmount(val);
+                          const parsed = parseFloat(val);
+                          if (!isNaN(parsed) && parsed > availableBalance) {
+                            setErrors((prev) => ({ ...prev, amount: `Cannot exceed available balance of ${formatCurrency(availableBalance)}` }));
+                          } else {
+                            setErrors((prev) => ({ ...prev, amount: "" }));
+                          }
+                        }}
                     />
                     {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
                   </div>
@@ -350,7 +359,7 @@ export default function Payouts() {
 
                 <div className="flex justify-end gap-2 pt-1">
                   <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                  <Button type="submit" disabled={createPayout.isPending || effectiveAmount <= 0}>
+                  <Button type="submit" disabled={createPayout.isPending || effectiveAmount <= 0 || !!errors.amount}>
                     {createPayout.isPending ? "Submitting…" : payoutType === "DEFER" ? "Defer Commission" : "Submit Request"}
                   </Button>
                 </div>
