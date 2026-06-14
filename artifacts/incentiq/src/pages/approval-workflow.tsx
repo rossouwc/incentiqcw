@@ -86,7 +86,7 @@ export default function ApprovalWorkflow() {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: getListApprovalConfigsQueryKey() });
 
-  const { data: configs, isLoading } = useListApprovalConfigs();
+  const { data: configs, isLoading, isFetching, isError } = useListApprovalConfigs();
   const createConfig = useCreateApprovalConfig();
   const updateConfig = useUpdateApprovalConfig();
   const deleteConfig = useDeleteApprovalConfig();
@@ -226,9 +226,16 @@ export default function ApprovalWorkflow() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isLoading || (isFetching && sorted.length === 0) ? (
             <div className="flex gap-4">
               {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-32" />)}
+            </div>
+          ) : isError ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Settings className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-destructive">Failed to load workflow</p>
+              <p className="text-sm mt-1">Please refresh the page or try again.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={invalidate}>Retry</Button>
             </div>
           ) : sorted.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">

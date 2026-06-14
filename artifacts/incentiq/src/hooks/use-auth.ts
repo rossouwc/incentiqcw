@@ -17,7 +17,7 @@ export function useAuth() {
 
   const logout = () => {
     localStorage.removeItem("incentiq_token");
-    queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
+    queryClient.clear();
     setLocation("/login");
   };
 
