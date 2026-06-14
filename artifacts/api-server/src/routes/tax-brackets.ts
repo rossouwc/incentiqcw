@@ -173,14 +173,20 @@ taxBracketsRouter.post("/estimate", requireAuth, async (req, res) => {
   const primaryRebate = rebates.find((r) => r.type === "PRIMARY")?.amount ?? 0;
   const medAidAnnual  = medicalAidCredits * 12;
 
+  // SARS PAYE on variable income: annualize (monthly salary + commission), then divide tax difference by 12
+  const monthlySalary = annualSalary / 12;
   const taxableBase   = Math.max(0, annualSalary - retirementContribution);
-  const taxableWithC  = Math.max(0, annualSalary + commissionPayout - retirementContribution);
+  const taxableWithC  = Math.max(0, (monthlySalary + commissionPayout) * 12 - retirementContribution);
 
-  const netTaxBase    = calcPAYE(taxableBase, brackets, primaryRebate, medAidAnnual);
-  const netTaxWithC   = calcPAYE(taxableWithC, brackets, primaryRebate, medAidAnnual);
-  const additionalTax = Math.max(0, netTaxWithC - netTaxBase);
-  const netPayout     = Math.max(0, commissionPayout - additionalTax);
-  const effectiveRate = commissionPayout > 0 ? (additionalTax / commissionPayout) * 100 : 0;
+  const annualTaxBase   = calcPAYE(taxableBase, brackets, primaryRebate, medAidAnnual);
+  const annualTaxWithC  = calcPAYE(taxableWithC, brackets, primaryRebate, medAidAnnual);
+  const additionalTax   = Math.max(0, (annualTaxWithC - annualTaxBase) / 12);
+  const netPayout       = Math.max(0, commissionPayout - additionalTax);
+  const effectiveRate   = commissionPayout > 0 ? (additionalTax / commissionPayout) * 100 : 0;
+
+  // Expose derived values for transparency
+  const netTaxBase  = annualTaxBase;
+  const netTaxWithC = annualTaxWithC;
 
   res.json({
     taxYear,

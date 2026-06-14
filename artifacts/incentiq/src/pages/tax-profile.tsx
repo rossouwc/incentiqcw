@@ -352,11 +352,12 @@ export default function TaxProfile() {
               <CardTitle className="text-sm">How the estimate works</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-xs text-muted-foreground leading-relaxed">
-              <p>1. <strong>Taxable income</strong> = Annual salary + Commission − Retirement contribution</p>
-              <p>2. <strong>Gross tax</strong> calculated from SARS PAYE brackets for the selected tax year.</p>
-              <p>3. <strong>Credits applied:</strong> primary rebate + medical aid credits (monthly × 12).</p>
-              <p>4. <strong>Additional PAYE</strong> = tax with commission − tax without commission.</p>
-              <p>5. <strong>Net payout</strong> = Commission − additional PAYE.</p>
+              <p>1. <strong>Monthly income</strong> = (Annual salary ÷ 12) + Commission payout.</p>
+              <p>2. <strong>Annualise:</strong> Monthly income × 12, then subtract annual retirement contribution.</p>
+              <p>3. <strong>Gross tax</strong> calculated from SARS PAYE brackets for the selected tax year.</p>
+              <p>4. <strong>Credits applied:</strong> primary rebate + medical aid credits (monthly × 12).</p>
+              <p>5. <strong>Additional PAYE</strong> = (Tax with commission − Tax without) ÷ 12.</p>
+              <p>6. <strong>Net payout</strong> = Commission − additional PAYE.</p>
             </CardContent>
           </Card>
 
