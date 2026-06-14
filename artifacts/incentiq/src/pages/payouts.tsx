@@ -66,11 +66,9 @@ export default function Payouts() {
   const [comments, setComments] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [payeEstimate, setPayeEstimate] = useState<{
-    additionalTax: number;
-    estimatedNetPayout: number;
+    netTaxWithCommission: number;
+    netTaxBase: number;
     effectiveRateOnCommission: number;
-    taxableIncomeBase: number;
-    taxableIncomeWithCommission: number;
   } | null>(null);
 
   const availableBalance = wallet?.availableBalance ?? 0;
@@ -108,15 +106,18 @@ export default function Payouts() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [effectiveAmount, profile]);
 
-  // Fallback flat 25% when no tax profile is saved
-  const TAX_RATE = 0.25;
-  const fallbackTax = Math.round(effectiveAmount * TAX_RATE * 100) / 100;
-  const fallbackNet = Math.round((effectiveAmount - fallbackTax) * 100) / 100;
-
   const hasTaxProfile = !!profile?.annualSalary;
-  const displayTax = payeEstimate ? payeEstimate.additionalTax : (hasTaxProfile ? null : fallbackTax);
-  const displayNet = payeEstimate ? payeEstimate.estimatedNetPayout : (hasTaxProfile ? null : fallbackNet);
-  const displayRate = payeEstimate ? payeEstimate.effectiveRateOnCommission : (hasTaxProfile ? null : 25);
+  const monthlySalary = hasTaxProfile ? (profile.annualSalary / 12) : 0;
+
+  // Full monthly picture: salary + commission
+  const grossThisMonth = monthlySalary + effectiveAmount;
+  const totalMonthlyPAYE = payeEstimate ? Math.round((payeEstimate.netTaxWithCommission / 12) * 100) / 100 : null;
+  const salaryOnlyPAYE  = payeEstimate ? Math.round((payeEstimate.netTaxBase / 12) * 100) / 100 : null;
+  const netTakeHome = totalMonthlyPAYE != null ? Math.round((grossThisMonth - totalMonthlyPAYE) * 100) / 100 : null;
+
+  // Fallback flat 25% when no tax profile is saved (commission only)
+  const fallbackTax = Math.round(effectiveAmount * 0.25 * 100) / 100;
+  const fallbackNet = Math.round((effectiveAmount - fallbackTax) * 100) / 100;
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
@@ -272,47 +273,67 @@ export default function Payouts() {
                   </div>
                 )}
 
-                {/* Tax estimate */}
-                {effectiveAmount > 0 && (
+                {/* Monthly income breakdown */}
+                {effectiveAmount > 0 && payoutType !== "DEFER" && (
                   <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-sm">
-                    {/* No tax profile nudge */}
-                    {!hasTaxProfile && (
-                      <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md p-2 mb-1">
-                        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                        <span>Using flat 25% estimate. <a href="/tax-profile" className="underline">Set up your Tax Profile</a> for a personalised PAYE calculation.</span>
-                      </div>
+                    {!hasTaxProfile ? (
+                      <>
+                        <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md p-2 mb-1">
+                          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          <span>Using flat 25% estimate on commission only. <a href="/tax-profile" className="underline">Set up your Tax Profile</a> for a full monthly breakdown.</span>
+                        </div>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Commission payout</span>
+                          <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
+                        </div>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Estimated tax (25%)</span>
+                          <span className="font-medium text-red-400">- {formatCurrency(fallbackTax)}</span>
+                        </div>
+                        <div className="border-t border-border pt-2 flex justify-between font-semibold">
+                          <span>Est. net commission</span>
+                          <span className="text-emerald-500">{formatCurrency(fallbackNet)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pb-1">This month's estimated income</p>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Monthly salary</span>
+                          <span className="font-medium text-foreground">{formatCurrency(monthlySalary)}</span>
+                        </div>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Commission payout</span>
+                          <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
+                        </div>
+                        <div className="flex justify-between text-foreground font-medium border-t border-border pt-2">
+                          <span>Gross this month</span>
+                          <span>{formatCurrency(grossThisMonth)}</span>
+                        </div>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>
+                            {payeEstimate
+                              ? `Est. total PAYE (${payeEstimate.effectiveRateOnCommission}% on commission)`
+                              : "Calculating PAYE…"}
+                          </span>
+                          <span className="font-medium text-red-400">
+                            {totalMonthlyPAYE != null ? `- ${formatCurrency(totalMonthlyPAYE)}` : "—"}
+                          </span>
+                        </div>
+                        <div className="border-t border-border pt-2 flex justify-between font-semibold">
+                          <span>Est. net take-home</span>
+                          <span className="text-emerald-500">
+                            {netTakeHome != null ? formatCurrency(netTakeHome) : "—"}
+                          </span>
+                        </div>
+                        {salaryOnlyPAYE != null && (
+                          <p className="text-xs text-muted-foreground">
+                            * Salary-only PAYE would be {formatCurrency(salaryOnlyPAYE)}/month. Commission adds {formatCurrency(totalMonthlyPAYE! - salaryOnlyPAYE)} in PAYE.
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">Estimated from your saved salary, retirement &amp; medical aid. Actual tax may differ.</p>
+                      </>
                     )}
-
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Gross amount</span>
-                      <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
-                    </div>
-
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>
-                        {hasTaxProfile && payeEstimate
-                          ? `Est. PAYE (${payeEstimate.effectiveRateOnCommission}% effective)`
-                          : hasTaxProfile
-                          ? "Calculating PAYE…"
-                          : "Estimated tax (25%)"}
-                      </span>
-                      <span className="font-medium text-red-400">
-                        {displayTax != null ? `- ${formatCurrency(displayTax)}` : "—"}
-                      </span>
-                    </div>
-
-                    <div className="border-t border-border pt-2 flex justify-between font-semibold">
-                      <span>Estimated net payout</span>
-                      <span className="text-emerald-500">
-                        {displayNet != null ? formatCurrency(displayNet) : "—"}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground">
-                      * {hasTaxProfile
-                        ? "PAYE estimated from your saved salary, retirement, and medical aid. Actual tax may differ."
-                        : "Tax is an estimate. Actual deduction depends on your tax profile."}
-                    </p>
                   </div>
                 )}
 
