@@ -91,31 +91,42 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
     });
     if (!existing) { res.status(404).json({ error: "Config not found" }); return; }
 
-    // Handle reorder: shift others if stepOrder changed
-    if (stepOrder != null && stepOrder !== existing.stepOrder) {
-      if (stepOrder > existing.stepOrder) {
-        await prisma.approvalConfig.updateMany({
-          where: { tenantId: req.user!.tenantId, stepOrder: { gt: existing.stepOrder, lte: stepOrder }, id: { not: existing.id } },
-          data: { stepOrder: { decrement: 1 } },
-        });
-      } else {
-        await prisma.approvalConfig.updateMany({
-          where: { tenantId: req.user!.tenantId, stepOrder: { gte: stepOrder, lt: existing.stepOrder }, id: { not: existing.id } },
-          data: { stepOrder: { increment: 1 } },
-        });
-      }
-    }
+    // Handle reorder inside a transaction to avoid unique-constraint collisions
+    const config = await prisma.$transaction(async (tx) => {
+      if (stepOrder != null && stepOrder !== existing.stepOrder) {
+        const TEMP = 99999;
+        // Park the moving step at a safe temp value
+        await tx.approvalConfig.update({ where: { id: existing.id }, data: { stepOrder: TEMP } });
 
-    const config = await prisma.approvalConfig.update({
-      where: { id: req.params.id as string },
-      data: {
-        ...(stepName !== undefined && { stepName }),
-        ...(approverRole !== undefined && { approverRole }),
-        ...(approverUserId !== undefined && { approverUserId: approverUserId || null }),
-        ...(isActive !== undefined && { isActive }),
-        ...(stepOrder != null && { stepOrder }),
-      },
-      include: approverInclude,
+        if (stepOrder > existing.stepOrder) {
+          // Moving down: pull the steps above it down by one
+          await tx.approvalConfig.updateMany({
+            where: { tenantId: req.user!.tenantId, stepOrder: { gt: existing.stepOrder, lte: stepOrder }, id: { not: existing.id } },
+            data: { stepOrder: { decrement: 1 } },
+          });
+        } else {
+          // Moving up: push the steps below it up by one (process highest-first to avoid collisions)
+          const toShift = await tx.approvalConfig.findMany({
+            where: { tenantId: req.user!.tenantId, stepOrder: { gte: stepOrder, lt: existing.stepOrder }, id: { not: existing.id } },
+            orderBy: { stepOrder: "desc" },
+          });
+          for (const row of toShift) {
+            await tx.approvalConfig.update({ where: { id: row.id }, data: { stepOrder: row.stepOrder + 1 } });
+          }
+        }
+      }
+
+      return tx.approvalConfig.update({
+        where: { id: req.params.id as string },
+        data: {
+          ...(stepName !== undefined && { stepName }),
+          ...(approverRole !== undefined && { approverRole }),
+          ...(approverUserId !== undefined && { approverUserId: approverUserId || null }),
+          ...(isActive !== undefined && { isActive }),
+          ...(stepOrder != null && { stepOrder }),
+        },
+        include: approverInclude,
+      });
     });
     res.json(configToResponse(config));
   } catch (err) {
