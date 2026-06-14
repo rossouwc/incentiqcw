@@ -288,14 +288,6 @@ export default function Payouts() {
                       <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
                     </div>
 
-                    {/* PAYE breakdown when profile exists */}
-                    {hasTaxProfile && payeEstimate && (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span className="text-xs">Taxable income (with commission)</span>
-                        <span className="text-xs">{formatCurrency(payeEstimate.taxableIncomeWithCommission)}</span>
-                      </div>
-                    )}
-
                     <div className="flex justify-between text-muted-foreground">
                       <span>
                         {hasTaxProfile && payeEstimate
