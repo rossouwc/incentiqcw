@@ -1,9 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPayouts,
   useCreatePayout,
   useGetWallet,
+  useGetTaxProfile,
+  useEstimatePAYE,
   getListPayoutsQueryKey,
   getGetWalletQueryKey,
 } from "@workspace/api-client-react";
@@ -20,7 +22,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Wallet, Clock, CheckCircle2, ArrowDownCircle,
-  CalendarDays, MessageSquare, Info, ArrowRightCircle,
+  CalendarDays, MessageSquare, Info, ArrowRightCircle, AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -48,9 +50,12 @@ export default function Payouts() {
 
   const { data: walletData, isLoading: walletLoading } = useGetWallet();
   const { data: payoutsData, isLoading: payoutsLoading } = useListPayouts();
+  const { data: taxProfile } = useGetTaxProfile();
   const createPayout = useCreatePayout();
+  const estimatePAYE = useEstimatePAYE();
 
   const wallet = walletData as any;
+  const profile = taxProfile as any;
   const list: any[] = Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [];
 
   const [open, setOpen] = useState(false);
@@ -60,6 +65,13 @@ export default function Payouts() {
   const [deferToMonth, setDeferToMonth] = useState(() => getUpcomingMonths(1, true)[0].value);
   const [comments, setComments] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [payeEstimate, setPayeEstimate] = useState<{
+    additionalTax: number;
+    estimatedNetPayout: number;
+    effectiveRateOnCommission: number;
+    taxableIncomeBase: number;
+    taxableIncomeWithCommission: number;
+  } | null>(null);
 
   const availableBalance = wallet?.availableBalance ?? 0;
   const pendingBalance = wallet?.pendingBalance ?? 0;
@@ -73,9 +85,38 @@ export default function Payouts() {
     return parseFloat(amount) || 0;
   }, [payoutType, amount, availableBalance]);
 
+  // Debounced PAYE estimate whenever amount or profile changes
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setPayeEstimate(null);
+    if (!profile || !profile.annualSalary || effectiveAmount <= 0) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      estimatePAYE.mutate(
+        {
+          data: {
+            annualSalary: profile.annualSalary,
+            commissionPayout: effectiveAmount,
+            medicalAidCredits: profile.medicalAidCredits ?? 0,
+            retirementContribution: profile.retirementContribution ?? 0,
+            taxYear: profile.taxYear ?? new Date().getFullYear(),
+          },
+        },
+        { onSuccess: (r: any) => setPayeEstimate(r) },
+      );
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [effectiveAmount, profile]);
+
+  // Fallback flat 25% when no tax profile is saved
   const TAX_RATE = 0.25;
-  const estimatedTax = Math.round(effectiveAmount * TAX_RATE * 100) / 100;
-  const estimatedNet = Math.round((effectiveAmount - estimatedTax) * 100) / 100;
+  const fallbackTax = Math.round(effectiveAmount * TAX_RATE * 100) / 100;
+  const fallbackNet = Math.round((effectiveAmount - fallbackTax) * 100) / 100;
+
+  const hasTaxProfile = !!profile?.annualSalary;
+  const displayTax = payeEstimate ? payeEstimate.additionalTax : (hasTaxProfile ? null : fallbackTax);
+  const displayNet = payeEstimate ? payeEstimate.estimatedNetPayout : (hasTaxProfile ? null : fallbackNet);
+  const displayRate = payeEstimate ? payeEstimate.effectiveRateOnCommission : (hasTaxProfile ? null : 25);
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
@@ -116,6 +157,7 @@ export default function Payouts() {
     setComments("");
     setErrors({});
     setPayoutType("FULL");
+    setPayeEstimate(null);
     setPayoutMonth(getUpcomingMonths(1)[0].value);
     setDeferToMonth(getUpcomingMonths(1, true)[0].value);
   };
@@ -233,19 +275,52 @@ export default function Payouts() {
                 {/* Tax estimate */}
                 {effectiveAmount > 0 && (
                   <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-sm">
+                    {/* No tax profile nudge */}
+                    {!hasTaxProfile && (
+                      <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md p-2 mb-1">
+                        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span>Using flat 25% estimate. <a href="/tax-profile" className="underline">Set up your Tax Profile</a> for a personalised PAYE calculation.</span>
+                      </div>
+                    )}
+
                     <div className="flex justify-between text-muted-foreground">
                       <span>Gross amount</span>
                       <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
                     </div>
+
+                    {/* PAYE breakdown when profile exists */}
+                    {hasTaxProfile && payeEstimate && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span className="text-xs">Taxable income (with commission)</span>
+                        <span className="text-xs">{formatCurrency(payeEstimate.taxableIncomeWithCommission)}</span>
+                      </div>
+                    )}
+
                     <div className="flex justify-between text-muted-foreground">
-                      <span>Estimated tax (25%)</span>
-                      <span className="font-medium text-red-400">- {formatCurrency(estimatedTax)}</span>
+                      <span>
+                        {hasTaxProfile && payeEstimate
+                          ? `Est. PAYE (${payeEstimate.effectiveRateOnCommission}% effective)`
+                          : hasTaxProfile
+                          ? "Calculating PAYE…"
+                          : "Estimated tax (25%)"}
+                      </span>
+                      <span className="font-medium text-red-400">
+                        {displayTax != null ? `- ${formatCurrency(displayTax)}` : "—"}
+                      </span>
                     </div>
+
                     <div className="border-t border-border pt-2 flex justify-between font-semibold">
                       <span>Estimated net payout</span>
-                      <span className="text-emerald-500">{formatCurrency(estimatedNet)}</span>
+                      <span className="text-emerald-500">
+                        {displayNet != null ? formatCurrency(displayNet) : "—"}
+                      </span>
                     </div>
-                    <p className="text-xs text-muted-foreground">* Tax is an estimate. Actual deduction depends on your tax profile.</p>
+
+                    <p className="text-xs text-muted-foreground">
+                      * {hasTaxProfile
+                        ? "PAYE estimated from your saved salary, retirement, and medical aid. Actual tax may differ."
+                        : "Tax is an estimate. Actual deduction depends on your tax profile."}
+                    </p>
                   </div>
                 )}
 
