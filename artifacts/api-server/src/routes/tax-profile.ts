@@ -7,7 +7,7 @@ export const taxProfileRouter = Router();
 
 taxProfileRouter.get("/", requireAuth, async (req, res) => {
   const profile = await prisma.taxProfile.findUnique({
-    where: { userId: req.user!.id },
+    where: { userId: req.user!.userId },
   });
   res.json(profile ?? null);
 });
@@ -28,10 +28,10 @@ taxProfileRouter.put("/", requireAuth, async (req, res) => {
   }
   const data = parsed.data;
   const profile = await prisma.taxProfile.upsert({
-    where: { userId: req.user!.id },
+    where: { userId: req.user!.userId },
     create: {
       tenantId:               req.user!.tenantId,
-      userId:                 req.user!.id,
+      userId:                 req.user!.userId,
       monthlySalary:          data.monthlySalary,
       annualSalary:           data.annualSalary,
       medicalAidCredits:      data.medicalAidCredits,
