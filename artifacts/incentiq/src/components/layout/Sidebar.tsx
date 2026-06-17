@@ -1,5 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useGetTenant } from "@workspace/api-client-react";
+import { getIndustryConfig } from "@/lib/industry-config";
 import {
   LayoutDashboard, Briefcase, Wallet, CreditCard, FileText, BarChart,
   CheckSquare, Users, Settings, ShieldAlert, LogOut, Sliders, Building2,
@@ -12,7 +14,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 type NavItem = { name: string; path: string; icon: React.ElementType };
 type NavGroup = { label: string; items: NavItem[] };
 
-function getNavGroups(role: string): NavGroup[] {
+function getNavGroups(role: string, dealsLabel = "My Deals", teamDealsLabel = "Team Deals", allDealsLabel = "All Deals"): NavGroup[] {
   switch (role) {
     case "SUPER_ADMIN":
       return [
@@ -34,7 +36,7 @@ function getNavGroups(role: string): NavGroup[] {
           label: "Company",
           items: [
             { name: "Dashboard",         path: "/dashboard",          icon: LayoutDashboard },
-            { name: "All Deals",         path: "/all-deals",          icon: Briefcase },
+            { name: allDealsLabel,       path: "/all-deals",          icon: Briefcase },
             { name: "Users",             path: "/users",              icon: Users },
             { name: "Customers",         path: "/customers",          icon: Building2 },
             { name: "Commission Rules",  path: "/commission-rules",   icon: Sliders },
@@ -52,7 +54,7 @@ function getNavGroups(role: string): NavGroup[] {
           label: "My Work",
           items: [
             { name: "My Dashboard",       path: "/dashboard", icon: LayoutDashboard },
-            { name: "My Deals",           path: "/deals",     icon: Briefcase },
+            { name: dealsLabel,           path: "/deals",     icon: Briefcase },
             { name: "My Commission Wallet", path: "/wallet",  icon: Wallet },
             { name: "Payout Requests",    path: "/payouts",   icon: CreditCard },
             { name: "Tax Profile",        path: "/tax-profile", icon: FileText },
@@ -66,7 +68,7 @@ function getNavGroups(role: string): NavGroup[] {
           label: "Management",
           items: [
             { name: "Dashboard",         path: "/dashboard",        icon: LayoutDashboard },
-            { name: "Team Deals",        path: "/team-deals",       icon: Users },
+            { name: teamDealsLabel,      path: "/team-deals",       icon: Users },
             { name: "Pending Approvals", path: "/approvals",        icon: CheckSquare },
             { name: "Reports",           path: "/reports",          icon: BarChart },
           ],
@@ -133,11 +135,19 @@ const ROLE_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export function Sidebar() {
-  const [location] = useLocation();
-  const { user, logout } = useAuth();
-  const role = user?.role ?? "";
-  const groups = getNavGroups(role);
-  const roleInfo = ROLE_LABELS[role] ?? { label: role, color: "bg-muted text-muted-foreground" };
+  const [location]        = useLocation();
+  const { user, logout }  = useAuth();
+  const role              = user?.role ?? "";
+  const { data: tenant }  = useGetTenant();
+  const industryCode      = (tenant as any)?.industry ?? "IT_CONSULTING";
+  const indCfg            = getIndustryConfig(industryCode);
+
+  const dealsLabel    = `My ${indCfg.eventLabelPlural}`;
+  const teamLabel     = `Team ${indCfg.eventLabelPlural}`;
+  const allLabel      = `All ${indCfg.eventLabelPlural}`;
+
+  const groups    = getNavGroups(role, dealsLabel, teamLabel, allLabel);
+  const roleInfo  = ROLE_LABELS[role] ?? { label: role, color: "bg-muted text-muted-foreground" };
 
   const isActive = (path: string) =>
     location === path || (path !== "/" && location.startsWith(path));

@@ -1,445 +1,615 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import {
-  useListDeals,
-  useCreateDeal,
-  useUpdateDeal,
-  useSubmitDeal,
-  useDeleteDeal,
-  useListCommissionRuleGroups,
-  useGetTenant,
-  DealInputDealType,
-} from "@workspace/api-client-react";
-import type { Deal, CommissionRuleGroup } from "@workspace/api-client-react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getIndustryConfig } from "@/lib/industry-config";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { DatePicker } from "@/components/ui/date-picker";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Plus,
-  Search,
-  Edit2,
-  Trash2,
-  SendHorizontal,
-  Briefcase,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  TrendingUp,
-  DollarSign,
-  Eye,
-  Loader2,
-  CircleDot,
+  Plus, Search, Trash2, SendHorizontal, Briefcase, Clock,
+  CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// ─── Customer Name Autocomplete ───────────────────────────────────────────────
+// ── Auth helper ───────────────────────────────────────────────────────────────
 
 function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const t = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
 
-function CustomerCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!value.trim()) { setSuggestions([]); setOpen(false); return; }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/customers?search=${encodeURIComponent(value)}`, {
-          headers: getAuthHeaders(),
-        });
-        if (res.ok) {
-          const data: { name: string }[] = await res.json();
-          setSuggestions(data.map(c => c.name));
-          setOpen(data.length > 0);
-        }
-      } catch { /* ignore */ }
-    }, 250);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [value]);
+interface FieldDef {
+  id: string;
+  fieldKey: string;
+  fieldLabel: string;
+  fieldType: string;
+  isRequired: boolean;
+  displayOrder: number;
+  calculationRole: string | null;
+  optionsJson: unknown;
+}
 
+interface EventType { value: string; label: string }
+
+interface FieldConfig {
+  industryCode: string;
+  industryName: string;
+  dealEntityName: string;
+  commissionEventName: string;
+  showGP: boolean;
+  revenueLabel: string;
+  costLabel: string | null;
+  commissionMethodLabel: string;
+  eventTypes: EventType[];
+  fieldDefinitions: FieldDef[];
+}
+
+interface CommEvent {
+  id: string;
+  eventTitle: string;
+  eventType: string;
+  eventDataJson: Record<string, unknown> | null;
+  revenueAmount: number;
+  costAmount: number;
+  grossProfitAmount: number;
+  commissionBaseAmount: number;
+  commissionPercentage: number;
+  calculatedCommissionAmount: number;
+  triggerStatus: string;
+  approvalStatus: string;
+  walletStatus: string;
+  submittedAt: string | null;
+  createdAt: string;
+  salesExecutiveName: string;
+}
+
+// ── Custom hooks ──────────────────────────────────────────────────────────────
+
+function useFieldConfig() {
+  const [data, setData]       = useState<FieldConfig | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    fetch("/api/commission-events/field-config", { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, []);
+  return { data, loading };
+}
+
+function useCommissionEvents() {
+  const [data, setData]       = useState<CommEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/commission-events", { headers: getAuthHeaders() });
+      const json = await res.json();
+      setData(json.data ?? []);
+    } catch { setData([]); }
+    finally   { setLoading(false); }
   }, []);
 
+  useEffect(() => { fetchData(); }, [fetchData]);
+  return { data, loading, refetch: fetchData };
+}
+
+// ── Status display ────────────────────────────────────────────────────────────
+
+const STATUS_CFG: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
+  DRAFT:            { label: "Draft",           cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",       Icon: CircleDot },
+  PENDING_APPROVAL: { label: "In Approval",     cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",   Icon: Clock },
+  APPROVED:         { label: "Approved",        cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",   Icon: CheckCircle2 },
+  REJECTED:         { label: "Rejected",        cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",           Icon: XCircle },
+  PAID:             { label: "Paid",            cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", Icon: CheckCircle2 },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_CFG[status] ?? { label: status, cls: "bg-muted text-muted-foreground", Icon: CircleDot };
   return (
-    <div ref={containerRef} className="relative">
-      <input
-        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="e.g. Acme Corp"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
-        autoComplete="off"
-      />
-      {open && suggestions.length > 0 && (
-        <div className="absolute z-50 top-full mt-1 w-full rounded-md border border-border bg-popover shadow-md overflow-hidden">
-          {suggestions.map(name => (
-            <div
-              key={name}
-              className="px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
-              onMouseDown={e => {
-                e.preventDefault();
-                onChange(name);
-                setOpen(false);
-              }}
-            >
-              {name}
-            </div>
-          ))}
+    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>
+      <s.Icon className="h-3 w-3" />{s.label}
+    </span>
+  );
+}
+
+// ── Dynamic field renderer ────────────────────────────────────────────────────
+
+function DynamicField({
+  def, value, onChange,
+}: {
+  def: FieldDef;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const id      = `f-${def.fieldKey}`;
+  const options = Array.isArray(def.optionsJson) ? (def.optionsJson as string[]) : [];
+  const req     = def.isRequired;
+  const reqMark = req ? <span className="text-destructive ml-0.5">*</span> : null;
+
+  switch (def.fieldType) {
+    case "textarea":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <Textarea
+            id={id} rows={2} value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={`Enter ${def.fieldLabel.toLowerCase()}`}
+            className="resize-none"
+          />
         </div>
-      )}
+      );
+
+    case "select":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <Select value={value} onValueChange={onChange}>
+            <SelectTrigger id={id}>
+              <SelectValue placeholder={`Select…`} />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((o) => (
+                <SelectItem key={o} value={o}>{o.replace(/_/g, " ")}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+
+    case "boolean":
+      return (
+        <div className="flex items-center gap-2.5 pt-5">
+          <input
+            id={id} type="checkbox"
+            className="h-4 w-4 accent-primary rounded"
+            checked={value === "true"}
+            onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+          />
+          <Label htmlFor={id} className="cursor-pointer">{def.fieldLabel}</Label>
+        </div>
+      );
+
+    case "currency":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">R</span>
+            <Input
+              id={id} type="number" className="pl-7" value={value}
+              onChange={(e) => onChange(e.target.value)}
+              min="0" step="0.01" placeholder="0.00"
+            />
+          </div>
+        </div>
+      );
+
+    case "percentage":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <div className="relative">
+            <Input
+              id={id} type="number" className="pr-8" value={value}
+              onChange={(e) => onChange(e.target.value)}
+              min="0" max="100" step="0.01" placeholder="0.00"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+          </div>
+        </div>
+      );
+
+    case "number":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <Input
+            id={id} type="number" value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="0"
+          />
+        </div>
+      );
+
+    case "date":
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <Input
+            id={id} type="date" value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </div>
+      );
+
+    default: // "text"
+      return (
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>{def.fieldLabel}{reqMark}</Label>
+          <Input
+            id={id} type="text" value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={`Enter ${def.fieldLabel.toLowerCase()}`}
+          />
+        </div>
+      );
+  }
+}
+
+// ── Calculation preview ───────────────────────────────────────────────────────
+
+interface CalcValues {
+  revenue: number;
+  cost: number;
+  grossProfit: number;
+  commissionBase: number;
+  showGP: boolean;
+  revenueLabel: string;
+  costLabel: string | null;
+}
+
+function CalcPreview({ calc }: { calc: CalcValues }) {
+  return (
+    <div className="rounded-lg bg-primary/5 border border-primary/20 p-4">
+      <p className="text-[10px] font-semibold text-primary uppercase tracking-widest mb-3 flex items-center gap-1">
+        <DollarSign className="h-3 w-3" /> Live Commission Preview
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{calc.revenueLabel}</p>
+          <p className="font-semibold text-foreground">{formatCurrency(calc.revenue)}</p>
+        </div>
+        {calc.showGP && calc.costLabel && (
+          <div>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{calc.costLabel}</p>
+            <p className="font-semibold text-foreground">{formatCurrency(calc.cost)}</p>
+          </div>
+        )}
+        {calc.showGP && (
+          <div>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Gross Profit</p>
+            <p className={`font-semibold ${calc.grossProfit >= 0 ? "text-foreground" : "text-destructive"}`}>
+              {formatCurrency(calc.grossProfit)}
+            </p>
+          </div>
+        )}
+        <div>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Comm. Base</p>
+          <p className="font-semibold text-primary">{formatCurrency(calc.commissionBase)}</p>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Approval steps viewer ─────────────────────────────────────────────────────
 
-const DEAL_TYPES = [
-  { value: "NET_NEW",   label: "Net New" },
-  { value: "RENEWAL",   label: "Renewal" },
-  { value: "UPSELL",    label: "Upsell" },
-  { value: "CROSS_SELL", label: "Cross-Sell" },
-];
-
-const FALLBACK_COMM: Record<string, number> = {
-  NET_NEW: 10, RENEWAL: 5, UPSELL: 7, CROSS_SELL: 6,
+const STEP_ROLE_LABEL: Record<string, string> = {
+  MANAGER: "Manager", FINANCE: "Finance", ADMIN: "Director", EXECUTIVE: "Executive",
 };
 
-const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  DRAFT:              { label: "Draft",              cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
-  SUBMITTED:          { label: "Submitted",          cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  PENDING_APPROVAL:   { label: "Pending Approval",   cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
-  MANAGER_APPROVED:   { label: "Manager Approved",   cls: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
-  FINANCE_APPROVED:   { label: "Finance Approved",   cls: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300" },
-  EXECUTIVE_APPROVED: { label: "Approved",           cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
-  REJECTED:           { label: "Rejected",           cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
-  PAID:               { label: "Paid",               cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
-};
+function ApprovalStepsModal({
+  eventId, eventTitle, onClose,
+}: {
+  eventId: string; eventTitle: string; onClose: () => void;
+}) {
+  const [steps, setSteps]     = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-const TYPE_CONFIG: Record<string, { label: string; cls: string }> = {
-  NET_NEW:   { label: "Net New",    cls: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" },
-  RENEWAL:   { label: "Renewal",    cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  UPSELL:    { label: "Upsell",     cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
-  CROSS_SELL:{ label: "Cross-Sell", cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" },
-};
+  useEffect(() => {
+    fetch(`/api/commission-events/${eventId}`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((d) => setSteps(d.approvals ?? []))
+      .catch(() => setSteps([]))
+      .finally(() => setLoading(false));
+  }, [eventId]);
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}>
-      {cfg.label}
-    </span>
-  );
-}
-
-function TypeBadge({ type }: { type: string }) {
-  const cfg = TYPE_CONFIG[type] ?? { label: type.replace(/_/g, " "), cls: "bg-muted text-muted-foreground" };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cfg.cls}`}>
-      {cfg.label}
-    </span>
-  );
-}
-
-function lookupCommInfo(dealType: string, groups: CommissionRuleGroup[]): { pct: number; label: string } {
-  for (const group of groups) {
-    if (group.status !== "ACTIVE") continue;
-    const rule = group.rules.find((r) => r.dealType === dealType && r.status === "ACTIVE");
-    if (rule) {
-      return {
-        pct: rule.commissionPercentage,
-        label: `${group.groupName} — ${rule.commissionPercentage}%`,
-      };
-    }
-  }
-  const pct = FALLBACK_COMM[dealType] ?? 10;
-  return { pct, label: `Default (${pct}%)` };
-}
-
-interface FormState {
-  customerName: string;
-  dealName: string;
-  dealType: string;
-  contractStartDate: string;
-  contractEndDate: string;
-  revenue: string;
-  cost: string;
-  metadata: Record<string, string>;
-}
-
-const emptyForm: FormState = {
-  customerName: "", dealName: "", dealType: "",
-  contractStartDate: "", contractEndDate: "",
-  revenue: "", cost: "",
-  metadata: {},
-};
-
-function dealToForm(deal: Deal): FormState {
-  const meta = ((deal as any).metadata as Record<string, string> | null) ?? {};
-  return {
-    customerName:      deal.customerName,
-    dealName:          deal.dealName,
-    dealType:          meta.eventType ?? deal.dealType,
-    contractStartDate: deal.contractStartDate ? deal.contractStartDate.substring(0, 10) : "",
-    contractEndDate:   deal.contractEndDate   ? deal.contractEndDate.substring(0, 10)   : "",
-    revenue:           String(deal.revenue),
-    cost:              String(deal.cost),
-    metadata:          meta,
+  const STEP_STATUS: Record<string, { cls: string; label: string }> = {
+    PENDING:  { cls: "text-amber-500",  label: "Pending" },
+    APPROVED: { cls: "text-green-500",  label: "Approved" },
+    REJECTED: { cls: "text-red-500",    label: "Rejected" },
   };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Approval Progress</DialogTitle>
+          <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{eventTitle}</p>
+        </DialogHeader>
+        {loading ? (
+          <div className="space-y-2 py-4">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : steps.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4">No approval steps found.</p>
+        ) : (
+          <div className="space-y-2 py-2">
+            {steps.map((s) => {
+              const sc = STEP_STATUS[s.status] ?? { cls: "text-muted-foreground", label: s.status };
+              return (
+                <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md border border-border bg-card">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
+                    s.status === "APPROVED" ? "border-green-500 bg-green-500/20 text-green-500" :
+                    s.status === "REJECTED" ? "border-red-500 bg-red-500/20 text-red-500" :
+                    "border-amber-400 bg-amber-400/10 text-amber-500"
+                  }`}>{s.approvalStep}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      {STEP_ROLE_LABEL[s.approverRole] ?? s.approverRole} Review
+                    </p>
+                    {s.comments && <p className="text-xs text-muted-foreground truncate">{s.comments}</p>}
+                  </div>
+                  <span className={`text-xs font-semibold ${sc.cls}`}>{sc.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Deals() {
-  const { toast } = useToast();
+  const { toast }                  = useToast();
+  const { data: fc, loading: fcLoading } = useFieldConfig();
+  const { data: events, loading, refetch } = useCommissionEvents();
 
-  const [showDialog, setShowDialog] = useState(false);
-  const [editDeal, setEditDeal] = useState<Deal | null>(null);
-  const [viewDeal, setViewDeal] = useState<Deal | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
+  // Dialog / modal state
+  const [showForm, setShowForm]       = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<CommEvent | null>(null);
+  const [viewApprovals, setViewApprovals] = useState<{ id: string; title: string } | null>(null);
+
+  // Form state
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventType, setEventType]   = useState("");
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const [workflowDeal, setWorkflowDeal] = useState<{ id: string; name: string } | null>(null);
-  const [workflowSteps, setWorkflowSteps] = useState<any[]>([]);
-  const [workflowLoading, setWorkflowLoading] = useState(false);
-
-  async function openWorkflow(deal: Deal) {
-    setWorkflowDeal({ id: deal.id, name: deal.dealName });
-    setWorkflowSteps([]);
-    setWorkflowLoading(true);
-    try {
-      const res = await fetch(`/api/deals/${deal.id}`, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setWorkflowSteps(data.approvalWorkflows ?? []);
-      }
-    } catch { /* ignore */ } finally {
-      setWorkflowLoading(false);
-    }
-  }
-  const [search, setSearch] = useState("");
+  // Filters
+  const [search, setSearch]         = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [form, setForm] = useState<FormState>(emptyForm);
 
-  const { data: dealsData, isLoading, refetch } = useListDeals({
-    ...(statusFilter !== "all" && { status: statusFilter }),
-    ...(typeFilter   !== "all" && { dealType: typeFilter }),
-    limit: 100,
-  });
-  const { data: commGroups = [] } = useListCommissionRuleGroups();
-  const { data: tenant } = useGetTenant();
-  const industryConfig = getIndustryConfig((tenant as any)?.industry);
-  const isIT = industryConfig.id === "IT_CONSULTING";
+  // Industry config (frontend copy for labels + event types)
+  const indCfg = fc ? getIndustryConfig(fc.industryCode) : null;
 
-  const createM  = useCreateDeal();
-  const updateM  = useUpdateDeal();
-  const submitM  = useSubmitDeal();
-  const deleteM  = useDeleteDeal();
+  // Plural label for the page heading
+  const entityPlural = indCfg?.eventLabelPlural ?? "Deals";
+  const entitySingular = fc?.dealEntityName ?? indCfg?.eventLabel ?? "Deal";
 
-  const deals = dealsData?.data ?? [];
-
-  const filtered = useMemo(() => {
-    if (!search) return deals;
-    const q = search.toLowerCase();
-    return deals.filter(
-      (d) =>
-        d.dealName.toLowerCase().includes(q) ||
-        d.customerName.toLowerCase().includes(q)
-    );
-  }, [deals, search]);
-
-  const rev     = parseFloat(form.revenue) || 0;
-  const cst     = parseFloat(form.cost)    || 0;
-  const gp      = rev - cst;
-  const gpPct   = rev > 0 ? (gp / rev) * 100 : 0;
-  const commInfo = useMemo(
-    () => lookupCommInfo(isIT ? form.dealType : "NET_NEW", commGroups),
-    [form.dealType, commGroups, isIT]
-  );
-  const commAmt = industryConfig.showGP
-    ? (gp > 0 ? gp * (commInfo.pct / 100) : 0)
-    : rev * (commInfo.pct / 100);
-
-  const stats = useMemo(() => {
-    const total   = deals.length;
-    const draft   = deals.filter((d) => d.status === "DRAFT").length;
-    const pending = deals.filter((d) =>
-      ["PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED"].includes(d.status)
-    ).length;
-    const approved = deals.filter((d) =>
-      ["EXECUTIVE_APPROVED", "PAID"].includes(d.status)
-    ).length;
-    const totalComm = deals.reduce((s, d) => s + d.commission, 0);
-    return { total, draft, pending, approved, totalComm };
-  }, [deals]);
-
-  function setField(key: keyof FormState, val: string) {
-    setForm((f) => ({ ...f, [key]: val }));
-  }
-
-  function openCreate() {
-    setEditDeal(null);
-    setForm(emptyForm);
-    setShowDialog(true);
-  }
-
-  function openEdit(deal: Deal) {
-    setEditDeal(deal);
-    setForm(dealToForm(deal));
-    setShowDialog(true);
-  }
-
-  function closeDialog() {
-    setShowDialog(false);
-    setEditDeal(null);
-    setForm(emptyForm);
-  }
-
-  const getInput = () => {
-    const extraMeta: Record<string, string> = { industry: industryConfig.id };
-    if (!isIT && form.dealType) extraMeta.eventType = form.dealType;
-    return {
-      customerName: form.customerName,
-      dealName:     form.dealName,
-      dealType:     (isIT ? form.dealType : "NET_NEW") as DealInputDealType,
-      revenue:      rev,
-      cost:         isIT ? cst : 0,
-      contractStartDate: form.contractStartDate || null,
-      contractEndDate:   form.contractEndDate   || null,
-      metadata: { ...form.metadata, ...extraMeta },
-    };
+  // ── New event names mapping ──
+  const NEW_LABEL_MAP: Record<string, string> = {
+    IT_CONSULTING:      "New Deal",
+    RECRUITMENT:        "New Placement",
+    INSURANCE:          "New Policy",
+    VEHICLE_DEALERSHIP: "New Vehicle Sale",
+    PROPERTY_SALES:     "New Property Sale",
+    RENTAL_MANAGEMENT:  "New Lease",
+    TELECOM:            "New Activation",
+    SAAS:               "New Subscription",
+    CUSTOM:             "New Commission Event",
   };
+  const newLabel = fc ? (NEW_LABEL_MAP[fc.industryCode] ?? `New ${entitySingular}`) : "New Deal";
 
-  async function handleSaveDraft() {
-    if (!form.customerName || !form.dealName || !form.dealType || !form.revenue) {
+  // ── Live calculations from form values ──
+  const calc = useMemo<CalcValues>(() => {
+    let revenue = 0, cost = 0, commBase = 0;
+    if (fc) {
+      for (const f of fc.fieldDefinitions) {
+        const num = parseFloat(formValues[f.fieldKey] ?? "0") || 0;
+        if (f.calculationRole === "REVENUE")         revenue  = num;
+        else if (f.calculationRole === "COST")       cost     = num;
+        else if (f.calculationRole === "COMMISSION_BASE") commBase = num;
+      }
+    }
+    const gp = revenue - cost;
+    if (commBase === 0) commBase = gp > 0 ? gp : revenue;
+    return {
+      revenue, cost,
+      grossProfit: gp,
+      commissionBase: commBase,
+      showGP:        fc?.showGP ?? false,
+      revenueLabel:  fc?.revenueLabel ?? "Revenue",
+      costLabel:     fc?.costLabel ?? null,
+    };
+  }, [formValues, fc]);
+
+  // ── Validation ──
+  const hasCalcValues = calc.revenue > 0 || calc.commissionBase > 0;
+  const requiredFilled = useMemo(() => {
+    if (!eventTitle.trim() || !eventType) return false;
+    if (!fc) return false;
+    for (const f of fc.fieldDefinitions) {
+      if (f.isRequired && !(formValues[f.fieldKey] ?? "").trim()) return false;
+    }
+    return true;
+  }, [eventTitle, eventType, formValues, fc]);
+
+  // ── Stats ──
+  const stats = useMemo(() => {
+    const total    = events.length;
+    const draft    = events.filter((e) => e.approvalStatus === "DRAFT").length;
+    const pending  = events.filter((e) => e.approvalStatus === "PENDING_APPROVAL").length;
+    const totalComm = events.reduce((s, e) => s + e.calculatedCommissionAmount, 0);
+    return { total, draft, pending, totalComm };
+  }, [events]);
+
+  // ── Filtered list ──
+  const filtered = useMemo(() => {
+    return events.filter((e) => {
+      const matchesStatus = statusFilter === "all" || e.approvalStatus === statusFilter;
+      if (!matchesStatus) return false;
+      if (!search) return true;
+      const q = search.toLowerCase();
+      const data = e.eventDataJson as Record<string, string> | null;
+      const customer = data?.customerName ?? data?.clientName ?? data?.candidateName ?? "";
+      return (
+        e.eventTitle.toLowerCase().includes(q) ||
+        String(customer).toLowerCase().includes(q)
+      );
+    });
+  }, [events, search, statusFilter]);
+
+  // ── Handlers ──
+  function openForm() {
+    setEventTitle("");
+    setEventType(fc?.eventTypes[0]?.value ?? "");
+    setFormValues({});
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+  }
+
+  function setField(key: string, val: string) {
+    setFormValues((prev) => ({ ...prev, [key]: val }));
+  }
+
+  async function handleCreate(submitImmediately: boolean) {
+    if (!requiredFilled) {
       toast({ title: "Please fill in all required fields", variant: "destructive" });
       return;
     }
     setSubmitting(true);
     try {
-      if (editDeal) {
-        await updateM.mutateAsync({ dealId: editDeal.id, data: getInput() });
-        toast({ title: "Deal saved" });
-      } else {
-        await createM.mutateAsync({ data: getInput() });
-        toast({ title: "Draft saved" });
+      const res = await fetch("/api/commission-events", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          eventTitle: eventTitle.trim(),
+          eventType,
+          eventDataJson: formValues,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Server error");
       }
-      closeDialog();
+      const created = await res.json();
+
+      if (submitImmediately) {
+        const sr = await fetch(`/api/commission-events/${created.id}/submit`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+        });
+        if (!sr.ok) throw new Error("Failed to submit for approval");
+        toast({ title: `${entitySingular} submitted for approval`, description: "Managers have been notified." });
+      } else {
+        toast({ title: "Draft saved", description: `${entitySingular} saved as draft.` });
+      }
+
+      closeForm();
       refetch();
-    } catch {
-      toast({ title: "Error saving deal", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message ?? "Something went wrong", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleSubmitForApproval() {
-    if (!form.customerName || !form.dealName || !form.dealType || !form.revenue) {
-      toast({ title: "Please fill in all required fields", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
+  async function handleSubmitExisting(ev: CommEvent) {
     try {
-      let targetId: string;
-      if (editDeal) {
-        await updateM.mutateAsync({ dealId: editDeal.id, data: getInput() });
-        targetId = editDeal.id;
-      } else {
-        const created = await createM.mutateAsync({ data: getInput() });
-        targetId = created.id;
-      }
-      await submitM.mutateAsync({ dealId: targetId });
-      toast({ title: "Deal submitted for approval", description: "Managers have been notified." });
-      closeDialog();
+      const res = await fetch(`/api/commission-events/${ev.id}/submit`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Submit failed");
+      toast({ title: "Submitted for approval" });
       refetch();
     } catch {
-      toast({ title: "Error submitting deal", variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleSubmitExisting(deal: Deal) {
-    try {
-      await submitM.mutateAsync({ dealId: deal.id });
-      toast({ title: "Deal submitted for approval" });
-      refetch();
-    } catch {
-      toast({ title: "Error submitting deal", variant: "destructive" });
+      toast({ title: "Error submitting", variant: "destructive" });
     }
   }
 
   async function handleDelete() {
     if (!deleteTarget) return;
     try {
-      await deleteM.mutateAsync({ dealId: deleteTarget.id });
-      toast({ title: "Deal deleted" });
+      await fetch(`/api/commission-events/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      toast({ title: `${entitySingular} deleted` });
       setDeleteTarget(null);
       refetch();
     } catch {
-      toast({ title: "Error deleting deal", variant: "destructive" });
+      toast({ title: "Error deleting", variant: "destructive" });
     }
   }
 
-  const isFormValid = form.customerName && form.dealName && form.dealType && form.revenue;
+  // ── Customer name helper ──
+  function getCustomerName(ev: CommEvent): string {
+    const d = ev.eventDataJson as Record<string, unknown> | null;
+    if (!d) return "—";
+    return String(
+      d.customerName ?? d.clientName ?? d.candidateName ??
+      d.buyerName ?? d.tenantName ?? ""
+    ) || "—";
+  }
+
+  // ── Event type label ──
+  function getTypeLabel(ev: CommEvent): string {
+    return (indCfg?.eventTypes.find((t) => t.value === ev.eventType)?.label) ?? ev.eventType.replace(/_/g, " ");
+  }
+
+  // ── Whether a field spans full width ──
+  function isWide(f: FieldDef) {
+    return f.fieldType === "textarea";
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">My Deals</h1>
-          <p className="text-muted-foreground">Manage and submit your commission deals</p>
+          {fcLoading ? (
+            <Skeleton className="h-8 w-48" />
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold text-foreground">My {entityPlural}</h1>
+              <p className="text-muted-foreground mt-0.5">
+                Manage and submit your commission {entityPlural.toLowerCase()}
+              </p>
+            </>
+          )}
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="h-4 w-4" /> New Deal
+        <Button onClick={openForm} disabled={fcLoading} className="gap-2">
+          <Plus className="h-4 w-4" />
+          {fcLoading ? "Loading…" : newLabel}
         </Button>
       </div>
 
+      {/* ── Stats ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Total Deals",   value: String(stats.total),             icon: Briefcase,    accent: "border-l-primary" },
-          { label: "Drafts",        value: String(stats.draft),             icon: Clock,        accent: "border-l-slate-400" },
-          { label: "In Approval",   value: String(stats.pending),           icon: TrendingUp,   accent: "border-l-amber-400" },
-          { label: "My Commission", value: formatCurrency(stats.totalComm), icon: DollarSign,   accent: "border-l-emerald-500" },
+          { label: `Total ${entityPlural}`, value: String(stats.total),             icon: Briefcase,  accent: "border-l-primary" },
+          { label: "Drafts",                value: String(stats.draft),             icon: Clock,      accent: "border-l-slate-400" },
+          { label: "In Approval",           value: String(stats.pending),           icon: TrendingUp, accent: "border-l-amber-400" },
+          { label: "My Commission",         value: formatCurrency(stats.totalComm), icon: DollarSign, accent: "border-l-emerald-500" },
         ].map((s) => (
           <Card key={s.label} className={`border-l-4 ${s.accent} shadow-sm`}>
             <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
@@ -447,9 +617,7 @@ export default function Deals() {
               <s.icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-8 w-24" />
-              ) : (
+              {loading ? <Skeleton className="h-8 w-24" /> : (
                 <div className="text-2xl font-bold text-foreground">{s.value}</div>
               )}
             </CardContent>
@@ -457,13 +625,14 @@ export default function Deals() {
         ))}
       </div>
 
+      {/* ── Filters + table ── */}
       <Card className="shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by deal or customer name..."
+                placeholder={`Search ${entityPlural.toLowerCase()} or customer…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -476,145 +645,114 @@ export default function Deals() {
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
-                <SelectItem value="MANAGER_APPROVED">Manager Approved</SelectItem>
-                <SelectItem value="FINANCE_APPROVED">Finance Approved</SelectItem>
-                <SelectItem value="EXECUTIVE_APPROVED">Approved</SelectItem>
+                <SelectItem value="PENDING_APPROVAL">In Approval</SelectItem>
+                <SelectItem value="APPROVED">Approved</SelectItem>
                 <SelectItem value="REJECTED">Rejected</SelectItem>
                 <SelectItem value="PAID">Paid</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {DEAL_TYPES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                ))}
               </SelectContent>
             </Select>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {isLoading ? (
+          {loading ? (
             <div className="p-6 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full" />
-              ))}
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                   <tr>
-                    <th className="px-6 py-3 font-medium">Deal</th>
+                    <th className="px-6 py-3 font-medium">{entitySingular}</th>
                     <th className="px-6 py-3 font-medium">Type</th>
-                    <th className="px-6 py-3 font-medium text-right">Revenue</th>
-                    <th className="px-6 py-3 font-medium text-right">GP</th>
-                    <th className="px-6 py-3 font-medium text-right">GP%</th>
+                    <th className="px-6 py-3 font-medium text-right">{fc?.revenueLabel ?? "Revenue"}</th>
+                    {fc?.showGP && <th className="px-6 py-3 font-medium text-right">GP</th>}
                     <th className="px-6 py-3 font-medium text-right">Commission</th>
                     <th className="px-6 py-3 font-medium">Status</th>
-                    <th className="px-6 py-3 font-medium">Submitted</th>
+                    <th className="px-6 py-3 font-medium">Date</th>
                     <th className="px-6 py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
-                        No deals found.{" "}
-                        <button
-                          className="text-primary hover:underline"
-                          onClick={openCreate}
-                        >
-                          Create your first deal
+                      <td colSpan={8} className="px-6 py-14 text-center text-muted-foreground">
+                        No {entityPlural.toLowerCase()} found.{" "}
+                        <button className="text-primary hover:underline" onClick={openForm}>
+                          Record your first {entitySingular.toLowerCase()}
                         </button>
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((deal) => (
-                      <tr
-                        key={deal.id}
-                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                      >
+                    filtered.map((ev) => (
+                      <tr key={ev.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                         <td className="px-6 py-4">
-                          <div className="font-medium text-foreground">{deal.dealName}</div>
-                          <div className="text-xs text-muted-foreground">{deal.customerName}</div>
-                          {deal.contractStartDate && (
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              {formatDate(deal.contractStartDate)}
-                              {deal.contractEndDate ? ` → ${formatDate(deal.contractEndDate)}` : ""}
-                            </div>
-                          )}
+                          <div className="font-medium text-foreground">{ev.eventTitle}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{getCustomerName(ev)}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <TypeBadge type={deal.dealType} />
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                            {getTypeLabel(ev)}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-right text-muted-foreground">
-                          {formatCurrency(deal.revenue)}
+                          {formatCurrency(ev.revenueAmount)}
                         </td>
+                        {fc?.showGP && (
+                          <td className="px-6 py-4 text-right">
+                            {formatCurrency(ev.grossProfitAmount)}
+                          </td>
+                        )}
                         <td className="px-6 py-4 text-right">
-                          {formatCurrency(deal.grossProfit)}
-                        </td>
-                        <td className="px-6 py-4 text-right text-muted-foreground">
-                          {deal.grossProfitPercentage.toFixed(1)}%
-                        </td>
-                        <td className="px-6 py-4 text-right font-semibold text-primary">
-                          {formatCurrency(deal.commission)}
-                          <div className="text-xs font-normal text-muted-foreground">
-                            {deal.commissionPercentage}%
-                          </div>
+                          <span className="font-semibold text-primary">{formatCurrency(ev.calculatedCommissionAmount)}</span>
+                          <div className="text-xs text-muted-foreground">{ev.commissionPercentage}%</div>
                         </td>
                         <td className="px-6 py-4">
-                          {deal.status === "DRAFT" ? (
-                            <StatusBadge status={deal.status} />
+                          {ev.approvalStatus === "DRAFT" ? (
+                            <StatusBadge status={ev.approvalStatus} />
                           ) : (
                             <button
-                              onClick={() => openWorkflow(deal)}
-                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => setViewApprovals({ id: ev.id, title: ev.eventTitle })}
+                              className="hover:opacity-80 transition-opacity"
                               title="View approval progress"
                             >
-                              <StatusBadge status={deal.status} />
+                              <StatusBadge status={ev.approvalStatus} />
                             </button>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-muted-foreground text-xs">
-                          {deal.submittedAt ? formatDate(deal.submittedAt) : "—"}
+                        <td className="px-6 py-4 text-xs text-muted-foreground">
+                          {formatDate(ev.createdAt)}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                              title="View"
-                              onClick={() => setViewDeal(deal)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            {deal.status === "DRAFT" && (
+                            {ev.approvalStatus !== "DRAFT" && (
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-8 w-8 text-muted-foreground"
+                                onClick={() => setViewApprovals({ id: ev.id, title: ev.eventTitle })}
+                                title="View approvals"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {ev.approvalStatus === "DRAFT" && (
                               <>
-                                <button
-                                  className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                                  title="Edit"
-                                  onClick={() => openEdit(deal)}
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-8 gap-1 text-xs"
+                                  onClick={() => handleSubmitExisting(ev)}
+                                  title="Submit for approval"
                                 >
-                                  <Edit2 className="h-4 w-4" />
-                                </button>
-                                <button
-                                  className="p-1.5 rounded hover:bg-indigo-50 text-indigo-500 hover:text-indigo-700 transition-colors"
-                                  title="Submit for Approval"
-                                  onClick={() => handleSubmitExisting(deal)}
-                                >
-                                  <SendHorizontal className="h-4 w-4" />
-                                </button>
-                                <button
-                                  className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                                  <SendHorizontal className="h-3.5 w-3.5" /> Submit
+                                </Button>
+                                <Button
+                                  size="icon" variant="ghost"
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setDeleteTarget(ev)}
                                   title="Delete"
-                                  onClick={() => setDeleteTarget(deal)}
                                 >
                                   <Trash2 className="h-4 w-4" />
-                                </button>
+                                </Button>
                               </>
                             )}
                           </div>
@@ -629,398 +767,138 @@ export default function Deals() {
         </CardContent>
       </Card>
 
-      <Dialog open={showDialog} onOpenChange={(open) => !open && closeDialog()}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              {editDeal
-                ? `Edit ${industryConfig.eventLabel} — ${editDeal.dealName}`
-                : `New ${industryConfig.eventLabel}`}
-            </DialogTitle>
+      {/* ── New event dialog ── */}
+      <Dialog open={showForm} onOpenChange={(o) => { if (!o) closeForm(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+            <DialogTitle>Record a {newLabel.replace("New ", "New ")}</DialogTitle>
+            {fc && (
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Fill in the details to record a new {entitySingular.toLowerCase()} and calculate your commission.
+              </p>
+            )}
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="customerName">{industryConfig.entityLabel} <span className="text-destructive">*</span></Label>
-                <CustomerCombobox
-                  value={form.customerName}
-                  onChange={(v) => setField("customerName", v)}
-                />
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            {fcLoading || !fc ? (
+              <div className="space-y-3">
+                {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="dealName">{industryConfig.eventLabel} Name <span className="text-destructive">*</span></Label>
-                <Input
-                  id="dealName"
-                  placeholder={`e.g. ${industryConfig.eventLabel} 2025`}
-                  value={form.dealName}
-                  onChange={(e) => setField("dealName", e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label>Type <span className="text-destructive">*</span></Label>
-                <Select value={form.dealType} onValueChange={(v) => setField("dealType", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {industryConfig.eventTypes.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>{isIT ? "Contract Start" : "Start Date"}</Label>
-                <DatePicker
-                  value={form.contractStartDate}
-                  onChange={(v) => setField("contractStartDate", v)}
-                  placeholder="Select start date"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{isIT ? "Contract End" : "End Date"}</Label>
-                <DatePicker
-                  value={form.contractEndDate}
-                  onChange={(v) => setField("contractEndDate", v)}
-                  placeholder="Select end date"
-                />
-              </div>
-            </div>
-
-            <div className={`grid gap-4 ${industryConfig.costLabel ? "grid-cols-2" : "grid-cols-1"}`}>
-              <div className="space-y-1.5">
-                <Label htmlFor="revenue">{industryConfig.revenueLabel} (ZAR) <span className="text-destructive">*</span></Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
-                  <Input
-                    id="revenue"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.revenue}
-                    onChange={(e) => setField("revenue", e.target.value)}
-                    className="pl-7"
-                  />
-                </div>
-              </div>
-              {industryConfig.costLabel && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="cost">{industryConfig.costLabel} (ZAR)</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
-                    <Input
-                      id="cost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.cost}
-                      onChange={(e) => setField("cost", e.target.value)}
-                      className="pl-7"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {industryConfig.extraFields.length > 0 && (
-              <div className={`grid gap-4 ${industryConfig.extraFields.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-                {industryConfig.extraFields.map((field) => (
-                  <div key={field.key} className="space-y-1.5">
-                    <Label htmlFor={field.key}>
-                      {field.label}
-                      {field.required && <span className="text-destructive ml-1">*</span>}
-                    </Label>
-                    {field.type === "select" && field.options ? (
-                      <Select
-                        value={form.metadata[field.key] ?? ""}
-                        onValueChange={(v) => setForm(f => ({ ...f, metadata: { ...f.metadata, [field.key]: v } }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={field.placeholder ?? "Select..."} />
+            ) : (
+              <>
+                {/* Event identity */}
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
+                    Event Details
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="event-title">
+                        {entitySingular} Title <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="event-title"
+                        value={eventTitle}
+                        onChange={(e) => setEventTitle(e.target.value)}
+                        placeholder={`e.g. ${entitySingular} for Acme Corp`}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="event-type">
+                        Event Type <span className="text-destructive">*</span>
+                      </Label>
+                      <Select value={eventType} onValueChange={setEventType}>
+                        <SelectTrigger id="event-type">
+                          <SelectValue placeholder="Select type…" />
                         </SelectTrigger>
                         <SelectContent>
-                          {field.options.map(opt => (
-                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                          {fc.eventTypes.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    ) : field.type === "currency" ? (
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
-                        <Input
-                          id={field.key}
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder={field.placeholder ?? "0.00"}
-                          value={form.metadata[field.key] ?? ""}
-                          onChange={(e) => setForm(f => ({ ...f, metadata: { ...f.metadata, [field.key]: e.target.value } }))}
-                          className="pl-7"
-                        />
-                      </div>
-                    ) : (
-                      <Input
-                        id={field.key}
-                        type={field.type === "number" ? "number" : "text"}
-                        placeholder={field.placeholder}
-                        value={form.metadata[field.key] ?? ""}
-                        onChange={(e) => setForm(f => ({ ...f, metadata: { ...f.metadata, [field.key]: e.target.value } }))}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {(rev > 0 || cst > 0) && (
-              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                  Commission Preview
-                </p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  {industryConfig.showGP && (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Gross Profit</span>
-                        <span className={`font-medium ${gp >= 0 ? "text-foreground" : "text-destructive"}`}>
-                          {formatCurrency(gp)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">GP%</span>
-                        <span className="font-medium text-foreground">
-                          {gpPct.toFixed(1)}%
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  {!industryConfig.showGP && (
-                    <div className="flex justify-between col-span-2">
-                      <span className="text-muted-foreground">{industryConfig.revenueLabel}</span>
-                      <span className="font-medium text-foreground">{formatCurrency(rev)}</span>
                     </div>
-                  )}
-                  {form.dealType && (
-                    <>
-                      <div className="flex justify-between col-span-2">
-                        <span className="text-muted-foreground">Commission Rule</span>
-                        <span className="font-medium text-foreground text-right max-w-[60%]">
-                          {commInfo.label}
-                        </span>
-                      </div>
-                      <div className="flex justify-between col-span-2 pt-1 border-t border-border">
-                        <span className="text-muted-foreground font-medium">Calculated Commission</span>
-                        <span className="font-bold text-primary text-base">
-                          {formatCurrency(commAmt)}
-                        </span>
-                      </div>
-                    </>
-                  )}
+                  </div>
                 </div>
-              </div>
+
+                {/* Dynamic fields */}
+                {fc.fieldDefinitions.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
+                      {fc.industryName} Details
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      {fc.fieldDefinitions.map((f) => (
+                        <div key={f.fieldKey} className={isWide(f) ? "col-span-2" : ""}>
+                          <DynamicField
+                            def={f}
+                            value={formValues[f.fieldKey] ?? ""}
+                            onChange={(v) => setField(f.fieldKey, v)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Calculation preview */}
+                {hasCalcValues && <CalcPreview calc={calc} />}
+              </>
             )}
           </div>
 
-          <DialogFooter className="gap-2 flex-wrap">
-            <Button variant="ghost" onClick={closeDialog} disabled={submitting}>
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex gap-2 justify-between sm:justify-between">
+            <Button variant="outline" onClick={closeForm} disabled={submitting}>
               Cancel
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleSaveDraft}
-              disabled={submitting || !isFormValid}
-            >
-              {submitting ? "Saving…" : editDeal ? "Save Changes" : "Save as Draft"}
-            </Button>
-            <Button
-              onClick={handleSubmitForApproval}
-              disabled={submitting || !isFormValid}
-            >
-              <SendHorizontal className="mr-2 h-4 w-4" />
-              {submitting ? "Submitting…" : "Submit for Approval"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => handleCreate(false)}
+                disabled={submitting || !requiredFilled}
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Save Draft
+              </Button>
+              <Button
+                onClick={() => handleCreate(true)}
+                disabled={submitting || !requiredFilled}
+                className="gap-1.5"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+                Submit for Approval
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {viewDeal && (
-        <Dialog open={!!viewDeal} onOpenChange={(open) => !open && setViewDeal(null)}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{viewDeal.dealName}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                {[
-                  { label: "Customer",   value: viewDeal.customerName },
-                  { label: "Type",       value: <TypeBadge type={viewDeal.dealType} /> },
-                  { label: "Status",     value: <StatusBadge status={viewDeal.status} /> },
-                  { label: "Revenue",    value: formatCurrency(viewDeal.revenue) },
-                  { label: "Cost",       value: formatCurrency(viewDeal.cost) },
-                  { label: "Gross Profit", value: formatCurrency(viewDeal.grossProfit) },
-                  { label: "GP%",        value: `${viewDeal.grossProfitPercentage.toFixed(1)}%` },
-                  { label: "Commission %", value: `${viewDeal.commissionPercentage}%` },
-                  { label: "Commission", value: <span className="font-bold text-primary">{formatCurrency(viewDeal.commission)}</span> },
-                  { label: "Submitted",  value: viewDeal.submittedAt ? formatDate(viewDeal.submittedAt) : "Not submitted" },
-                ].map(({ label, value }) => (
-                  <div key={label}>
-                    <p className="text-muted-foreground text-xs">{label}</p>
-                    <div className="font-medium mt-0.5">{value}</div>
-                  </div>
-                ))}
-              </div>
-              {(viewDeal.contractStartDate || viewDeal.contractEndDate) && (
-                <div className="pt-2 border-t border-border">
-                  <p className="text-muted-foreground text-xs">Contract Period</p>
-                  <p className="font-medium mt-0.5">
-                    {viewDeal.contractStartDate ? formatDate(viewDeal.contractStartDate) : "—"}
-                    {" → "}
-                    {viewDeal.contractEndDate ? formatDate(viewDeal.contractEndDate) : "Open-ended"}
-                  </p>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setViewDeal(null)}>Close</Button>
-              {viewDeal.status === "DRAFT" && (
-                <Button onClick={() => { setViewDeal(null); openEdit(viewDeal); }}>
-                  <Edit2 className="mr-2 h-4 w-4" /> Edit Deal
-                </Button>
-              )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Approval Workflow Dialog */}
-      <Dialog open={!!workflowDeal} onOpenChange={(open) => !open && setWorkflowDeal(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Approval Progress</DialogTitle>
-            <p className="text-sm text-muted-foreground">{workflowDeal?.name}</p>
-          </DialogHeader>
-          {workflowLoading ? (
-            <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" /> Loading…
-            </div>
-          ) : workflowSteps.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">No approval steps recorded.</p>
-          ) : (
-            <ol className="relative mt-2 space-y-0">
-              {workflowSteps
-                .filter((s: any) => s.approverRole !== "SALES_EXECUTIVE" && s.approverRole !== "PAYROLL")
-                .map((step, idx, visibleSteps) => {
-                const isApproved = step.status === "APPROVED";
-                const isRejected = step.status === "REJECTED";
-                const isActive   = step.status === "PENDING" && visibleSteps.slice(0, idx).every((s: any) => s.status === "APPROVED");
-                const isLast     = idx === visibleSteps.length - 1;
-
-                const ROLE_LABELS: Record<string, string> = {
-                  MANAGER: "Sales Manager",
-                  FINANCE: "Finance",
-                  EXECUTIVE: "Executive",
-                  SALES_EXECUTIVE: "Sales Executive",
-                  PAYROLL: "Payroll",
-                };
-                const roleLabel = ROLE_LABELS[step.approverRole] ?? step.approverRole;
-
-                const iconEl = isApproved
-                  ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                  : isRejected
-                  ? <XCircle className="h-5 w-5 text-red-500" />
-                  : isActive
-                  ? <Clock className="h-5 w-5 text-amber-400" />
-                  : <CircleDot className="h-5 w-5 text-muted-foreground/40" />;
-
-                const statusPill = isApproved
-                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 font-medium">Approved</span>
-                  : isRejected
-                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-400 font-medium">Rejected</span>
-                  : isActive
-                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 font-medium">Awaiting</span>
-                  : <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Not yet reached</span>;
-
-                return (
-                  <li key={step.id} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="mt-0.5 shrink-0">{iconEl}</div>
-                      {!isLast && <div className="w-px flex-1 bg-border mt-1 mb-1" />}
-                    </div>
-                    <div className="pb-5 flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-sm font-semibold text-foreground">
-                            {step.stepName ?? `Step ${step.approvalLevel}`}
-                          </span>
-                          <span className="ml-2 text-xs text-muted-foreground">({roleLabel})</span>
-                        </div>
-                        {statusPill}
-                      </div>
-                      {isApproved && step.approverName && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          ✓ Approved by <span className="font-medium text-foreground">{step.approverName}</span>
-                          {step.approvedAt && (
-                            <span className="ml-1">
-                              · {new Date(step.approvedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
-                            </span>
-                          )}
-                        </p>
-                      )}
-                      {isRejected && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          ✗ Rejected{step.approverName ? <> by <span className="font-medium text-foreground">{step.approverName}</span></> : null}
-                          {step.approvedAt && (
-                            <span className="ml-1">
-                              · {new Date(step.approvedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
-                            </span>
-                          )}
-                        </p>
-                      )}
-                      {isActive && (
-                        <p className="text-xs text-amber-400/80 mt-1">
-                          Waiting for <span className="font-medium">{step.approverName ?? roleLabel}</span> to review
-                        </p>
-                      )}
-                      {step.comments && (
-                        <p className="text-xs text-muted-foreground mt-1 italic">"{step.comments}"</p>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setWorkflowDeal(null)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      {/* ── Delete confirm ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Deal?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {entitySingular}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete &ldquo;{deleteTarget?.dealName}&rdquo;. This action cannot be undone.
+              This will permanently delete <strong>{deleteTarget?.eventTitle}</strong>. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleDelete}
-            >
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Approval steps modal ── */}
+      {viewApprovals && (
+        <ApprovalStepsModal
+          eventId={viewApprovals.id}
+          eventTitle={viewApprovals.title}
+          onClose={() => setViewApprovals(null)}
+        />
+      )}
     </div>
   );
 }
