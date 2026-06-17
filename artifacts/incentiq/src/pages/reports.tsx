@@ -58,9 +58,14 @@ function buildQueryString(type: ReportType, f: Filters): string {
   return p.toString() ? `?${p}` : "";
 }
 
+function authHeaders(): HeadersInit {
+  const token = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function fetchReport(type: ReportType, filters: Filters) {
   const qs = buildQueryString(type, filters);
-  const res = await fetch(`/api/reports/${type}${qs}`, { credentials: "include" });
+  const res = await fetch(`/api/reports/${type}${qs}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -401,7 +406,7 @@ export default function Reports() {
     try {
       const qs = buildQueryString(activeReport, appliedFilters);
       const url = `/api/reports/${activeReport}/${fmt}${qs}`;
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
       const ext = fmt === "excel" ? "xlsx" : "pdf";
