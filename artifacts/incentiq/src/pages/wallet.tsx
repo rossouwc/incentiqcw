@@ -88,46 +88,30 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
   const pendingApprovalAmount: number = w?.pendingApprovalAmount ?? 0;
   const payrollApprovedAmount: number = w?.payrollApprovedAmount ?? 0;
 
-  // Determine what's in the "pending" bucket and pick the best label
-  const hasPendingApproval   = pendingApprovalAmount > 0;
-  const hasPayrollApproved   = payrollApprovedAmount > 0;
-  const pendingLabel       = hasPayrollApproved && !hasPendingApproval
-    ? "Payroll Approved"
-    : hasPendingApproval && hasPayrollApproved
-    ? "In Progress"
-    : "Submitted for Payout";
-  const pendingDescription = hasPayrollApproved && !hasPendingApproval
-    ? "Approved — awaiting pay date"
-    : hasPendingApproval && hasPayrollApproved
-    ? `R${pendingApprovalAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} pending · R${payrollApprovedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} payroll approved`
-    : hasPendingApproval
-    ? "Awaiting finance / payroll review"
-    : "Awaiting payment processing";
-  const pendingColor       = hasPayrollApproved && !hasPendingApproval
-    ? "border-l-emerald-400"
-    : "border-l-amber-400";
-  const pendingValueClass  = hasPayrollApproved && !hasPendingApproval
-    ? "text-emerald-600"
-    : "text-amber-600";
-
   const cards = [
     {
       label: "Available Balance",
       value: wallet?.availableBalance ?? 0,
-      description: "Ready to request as payout",
+      description: "Approved commission — ready to request",
       colorClass: "border-l-green-500",
       valueClass: "text-green-600",
       icon: WalletIcon,
-      highlight: true,
     },
     {
-      label: pendingLabel,
-      value: wallet?.pendingBalance ?? 0,
-      description: pendingDescription,
-      colorClass: pendingColor,
-      valueClass: pendingValueClass,
-      icon: hasPayrollApproved && !hasPendingApproval ? CheckCircle2 : Clock,
-      highlight: false,
+      label: "Submitted for Payout",
+      value: pendingApprovalAmount,
+      description: "Payout request awaiting finance / payroll",
+      colorClass: "border-l-amber-400",
+      valueClass: "text-amber-600",
+      icon: Clock,
+    },
+    {
+      label: "Payroll Approved",
+      value: payrollApprovedAmount,
+      description: "Approved — awaiting pay date",
+      colorClass: "border-l-emerald-400",
+      valueClass: "text-emerald-600",
+      icon: CheckCircle2,
     },
     {
       label: "Deferred Balance",
@@ -136,7 +120,6 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
       colorClass: "border-l-orange-400",
       valueClass: "text-orange-600",
       icon: Pause,
-      highlight: false,
     },
     {
       label: "Total Paid Out",
@@ -145,7 +128,6 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
       colorClass: "border-l-purple-400",
       valueClass: "text-foreground",
       icon: TrendingUp,
-      highlight: false,
     },
     {
       label: "Paid Out YTD",
@@ -154,12 +136,11 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
       colorClass: "border-l-primary",
       valueClass: "text-primary",
       icon: CreditCard,
-      highlight: false,
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       {cards.map((c) => {
         const Icon = c.icon;
         return (
