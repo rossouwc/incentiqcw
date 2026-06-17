@@ -35,6 +35,8 @@ export const UserRole = {
   MANAGER: 'MANAGER',
   SALES_EXECUTIVE: 'SALES_EXECUTIVE',
   FINANCE: 'FINANCE',
+  EXECUTIVE: 'EXECUTIVE',
+  PAYROLL: 'PAYROLL',
 } as const;
 
 export type UserStatus = typeof UserStatus[keyof typeof UserStatus];

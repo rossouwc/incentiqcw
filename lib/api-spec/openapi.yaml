@@ -1366,7 +1366,7 @@ components:
           type: string
         role:
           type: string
-          enum: [SUPER_ADMIN, ADMIN, MANAGER, SALES_EXECUTIVE, FINANCE]
+          enum: [SUPER_ADMIN, ADMIN, MANAGER, SALES_EXECUTIVE, FINANCE, EXECUTIVE, PAYROLL]
         status:
           type: string
           enum: [ACTIVE, INACTIVE, PENDING]

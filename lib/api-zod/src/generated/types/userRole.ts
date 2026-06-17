@@ -15,4 +15,6 @@ export const UserRole = {
   MANAGER: 'MANAGER',
   SALES_EXECUTIVE: 'SALES_EXECUTIVE',
   FINANCE: 'FINANCE',
+  EXECUTIVE: 'EXECUTIVE',
+  PAYROLL: 'PAYROLL',
 } as const;

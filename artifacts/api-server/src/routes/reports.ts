@@ -2,10 +2,430 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import ExcelJS from "exceljs";
+import PDFDocument from "pdfkit";
 
 const router = Router();
 
-// GET /api/reports/deals
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtZAR(n: number) {
+  return `R ${n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function buildDateFilter(from?: string, to?: string) {
+  if (!from && !to) return undefined;
+  return {
+    ...(from && { gte: new Date(from) }),
+    ...(to   && { lte: new Date(to + "T23:59:59.999Z") }),
+  };
+}
+
+function allowedRoles(req: Request, roles: string[]) {
+  return roles.includes(req.user!.role);
+}
+
+// ─── 1. Commission by Month ───────────────────────────────────────────────────
+router.get("/commission-by-month", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId, dealType, status } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  const where: any = {
+    tenantId,
+    ...(isSales && { salesExecutiveId: req.user!.userId }),
+    ...(!isSales && userId && { salesExecutiveId: userId }),
+    ...(dealType && dealType !== "ALL" && { dealType }),
+    ...(status  && status  !== "ALL" && { status }),
+    ...((from || to) && { createdAt: buildDateFilter(from, to) }),
+  };
+
+  try {
+    const deals = await prisma.deal.findMany({
+      where,
+      select: { createdAt: true, calculatedCommission: true, grossProfit: true, revenue: true, dealType: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const byMonth: Record<string, { month: string; deals: number; commission: number; grossProfit: number; revenue: number }> = {};
+    for (const d of deals) {
+      const key = d.createdAt.toISOString().slice(0, 7);
+      if (!byMonth[key]) byMonth[key] = { month: key, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
+      byMonth[key].deals++;
+      byMonth[key].commission += d.calculatedCommission;
+      byMonth[key].grossProfit += d.grossProfit;
+      byMonth[key].revenue += d.revenue;
+    }
+
+    const rows = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
+    const totals = rows.reduce((s, r) => ({
+      deals: s.deals + r.deals,
+      commission: s.commission + r.commission,
+      grossProfit: s.grossProfit + r.grossProfit,
+      revenue: s.revenue + r.revenue,
+    }), { deals: 0, commission: 0, grossProfit: 0, revenue: 0 });
+
+    res.json({ rows, totals });
+  } catch (err) {
+    logger.error({ err }, "CommissionByMonth error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 2. Commission by Executive ───────────────────────────────────────────────
+router.get("/commission-by-executive", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId, dealType, status } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  const where: any = {
+    tenantId,
+    ...(isSales && { salesExecutiveId: req.user!.userId }),
+    ...(!isSales && userId && { salesExecutiveId: userId }),
+    ...(dealType && dealType !== "ALL" && { dealType }),
+    ...(status  && status  !== "ALL" && { status }),
+    ...((from || to) && { createdAt: buildDateFilter(from, to) }),
+  };
+
+  try {
+    const deals = await prisma.deal.findMany({
+      where,
+      select: {
+        salesExecutiveId: true,
+        calculatedCommission: true,
+        grossProfit: true,
+        revenue: true,
+        salesExecutive: { select: { firstName: true, lastName: true, email: true } },
+      },
+    });
+
+    const byExec: Record<string, { userId: string; name: string; email: string; deals: number; commission: number; grossProfit: number; revenue: number }> = {};
+    for (const d of deals) {
+      const id = d.salesExecutiveId;
+      if (!byExec[id]) byExec[id] = {
+        userId: id,
+        name: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`,
+        email: d.salesExecutive.email,
+        deals: 0, commission: 0, grossProfit: 0, revenue: 0,
+      };
+      byExec[id].deals++;
+      byExec[id].commission += d.calculatedCommission;
+      byExec[id].grossProfit += d.grossProfit;
+      byExec[id].revenue += d.revenue;
+    }
+
+    const rows = Object.values(byExec).sort((a, b) => b.commission - a.commission);
+    const totals = rows.reduce((s, r) => ({
+      deals: s.deals + r.deals,
+      commission: s.commission + r.commission,
+      grossProfit: s.grossProfit + r.grossProfit,
+      revenue: s.revenue + r.revenue,
+    }), { deals: 0, commission: 0, grossProfit: 0, revenue: 0 });
+
+    res.json({ rows, totals });
+  } catch (err) {
+    logger.error({ err }, "CommissionByExecutive error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 3. Commission by Deal Type ───────────────────────────────────────────────
+router.get("/commission-by-deal-type", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId, status } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  const where: any = {
+    tenantId,
+    ...(isSales && { salesExecutiveId: req.user!.userId }),
+    ...(!isSales && userId && { salesExecutiveId: userId }),
+    ...(status && status !== "ALL" && { status }),
+    ...((from || to) && { createdAt: buildDateFilter(from, to) }),
+  };
+
+  try {
+    const types = ["NET_NEW", "RENEWAL", "UPSELL", "CROSS_SELL"] as const;
+    const rows = await Promise.all(types.map(async (t) => {
+      const [agg, count] = await Promise.all([
+        prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true, grossProfit: true, revenue: true } }),
+        prisma.deal.count({ where: { ...where, dealType: t } }),
+      ]);
+      return {
+        dealType: t,
+        deals: count,
+        commission: agg._sum.calculatedCommission ?? 0,
+        grossProfit: agg._sum.grossProfit ?? 0,
+        revenue: agg._sum.revenue ?? 0,
+      };
+    }));
+
+    const totalComm = rows.reduce((s, r) => s + r.commission, 0);
+    const rowsWithPct = rows.map(r => ({ ...r, percentage: totalComm > 0 ? Math.round((r.commission / totalComm) * 100) : 0 }));
+    const totals = rows.reduce((s, r) => ({
+      deals: s.deals + r.deals, commission: s.commission + r.commission,
+      grossProfit: s.grossProfit + r.grossProfit, revenue: s.revenue + r.revenue,
+    }), { deals: 0, commission: 0, grossProfit: 0, revenue: 0 });
+
+    res.json({ rows: rowsWithPct, totals });
+  } catch (err) {
+    logger.error({ err }, "CommissionByDealType error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 4. Pending Approvals ─────────────────────────────────────────────────────
+router.get("/pending-approvals", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId, dealType } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+
+  const where: any = {
+    tenantId,
+    status: { in: ["SUBMITTED", "PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "CHANGES_REQUESTED"] },
+    ...(userId   && { salesExecutiveId: userId }),
+    ...(dealType && dealType !== "ALL" && { dealType }),
+    ...((from || to) && { createdAt: buildDateFilter(from, to) }),
+  };
+
+  try {
+    const deals = await prisma.deal.findMany({
+      where,
+      include: {
+        salesExecutive: { select: { firstName: true, lastName: true } },
+        approvalWorkflows: { orderBy: { approvalLevel: "asc" } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const rows = deals.map(d => ({
+      id: d.id,
+      dealName: d.dealName,
+      customerName: d.customerName,
+      dealType: d.dealType,
+      executiveName: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`,
+      revenue: d.revenue,
+      commission: d.calculatedCommission,
+      status: d.status,
+      submittedAt: d.submittedAt?.toISOString() ?? null,
+      createdAt: d.createdAt.toISOString(),
+      currentStep: d.approvalWorkflows.find(w => w.status === "PENDING")?.stepName ?? "—",
+    }));
+
+    res.json({ rows, total: rows.length, totalCommission: rows.reduce((s, r) => s + r.commission, 0) });
+  } catch (err) {
+    logger.error({ err }, "PendingApprovals error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 5. Payout Request Report ─────────────────────────────────────────────────
+router.get("/payout-requests", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId, status } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  const where: any = {
+    tenantId,
+    ...(isSales && { userId: req.user!.userId }),
+    ...(!isSales && userId && { userId }),
+    ...(status && status !== "ALL" && { status }),
+    ...((from || to) && { requestedAt: buildDateFilter(from, to) }),
+  };
+
+  try {
+    const payouts = await prisma.payoutRequest.findMany({
+      where,
+      include: { user: { select: { firstName: true, lastName: true, email: true } } },
+      orderBy: { requestedAt: "desc" },
+    });
+
+    const rows = payouts.map(p => ({
+      id: p.id,
+      employeeName: `${p.user.firstName} ${p.user.lastName}`,
+      email: p.user.email,
+      payoutMonth: p.payoutMonth,
+      requestedAmount: p.requestedAmount,
+      status: p.status,
+      requestedAt: p.requestedAt.toISOString(),
+      approvedAt: p.approvedAt?.toISOString() ?? null,
+      paidAt: p.paidAt?.toISOString() ?? null,
+      comments: p.comments ?? "",
+      reviewerComments: p.reviewerComments ?? "",
+    }));
+
+    const totals = {
+      total: rows.length,
+      totalAmount: rows.reduce((s, r) => s + r.requestedAmount, 0),
+      paid: rows.filter(r => r.status === "PAID").length,
+      pending: rows.filter(r => r.status === "PENDING").length,
+    };
+
+    res.json({ rows, totals });
+  } catch (err) {
+    logger.error({ err }, "PayoutRequests error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 6. Payroll Export Report ─────────────────────────────────────────────────
+router.get("/payroll-export", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId, status } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+
+  const statusFilter = status && status !== "ALL"
+    ? [status]
+    : ["FINANCE_APPROVED", "PAYROLL_APPROVED", "PAID"];
+
+  const where: any = {
+    tenantId,
+    status: { in: statusFilter },
+    ...(userId && { userId }),
+    ...((from || to) && { requestedAt: buildDateFilter(from, to) }),
+  };
+
+  try {
+    const payouts = await prisma.payoutRequest.findMany({
+      where,
+      include: { user: { select: { firstName: true, lastName: true, email: true } } },
+      orderBy: { requestedAt: "desc" },
+    });
+
+    const rows = payouts.map(p => ({
+      id: p.id,
+      employeeName: `${p.user.firstName} ${p.user.lastName}`,
+      email: p.user.email,
+      payoutMonth: p.payoutMonth,
+      commissionAmount: p.requestedAmount,
+      status: p.status,
+      approvedAt: p.approvedAt?.toISOString() ?? null,
+      paidAt: p.paidAt?.toISOString() ?? null,
+    }));
+
+    const totals = {
+      total: rows.length,
+      totalAmount: rows.reduce((s, r) => s + r.commissionAmount, 0),
+      uniqueEmployees: new Set(rows.map(r => r.email)).size,
+    };
+
+    res.json({ rows, totals });
+  } catch (err) {
+    logger.error({ err }, "PayrollExportReport error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 7. Wallet Balance Report ─────────────────────────────────────────────────
+router.get("/wallet-balances", requireAuth, async (req: Request, res: Response) => {
+  const { userId } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  const where: any = {
+    tenantId,
+    ...(isSales && { userId: req.user!.userId }),
+    ...(!isSales && userId && { userId }),
+  };
+
+  try {
+    const wallets = await prisma.wallet.findMany({
+      where,
+      include: { user: { select: { firstName: true, lastName: true, email: true, role: true } } },
+      orderBy: { paidOutBalance: "desc" },
+    });
+
+    const rows = wallets.map(w => ({
+      userId: w.userId,
+      name: `${w.user.firstName} ${w.user.lastName}`,
+      email: w.user.email,
+      role: w.user.role,
+      availableBalance: w.availableBalance,
+      pendingBalance: w.pendingBalance,
+      deferredBalance: w.deferredBalance,
+      paidOutBalance: w.paidOutBalance,
+      totalEarned: w.availableBalance + w.pendingBalance + w.deferredBalance + w.paidOutBalance,
+      updatedAt: w.updatedAt.toISOString(),
+    }));
+
+    const totals = rows.reduce((s, r) => ({
+      availableBalance: s.availableBalance + r.availableBalance,
+      pendingBalance: s.pendingBalance + r.pendingBalance,
+      deferredBalance: s.deferredBalance + r.deferredBalance,
+      paidOutBalance: s.paidOutBalance + r.paidOutBalance,
+      totalEarned: s.totalEarned + r.totalEarned,
+    }), { availableBalance: 0, pendingBalance: 0, deferredBalance: 0, paidOutBalance: 0, totalEarned: 0 });
+
+    res.json({ rows, totals });
+  } catch (err) {
+    logger.error({ err }, "WalletBalances error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── 8. Audit Trail ───────────────────────────────────────────────────────────
+router.get("/audit-trail", requireAuth, async (req: Request, res: Response) => {
+  const { from, to, userId } = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+
+  const dateFilter = buildDateFilter(from, to);
+
+  try {
+    const [txns, auditLogs] = await Promise.all([
+      prisma.walletTransaction.findMany({
+        where: {
+          tenantId,
+          ...(dateFilter && { createdAt: dateFilter }),
+          ...(userId && { wallet: { userId } }),
+        },
+        include: { wallet: { include: { user: { select: { firstName: true, lastName: true, email: true } } } } },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      }),
+      prisma.auditLog.findMany({
+        where: {
+          tenantId,
+          ...(userId && { userId }),
+          ...(dateFilter && { createdAt: dateFilter }),
+        },
+        include: { user: { select: { firstName: true, lastName: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      }),
+    ]);
+
+    const walletRows = txns.map(t => ({
+      id: t.id,
+      type: "WALLET_TRANSACTION",
+      category: t.transactionType,
+      actor: `${t.wallet.user.firstName} ${t.wallet.user.lastName}`,
+      email: t.wallet.user.email,
+      description: t.description,
+      amount: t.amount,
+      referenceType: t.referenceType ?? "",
+      referenceId: t.referenceId ?? "",
+      createdAt: t.createdAt.toISOString(),
+    }));
+
+    const auditRows = auditLogs.map(a => ({
+      id: a.id,
+      type: "AUDIT_LOG",
+      category: a.action,
+      actor: `${a.user.firstName} ${a.user.lastName}`,
+      email: "",
+      description: `${a.entityType} ${a.entityId}`,
+      amount: null,
+      referenceType: a.entityType,
+      referenceId: a.entityId,
+      createdAt: a.createdAt.toISOString(),
+    }));
+
+    const rows = [...walletRows, ...auditRows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json({ rows, total: rows.length });
+  } catch (err) {
+    logger.error({ err }, "AuditTrail error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── Legacy deals summary ─────────────────────────────────────────────────────
 router.get("/deals", requireAuth, async (req: Request, res: Response) => {
   const { from, to } = req.query as { from?: string; to?: string };
   const tenantId = req.user!.tenantId;
@@ -13,12 +433,7 @@ router.get("/deals", requireAuth, async (req: Request, res: Response) => {
   const where: any = {
     tenantId,
     ...(isSalesExec && { salesExecutiveId: req.user!.userId }),
-    ...((from || to) && {
-      createdAt: {
-        ...(from && { gte: new Date(from) }),
-        ...(to && { lte: new Date(to) }),
-      },
-    }),
+    ...((from || to) && { createdAt: buildDateFilter(from, to) }),
   };
   try {
     const [total, gpAgg, commAgg, revenueAgg] = await Promise.all([
@@ -27,7 +442,6 @@ router.get("/deals", requireAuth, async (req: Request, res: Response) => {
       prisma.deal.aggregate({ where, _sum: { calculatedCommission: true } }),
       prisma.deal.aggregate({ where, _sum: { revenue: true } }),
     ]);
-
     const types = ["NET_NEW", "RENEWAL", "UPSELL", "CROSS_SELL"] as const;
     const byType = await Promise.all(
       types.map(t => prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true }, _count: true })
@@ -35,24 +449,412 @@ router.get("/deals", requireAuth, async (req: Request, res: Response) => {
     );
     const totalComm = byType.reduce((s, r) => s + r.amount, 0);
     byType.forEach(r => { r.percentage = totalComm > 0 ? Math.round((r.amount / totalComm) * 100) : 0; });
-
     const statuses = ["DRAFT", "SUBMITTED", "PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "REJECTED", "CANCELLED"] as const;
     const byStatus = await Promise.all(
       statuses.map(s => prisma.deal.count({ where: { ...where, status: s } }).then(c => ({ status: s, count: c })))
     );
-
     res.json({
       totalDeals: total,
       totalRevenue: revenueAgg._sum.revenue ?? 0,
       totalGrossProfit: gpAgg._sum.grossProfit ?? 0,
       avgGrossProfitPercentage: Math.round((gpAgg._avg.grossProfitPercentage ?? 0) * 100) / 100,
       totalCommission: commAgg._sum.calculatedCommission ?? 0,
-      byType,
-      byStatus,
+      byType, byStatus,
     });
   } catch (err) {
     logger.error({ err }, "DealsReport error");
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── Excel Export ─────────────────────────────────────────────────────────────
+router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
+  const { type } = req.params;
+  const query = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  try {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Incentiq";
+    wb.created = new Date();
+
+    const headerStyle: Partial<ExcelJS.Style> = {
+      font: { bold: true, color: { argb: "FFFFFFFF" } },
+      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } },
+      alignment: { horizontal: "center" },
+      border: { bottom: { style: "thin", color: { argb: "FF000000" } } },
+    };
+    const currencyFmt = 'R #,##0.00';
+    const dateFmt = 'yyyy-mm-dd';
+
+    const addHeader = (ws: ExcelJS.Worksheet, cols: { header: string; key: string; width: number; numFmt?: string }[]) => {
+      ws.columns = cols;
+      ws.getRow(1).eachCell(cell => { Object.assign(cell, headerStyle); });
+      ws.getRow(1).height = 20;
+    };
+
+    if (type === "commission-by-month") {
+      const where: any = { tenantId,
+        ...(isSales && { salesExecutiveId: req.user!.userId }),
+        ...(query.userId && !isSales && { salesExecutiveId: query.userId }),
+        ...(query.dealType && query.dealType !== "ALL" && { dealType: query.dealType }),
+        ...(query.status  && query.status  !== "ALL" && { status: query.status }),
+        ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
+      };
+      const deals = await prisma.deal.findMany({ where, select: { createdAt: true, calculatedCommission: true, grossProfit: true, revenue: true } });
+      const byMonth: Record<string, any> = {};
+      for (const d of deals) {
+        const k = d.createdAt.toISOString().slice(0, 7);
+        if (!byMonth[k]) byMonth[k] = { month: k, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
+        byMonth[k].deals++; byMonth[k].commission += d.calculatedCommission;
+        byMonth[k].grossProfit += d.grossProfit; byMonth[k].revenue += d.revenue;
+      }
+      const rows = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
+      const ws = wb.addWorksheet("Commission by Month");
+      addHeader(ws, [
+        { header: "Month", key: "month", width: 12 },
+        { header: "Deals", key: "deals", width: 10 },
+        { header: "Revenue", key: "revenue", width: 18, numFmt: currencyFmt },
+        { header: "Gross Profit", key: "grossProfit", width: 18, numFmt: currencyFmt },
+        { header: "Commission", key: "commission", width: 18, numFmt: currencyFmt },
+      ]);
+      rows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["revenue","grossProfit","commission"].forEach(k => { const c = row.getCell(k); c.numFmt = currencyFmt; });
+      });
+      const tot = rows.reduce((s: any, r: any) => ({ deals: s.deals+r.deals, revenue: s.revenue+r.revenue, grossProfit: s.grossProfit+r.grossProfit, commission: s.commission+r.commission }), { deals: 0, revenue: 0, grossProfit: 0, commission: 0 });
+      const totRow = ws.addRow({ month: "TOTAL", ...tot });
+      totRow.font = { bold: true }; totRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8FF" } };
+      ["revenue","grossProfit","commission"].forEach(k => { const c = totRow.getCell(k); c.numFmt = currencyFmt; });
+    }
+
+    else if (type === "commission-by-executive") {
+      const where: any = { tenantId,
+        ...(isSales && { salesExecutiveId: req.user!.userId }),
+        ...(query.userId && !isSales && { salesExecutiveId: query.userId }),
+        ...(query.dealType && query.dealType !== "ALL" && { dealType: query.dealType }),
+        ...(query.status  && query.status  !== "ALL" && { status: query.status }),
+        ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
+      };
+      const deals = await prisma.deal.findMany({ where, select: { salesExecutiveId: true, calculatedCommission: true, grossProfit: true, revenue: true, salesExecutive: { select: { firstName: true, lastName: true, email: true } } } });
+      const byExec: Record<string, any> = {};
+      for (const d of deals) {
+        const id = d.salesExecutiveId;
+        if (!byExec[id]) byExec[id] = { name: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`, email: d.salesExecutive.email, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
+        byExec[id].deals++; byExec[id].commission += d.calculatedCommission;
+        byExec[id].grossProfit += d.grossProfit; byExec[id].revenue += d.revenue;
+      }
+      const rows = Object.values(byExec).sort((a, b) => b.commission - a.commission);
+      const ws = wb.addWorksheet("Commission by Executive");
+      addHeader(ws, [
+        { header: "Name", key: "name", width: 25 },
+        { header: "Email", key: "email", width: 30 },
+        { header: "Deals", key: "deals", width: 10 },
+        { header: "Revenue", key: "revenue", width: 18, numFmt: currencyFmt },
+        { header: "Gross Profit", key: "grossProfit", width: 18, numFmt: currencyFmt },
+        { header: "Commission", key: "commission", width: 18, numFmt: currencyFmt },
+      ]);
+      rows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["revenue","grossProfit","commission"].forEach(k => { const c = row.getCell(k); c.numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "commission-by-deal-type") {
+      const where: any = { tenantId,
+        ...(isSales && { salesExecutiveId: req.user!.userId }),
+        ...(query.userId && !isSales && { salesExecutiveId: query.userId }),
+        ...(query.status && query.status !== "ALL" && { status: query.status }),
+        ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
+      };
+      const types = ["NET_NEW","RENEWAL","UPSELL","CROSS_SELL"] as const;
+      const rows = await Promise.all(types.map(async t => {
+        const [agg, count] = await Promise.all([
+          prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true, grossProfit: true, revenue: true } }),
+          prisma.deal.count({ where: { ...where, dealType: t } }),
+        ]);
+        return { dealType: t, deals: count, revenue: agg._sum.revenue??0, grossProfit: agg._sum.grossProfit??0, commission: agg._sum.calculatedCommission??0 };
+      }));
+      const ws = wb.addWorksheet("Commission by Deal Type");
+      addHeader(ws, [
+        { header: "Deal Type", key: "dealType", width: 16 },
+        { header: "Deals", key: "deals", width: 10 },
+        { header: "Revenue", key: "revenue", width: 18, numFmt: currencyFmt },
+        { header: "Gross Profit", key: "grossProfit", width: 18, numFmt: currencyFmt },
+        { header: "Commission", key: "commission", width: 18, numFmt: currencyFmt },
+      ]);
+      rows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["revenue","grossProfit","commission"].forEach(k => { const c = row.getCell(k); c.numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "pending-approvals") {
+      const where: any = { tenantId, status: { in: ["SUBMITTED","PENDING_APPROVAL","MANAGER_APPROVED","FINANCE_APPROVED","EXECUTIVE_APPROVED","CHANGES_REQUESTED"] },
+        ...(query.userId && { salesExecutiveId: query.userId }),
+        ...(query.dealType && query.dealType !== "ALL" && { dealType: query.dealType }),
+        ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
+      };
+      const deals = await prisma.deal.findMany({ where, include: { salesExecutive: { select: { firstName: true, lastName: true } } }, orderBy: { createdAt: "desc" } });
+      const ws = wb.addWorksheet("Pending Approvals");
+      addHeader(ws, [
+        { header: "Deal Name", key: "dealName", width: 30 },
+        { header: "Customer", key: "customerName", width: 25 },
+        { header: "Executive", key: "exec", width: 22 },
+        { header: "Type", key: "dealType", width: 12 },
+        { header: "Revenue", key: "revenue", width: 18, numFmt: currencyFmt },
+        { header: "Commission", key: "commission", width: 18, numFmt: currencyFmt },
+        { header: "Status", key: "status", width: 22 },
+        { header: "Submitted", key: "submittedAt", width: 14 },
+      ]);
+      deals.forEach((d, i) => {
+        const row = ws.addRow({ dealName: d.dealName, customerName: d.customerName, exec: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`, dealType: d.dealType, revenue: d.revenue, commission: d.calculatedCommission, status: d.status, submittedAt: d.submittedAt ? d.submittedAt.toISOString().slice(0,10) : "—" });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["revenue","commission"].forEach(k => { const c = row.getCell(k); c.numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "payout-requests") {
+      const where: any = { tenantId,
+        ...(isSales && { userId: req.user!.userId }),
+        ...(!isSales && query.userId && { userId: query.userId }),
+        ...(query.status && query.status !== "ALL" && { status: query.status }),
+        ...((query.from || query.to) && { requestedAt: buildDateFilter(query.from, query.to) }),
+      };
+      const payouts = await prisma.payoutRequest.findMany({ where, include: { user: { select: { firstName: true, lastName: true, email: true } } }, orderBy: { requestedAt: "desc" } });
+      const ws = wb.addWorksheet("Payout Requests");
+      addHeader(ws, [
+        { header: "Employee", key: "name", width: 25 },
+        { header: "Email", key: "email", width: 30 },
+        { header: "Payout Month", key: "payoutMonth", width: 14 },
+        { header: "Commission Amount", key: "requestedAmount", width: 20, numFmt: currencyFmt },
+        { header: "Status", key: "status", width: 18 },
+        { header: "Requested", key: "requestedAt", width: 14 },
+        { header: "Approved", key: "approvedAt", width: 14 },
+        { header: "Paid", key: "paidAt", width: 14 },
+        { header: "Comments", key: "comments", width: 30 },
+      ]);
+      payouts.forEach((p, i) => {
+        const row = ws.addRow({ name: `${p.user.firstName} ${p.user.lastName}`, email: p.user.email, payoutMonth: p.payoutMonth, requestedAmount: p.requestedAmount, status: p.status, requestedAt: p.requestedAt.toISOString().slice(0,10), approvedAt: p.approvedAt ? p.approvedAt.toISOString().slice(0,10) : "—", paidAt: p.paidAt ? p.paidAt.toISOString().slice(0,10) : "—", comments: p.comments ?? "" });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        const c = row.getCell("requestedAmount"); c.numFmt = currencyFmt;
+      });
+    }
+
+    else if (type === "payroll-export") {
+      const statusFilter = query.status && query.status !== "ALL" ? [query.status] : ["FINANCE_APPROVED","PAYROLL_APPROVED","PAID"];
+      const where: any = { tenantId, status: { in: statusFilter }, ...(query.userId && { userId: query.userId }), ...((query.from || query.to) && { requestedAt: buildDateFilter(query.from, query.to) }) };
+      const payouts = await prisma.payoutRequest.findMany({ where, include: { user: { select: { firstName: true, lastName: true, email: true } } }, orderBy: { requestedAt: "desc" } });
+      const ws = wb.addWorksheet("Payroll Export");
+      addHeader(ws, [
+        { header: "Employee", key: "name", width: 25 },
+        { header: "Email", key: "email", width: 30 },
+        { header: "Payout Month", key: "payoutMonth", width: 14 },
+        { header: "Commission Amount", key: "commissionAmount", width: 20, numFmt: currencyFmt },
+        { header: "Status", key: "status", width: 18 },
+        { header: "Approved", key: "approvedAt", width: 14 },
+        { header: "Paid", key: "paidAt", width: 14 },
+        { header: "Reference", key: "id", width: 34 },
+      ]);
+      payouts.forEach((p, i) => {
+        const row = ws.addRow({ name: `${p.user.firstName} ${p.user.lastName}`, email: p.user.email, payoutMonth: p.payoutMonth, commissionAmount: p.requestedAmount, status: p.status, approvedAt: p.approvedAt ? p.approvedAt.toISOString().slice(0,10) : "—", paidAt: p.paidAt ? p.paidAt.toISOString().slice(0,10) : "—", id: p.id });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        const c = row.getCell("commissionAmount"); c.numFmt = currencyFmt;
+      });
+      const total = payouts.reduce((s, p) => s + p.requestedAmount, 0);
+      const totRow = ws.addRow({ name: "TOTAL", commissionAmount: total });
+      totRow.font = { bold: true }; totRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8FF" } };
+      totRow.getCell("commissionAmount").numFmt = currencyFmt;
+    }
+
+    else if (type === "wallet-balances") {
+      const where: any = { tenantId, ...(query.userId && { userId: query.userId }) };
+      const wallets = await prisma.wallet.findMany({ where, include: { user: { select: { firstName: true, lastName: true, email: true, role: true } } }, orderBy: { paidOutBalance: "desc" } });
+      const ws = wb.addWorksheet("Wallet Balances");
+      addHeader(ws, [
+        { header: "Employee", key: "name", width: 25 },
+        { header: "Email", key: "email", width: 30 },
+        { header: "Role", key: "role", width: 18 },
+        { header: "Available", key: "availableBalance", width: 18, numFmt: currencyFmt },
+        { header: "Pending", key: "pendingBalance", width: 18, numFmt: currencyFmt },
+        { header: "Deferred", key: "deferredBalance", width: 18, numFmt: currencyFmt },
+        { header: "Paid Out", key: "paidOutBalance", width: 18, numFmt: currencyFmt },
+        { header: "Total Earned", key: "totalEarned", width: 18, numFmt: currencyFmt },
+      ]);
+      wallets.forEach((w, i) => {
+        const total = w.availableBalance + w.pendingBalance + w.deferredBalance + w.paidOutBalance;
+        const row = ws.addRow({ name: `${w.user.firstName} ${w.user.lastName}`, email: w.user.email, role: w.user.role, availableBalance: w.availableBalance, pendingBalance: w.pendingBalance, deferredBalance: w.deferredBalance, paidOutBalance: w.paidOutBalance, totalEarned: total });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["availableBalance","pendingBalance","deferredBalance","paidOutBalance","totalEarned"].forEach(k => { row.getCell(k).numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "audit-trail") {
+      const dateFilter = buildDateFilter(query.from, query.to);
+      const txns = await prisma.walletTransaction.findMany({ where: { tenantId, ...(dateFilter && { createdAt: dateFilter }), ...(query.userId && { wallet: { userId: query.userId } }) }, include: { wallet: { include: { user: { select: { firstName: true, lastName: true } } } } }, orderBy: { createdAt: "desc" }, take: 1000 });
+      const ws = wb.addWorksheet("Audit Trail");
+      addHeader(ws, [
+        { header: "Date", key: "createdAt", width: 20 },
+        { header: "Type", key: "transactionType", width: 22 },
+        { header: "Actor", key: "actor", width: 25 },
+        { header: "Description", key: "description", width: 40 },
+        { header: "Amount", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "Reference", key: "referenceId", width: 34 },
+      ]);
+      txns.forEach((t, i) => {
+        const row = ws.addRow({ createdAt: t.createdAt.toISOString().replace("T"," ").slice(0,19), transactionType: t.transactionType, actor: `${t.wallet.user.firstName} ${t.wallet.user.lastName}`, description: t.description, amount: t.amount, referenceId: t.referenceId ?? "" });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        row.getCell("amount").numFmt = currencyFmt;
+      });
+    }
+
+    else {
+      res.status(400).json({ error: "Unknown report type" }); return;
+    }
+
+    const filename = `Incentiq_${type}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    logger.error({ err }, "ExcelExport error");
+    if (!res.headersSent) res.status(500).json({ error: "Export failed" });
+  }
+});
+
+// ─── PDF Export ───────────────────────────────────────────────────────────────
+router.get("/:type/pdf", requireAuth, async (req: Request, res: Response) => {
+  const { type } = req.params;
+  const query = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
+
+  const REPORT_LABELS: Record<string, string> = {
+    "commission-by-month": "Commission Summary by Month",
+    "commission-by-executive": "Commission Summary by Sales Executive",
+    "commission-by-deal-type": "Commission by Deal Type",
+    "pending-approvals": "Pending Approval Report",
+    "payout-requests": "Payout Request Report",
+    "payroll-export": "Payroll Export Report",
+    "wallet-balances": "Wallet Balance Report",
+    "audit-trail": "Audit Trail Report",
+  };
+
+  try {
+    const doc = new PDFDocument({ margin: 40, size: "A4", layout: "landscape" });
+    const filename = `Incentiq_${type}_${new Date().toISOString().slice(0,10)}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    doc.pipe(res);
+
+    const pageW = doc.page.width - 80;
+    const typeStr = String(type);
+    const title = REPORT_LABELS[typeStr] ?? typeStr;
+    const generatedAt = new Date().toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+    doc.rect(0, 0, doc.page.width, 70).fill("#4F46E5");
+    doc.fillColor("white").fontSize(18).font("Helvetica-Bold").text("Incentiq", 40, 18);
+    doc.fontSize(11).font("Helvetica").text(title, 40, 42);
+    doc.fillColor("#c7d2fe").fontSize(9).text(`Generated: ${generatedAt}`, 40, 57);
+    doc.fillColor("black");
+    doc.y = 85;
+
+    const drawTable = (headers: string[], rows: string[][], colWidths: number[]) => {
+      const rowH = 20;
+      let x = 40;
+
+      doc.rect(x, doc.y, pageW, rowH).fill("#4F46E5");
+      headers.forEach((h, i) => {
+        doc.fillColor("white").fontSize(8).font("Helvetica-Bold").text(h, x + 4, doc.y + 6, { width: colWidths[i] - 6, align: "left" });
+        x += colWidths[i];
+      });
+      doc.y += rowH;
+
+      rows.forEach((row, ri) => {
+        if (doc.y + rowH > doc.page.height - 50) {
+          doc.addPage();
+          doc.y = 40;
+        }
+        x = 40;
+        const fill = ri % 2 === 0 ? "#F9F9FF" : "#FFFFFF";
+        doc.rect(40, doc.y, pageW, rowH).fill(fill);
+        row.forEach((cell, i) => {
+          doc.fillColor("#1f2937").fontSize(8).font("Helvetica").text(cell, x + 4, doc.y + 6, { width: colWidths[i] - 8, align: i > 1 ? "right" : "left", ellipsis: true });
+          x += colWidths[i];
+        });
+        doc.y += rowH;
+      });
+
+      doc.moveTo(40, doc.y).lineTo(40 + pageW, doc.y).strokeColor("#e5e7eb").stroke();
+      doc.y += 4;
+    };
+
+    if (type === "commission-by-month") {
+      const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const deals = await prisma.deal.findMany({ where, select: { createdAt: true, calculatedCommission: true, grossProfit: true, revenue: true } });
+      const byMonth: Record<string, any> = {};
+      for (const d of deals) { const k = d.createdAt.toISOString().slice(0,7); if (!byMonth[k]) byMonth[k] = { month: k, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byMonth[k].deals++; byMonth[k].commission += d.calculatedCommission; byMonth[k].grossProfit += d.grossProfit; byMonth[k].revenue += d.revenue; }
+      const rows = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
+      const W = pageW; const cols = [W*0.15, W*0.1, W*0.25, W*0.25, W*0.25];
+      drawTable(["Month","Deals","Revenue","Gross Profit","Commission"], rows.map(r => [r.month, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
+      const tot = rows.reduce((s: any, r: any) => ({ deals: s.deals+r.deals, revenue: s.revenue+r.revenue, grossProfit: s.grossProfit+r.grossProfit, commission: s.commission+r.commission }), { deals:0,revenue:0,grossProfit:0,commission:0 });
+      doc.rect(40, doc.y, pageW, 20).fill("#E8E8FF");
+      doc.fillColor("#1f2937").fontSize(9).font("Helvetica-Bold").text(`TOTAL  —  ${tot.deals} deals  |  ${fmtZAR(tot.revenue)} revenue  |  ${fmtZAR(tot.grossProfit)} GP  |  ${fmtZAR(tot.commission)} commission`, 44, doc.y + 6, { width: pageW - 8 });
+      doc.y += 24;
+    }
+
+    else if (type === "commission-by-executive") {
+      const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const deals = await prisma.deal.findMany({ where, select: { salesExecutiveId: true, calculatedCommission: true, grossProfit: true, revenue: true, salesExecutive: { select: { firstName: true, lastName: true } } } });
+      const byExec: Record<string, any> = {};
+      for (const d of deals) { const id = d.salesExecutiveId; if (!byExec[id]) byExec[id] = { name: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byExec[id].deals++; byExec[id].commission += d.calculatedCommission; byExec[id].grossProfit += d.grossProfit; byExec[id].revenue += d.revenue; }
+      const rows = Object.values(byExec).sort((a, b) => b.commission - a.commission);
+      const W = pageW; const cols = [W*0.3, W*0.1, W*0.2, W*0.2, W*0.2];
+      drawTable(["Executive","Deals","Revenue","Gross Profit","Commission"], rows.map(r => [r.name, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
+    }
+
+    else if (type === "commission-by-deal-type") {
+      const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const types = ["NET_NEW","RENEWAL","UPSELL","CROSS_SELL"] as const;
+      const rows = await Promise.all(types.map(async t => { const [agg,count] = await Promise.all([prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true, grossProfit: true, revenue: true } }), prisma.deal.count({ where: { ...where, dealType: t } })]); return { dealType: t, deals: count, revenue: agg._sum.revenue??0, grossProfit: agg._sum.grossProfit??0, commission: agg._sum.calculatedCommission??0 }; }));
+      const W = pageW; const cols = [W*0.2, W*0.1, W*0.23, W*0.23, W*0.24];
+      drawTable(["Deal Type","Deals","Revenue","Gross Profit","Commission"], rows.map(r => [r.dealType, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
+    }
+
+    else if (type === "payout-requests" || type === "payroll-export") {
+      const statusFilter = type === "payroll-export" ? (query.status && query.status !== "ALL" ? [query.status] : ["FINANCE_APPROVED","PAYROLL_APPROVED","PAID"]) : undefined;
+      const where: any = { tenantId, ...(statusFilter && { status: { in: statusFilter } }), ...(query.status && query.status !== "ALL" && type !== "payroll-export" && { status: query.status }), ...((query.from || query.to) && { requestedAt: buildDateFilter(query.from, query.to) }) };
+      const payouts = await prisma.payoutRequest.findMany({ where, include: { user: { select: { firstName: true, lastName: true } } }, orderBy: { requestedAt: "desc" } });
+      const W = pageW; const cols = [W*0.22, W*0.12, W*0.18, W*0.16, W*0.14, W*0.18];
+      drawTable(["Employee","Month","Commission","Status","Requested","Approved"], payouts.map(p => [`${p.user.firstName} ${p.user.lastName}`, p.payoutMonth, fmtZAR(p.requestedAmount), p.status, p.requestedAt.toISOString().slice(0,10), p.approvedAt ? p.approvedAt.toISOString().slice(0,10) : "—"]), cols);
+      const total = payouts.reduce((s, p) => s + p.requestedAmount, 0);
+      doc.rect(40, doc.y, pageW, 20).fill("#E8E8FF");
+      doc.fillColor("#1f2937").fontSize(9).font("Helvetica-Bold").text(`TOTAL  —  ${payouts.length} records  |  ${fmtZAR(total)}`, 44, doc.y + 6, { width: pageW - 8 });
+      doc.y += 24;
+    }
+
+    else if (type === "wallet-balances") {
+      const wallets = await prisma.wallet.findMany({ where: { tenantId }, include: { user: { select: { firstName: true, lastName: true, role: true } } }, orderBy: { paidOutBalance: "desc" } });
+      const W = pageW; const cols = [W*0.22, W*0.14, W*0.16, W*0.12, W*0.12, W*0.12, W*0.12];
+      drawTable(["Employee","Role","Available","Pending","Deferred","Paid Out","Total Earned"], wallets.map(w => { const tot = w.availableBalance+w.pendingBalance+w.deferredBalance+w.paidOutBalance; return [`${w.user.firstName} ${w.user.lastName}`, w.user.role, fmtZAR(w.availableBalance), fmtZAR(w.pendingBalance), fmtZAR(w.deferredBalance), fmtZAR(w.paidOutBalance), fmtZAR(tot)]; }), cols);
+    }
+
+    else if (type === "audit-trail" || type === "pending-approvals") {
+      const dateFilter = buildDateFilter(query.from, query.to);
+      const txns = await prisma.walletTransaction.findMany({ where: { tenantId, ...(dateFilter && { createdAt: dateFilter }) }, include: { wallet: { include: { user: { select: { firstName: true, lastName: true } } } } }, orderBy: { createdAt: "desc" }, take: 200 });
+      const W = pageW; const cols = [W*0.17, W*0.2, W*0.22, W*0.25, W*0.16];
+      drawTable(["Date","Type","Actor","Description","Amount"], txns.map(t => [t.createdAt.toISOString().slice(0,10), t.transactionType, `${t.wallet.user.firstName} ${t.wallet.user.lastName}`, t.description, fmtZAR(t.amount)]), cols);
+    }
+
+    doc.end();
+  } catch (err) {
+    logger.error({ err }, "PDFExport error");
+    if (!res.headersSent) res.status(500).json({ error: "PDF generation failed" });
   }
 });
 

@@ -172,10 +172,10 @@ router.get("/my-tasks", requireAuth, async (req: Request, res: Response) => {
       prisma.payoutRequest.count({ where: { userId, tenantId, status: "FINANCE_APPROVED" } }),
       prisma.deal.count({ where: { salesExecutiveId: userId, tenantId, status: "REJECTED" } }),
     ]);
-    res.json({ pendingApprovals, payoutRequests, approvedForPayroll, informationRequired: infoRequired });
+    return res.json({ pendingApprovals, payoutRequests, approvedForPayroll, informationRequired: infoRequired });
   } catch (err) {
     logger.error({ err }, "MyTasks error");
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Server error" });
   }
 });
 

@@ -44,7 +44,7 @@ export const LoginResponse = zod.object({
   "email": zod.string(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE', 'EXECUTIVE', 'PAYROLL']),
   "status": zod.enum(['ACTIVE', 'INACTIVE', 'PENDING']),
   "avatarUrl": zod.string().nullish(),
   "createdAt": zod.string()
@@ -61,7 +61,7 @@ export const GetMeResponse = zod.object({
   "email": zod.string(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE', 'EXECUTIVE', 'PAYROLL']),
   "status": zod.enum(['ACTIVE', 'INACTIVE', 'PENDING']),
   "avatarUrl": zod.string().nullish(),
   "createdAt": zod.string()
@@ -125,7 +125,7 @@ export const ListUsersResponseItem = zod.object({
   "email": zod.string(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE', 'EXECUTIVE', 'PAYROLL']),
   "status": zod.enum(['ACTIVE', 'INACTIVE', 'PENDING']),
   "avatarUrl": zod.string().nullish(),
   "createdAt": zod.string()
@@ -158,7 +158,7 @@ export const GetUserResponse = zod.object({
   "email": zod.string(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE', 'EXECUTIVE', 'PAYROLL']),
   "status": zod.enum(['ACTIVE', 'INACTIVE', 'PENDING']),
   "avatarUrl": zod.string().nullish(),
   "createdAt": zod.string()
@@ -185,7 +185,7 @@ export const UpdateUserResponse = zod.object({
   "email": zod.string(),
   "firstName": zod.string(),
   "lastName": zod.string(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES_EXECUTIVE', 'FINANCE', 'EXECUTIVE', 'PAYROLL']),
   "status": zod.enum(['ACTIVE', 'INACTIVE', 'PENDING']),
   "avatarUrl": zod.string().nullish(),
   "createdAt": zod.string()
