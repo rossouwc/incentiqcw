@@ -338,9 +338,12 @@ function ApprovalStepsModal({
   }, [eventId]);
 
   const STEP_STATUS: Record<string, { cls: string; label: string }> = {
-    PENDING:  { cls: "text-amber-500",  label: "Pending" },
-    APPROVED: { cls: "text-green-500",  label: "Approved" },
-    REJECTED: { cls: "text-red-500",    label: "Rejected" },
+    PENDING:           { cls: "text-amber-500",              label: "Pending"   },
+    WAITING:           { cls: "text-muted-foreground",       label: "Waiting"   },
+    APPROVED:          { cls: "text-green-500",              label: "Approved"  },
+    REJECTED:          { cls: "text-red-500",                label: "Rejected"  },
+    ESCALATED:         { cls: "text-orange-500",             label: "Escalated" },
+    CHANGES_REQUESTED: { cls: "text-yellow-600 dark:text-yellow-400", label: "Changes Requested" },
   };
 
   return (
@@ -363,15 +366,18 @@ function ApprovalStepsModal({
             {steps.map((s) => {
               const sc = STEP_STATUS[s.status] ?? { cls: "text-muted-foreground", label: s.status };
               return (
-                <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md border border-border bg-card">
+                <div key={s.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-md border bg-card transition-opacity ${
+                  s.status === "WAITING" ? "opacity-50 border-border" : "border-border"
+                }`}>
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                    s.status === "APPROVED" ? "border-green-500 bg-green-500/20 text-green-500" :
-                    s.status === "REJECTED" ? "border-red-500 bg-red-500/20 text-red-500" :
+                    s.status === "APPROVED"  ? "border-green-500 bg-green-500/20 text-green-500" :
+                    s.status === "REJECTED"  ? "border-red-500 bg-red-500/20 text-red-500" :
+                    s.status === "WAITING"   ? "border-muted-foreground/30 bg-muted/30 text-muted-foreground" :
                     "border-amber-400 bg-amber-400/10 text-amber-500"
                   }`}>{s.approvalStep}</div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">
-                      {STEP_ROLE_LABEL[s.approverRole] ?? s.approverRole} Review
+                      {s.stepName ?? (STEP_ROLE_LABEL[s.approverRole] ?? s.approverRole)}
                     </p>
                     {s.comments && <p className="text-xs text-muted-foreground truncate">{s.comments}</p>}
                   </div>

@@ -4,6 +4,8 @@ import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { getIndustryConfig } from "../industry-config";
 import { calculateCommission } from "../lib/commission-formula";
+import { getDefaultWorkflow, parseWorkflowSteps } from "../lib/industry-workflows";
+import { ApprovalStatus } from "@prisma/client";
 
 const router = Router();
 
@@ -206,6 +208,7 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       approvals: (event.approvals as any[]).map((a) => ({
         id:            a.id,
         approvalStep:  a.approvalStep,
+        stepName:      a.stepName ?? null,
         approverRole:  a.approverRole,
         status:        a.status,
         comments:      a.comments,
@@ -289,10 +292,11 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
   try {
     const existing = await prisma.commissionEvent.findFirst({
       where: {
-        id:              req.params.id as string,
-        tenantId:        req.user!.tenantId,
+        id:               req.params.id as string,
+        tenantId:         req.user!.tenantId,
         salesExecutiveId: req.user!.userId,
       },
+      include: { industryTemplate: { select: { code: true } } },
     });
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (existing.approvalStatus !== "DRAFT") {
@@ -300,35 +304,48 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // Load active TenantApprovalWorkflow
-    const workflow = await prisma.tenantApprovalWorkflow.findFirst({
-      where: { tenantId: req.user!.tenantId, isActive: true },
+    // ── Resolve workflow steps ────────────────────────────────────────────────
+    // Priority: industry-specific tenant workflow → generic tenant workflow → code defaults
+
+    const industryCode: string =
+      (existing.industryTemplate as any)?.code ?? "CUSTOM";
+
+    // 1. Tenant workflow for this specific industry
+    let tenantWorkflow = await prisma.tenantApprovalWorkflow.findFirst({
+      where: { tenantId: req.user!.tenantId, isActive: true, industryCode },
     });
 
-    const steps: any[] = workflow?.approvalStepsJson
-      ? (workflow.approvalStepsJson as any[]).map((s: any) => ({
-          tenantId:         req.user!.tenantId,
-          commissionEventId: existing.id,
-          approvalStep:     s.step,
-          approverRole:     s.approverRole,
-          approverUserId:   s.approverUserId ?? null,
-          status:           "PENDING",
-        }))
-      : [
-          { tenantId: req.user!.tenantId, commissionEventId: existing.id, approvalStep: 1, approverRole: "MANAGER", approverUserId: null, status: "PENDING" },
-          { tenantId: req.user!.tenantId, commissionEventId: existing.id, approvalStep: 2, approverRole: "FINANCE", approverUserId: null, status: "PENDING" },
-          { tenantId: req.user!.tenantId, commissionEventId: existing.id, approvalStep: 3, approverRole: "ADMIN",   approverUserId: null, status: "PENDING" },
-        ];
+    // 2. Generic tenant workflow (no industry code)
+    if (!tenantWorkflow) {
+      tenantWorkflow = await prisma.tenantApprovalWorkflow.findFirst({
+        where: { tenantId: req.user!.tenantId, isActive: true, industryCode: null },
+      });
+    }
+
+    const resolvedSteps =
+      (tenantWorkflow ? parseWorkflowSteps(tenantWorkflow.approvalStepsJson) : null)
+      ?? getDefaultWorkflow(industryCode);
+
+    // Build CommissionEventApproval records — first step PENDING, rest WAITING
+    const stepRecords = resolvedSteps.map((s, idx) => ({
+      tenantId:          req.user!.tenantId,
+      commissionEventId: existing.id,
+      approvalStep:      s.step,
+      stepName:          s.stepName,
+      approverRole:      s.approverRole as any,
+      approverUserId:    null as string | null,
+      status:            (idx === 0 ? ApprovalStatus.PENDING : ApprovalStatus.WAITING),
+    }));
 
     await prisma.$transaction(async (tx) => {
       await tx.commissionEventApproval.deleteMany({ where: { commissionEventId: existing.id } });
-      await tx.commissionEventApproval.createMany({ data: steps });
+      await tx.commissionEventApproval.createMany({ data: stepRecords });
       await tx.commissionEvent.update({
         where: { id: existing.id },
         data: { approvalStatus: "PENDING_APPROVAL", submittedAt: new Date() },
       });
       await tx.wallet.upsert({
-        where: { userId: req.user!.userId },
+        where:  { userId: req.user!.userId },
         create: {
           tenantId:       req.user!.tenantId,
           userId:         req.user!.userId,
@@ -344,10 +361,30 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
           entityType: "CommissionEvent",
           entityId:   existing.id,
           oldValue:   JSON.stringify({ approvalStatus: "DRAFT" }),
-          newValue:   JSON.stringify({ approvalStatus: "PENDING_APPROVAL" }),
+          newValue:   JSON.stringify({ approvalStatus: "PENDING_APPROVAL", industryCode }),
         },
       });
     });
+
+    // ── Notify first approver(s) ──────────────────────────────────────────────
+    const firstStep = resolvedSteps[0];
+    if (firstStep) {
+      const approverUsers = await prisma.user.findMany({
+        where: { tenantId: req.user!.tenantId, role: firstStep.approverRole as any, status: "ACTIVE" },
+      });
+      if (approverUsers.length > 0) {
+        await prisma.notification.createMany({
+          data: approverUsers.map((u: any) => ({
+            tenantId:   req.user!.tenantId,
+            userId:     u.id,
+            title:      "Commission Event Requires Your Approval",
+            message:    `"${existing.eventTitle}" has been submitted and is awaiting ${firstStep.stepName}.`,
+            type:       "DEAL_SUBMITTED",
+            readStatus: false,
+          })),
+        });
+      }
+    }
 
     res.json({ message: "Submitted for approval" });
   } catch (err) {

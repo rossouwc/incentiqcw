@@ -61,6 +61,7 @@ enum DealStatus {
 
 enum ApprovalStatus {
   PENDING
+  WAITING
   APPROVED
   REJECTED
   ESCALATED
@@ -502,6 +503,7 @@ model TenantApprovalWorkflow {
   id                String   @id @default(cuid())
   tenantId          String
   workflowName      String
+  industryCode      String?
   approvalStepsJson Json
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
@@ -545,6 +547,7 @@ model CommissionEventApproval {
   tenantId          String
   commissionEventId String
   approvalStep      Int
+  stepName          String?
   approverRole      UserRole
   approverUserId    String?
   status            ApprovalStatus @default(PENDING)
