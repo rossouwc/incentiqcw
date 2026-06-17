@@ -1,0 +1,102 @@
+Create DealFieldDefinition seed data for each industry.
+
+For IT Consulting:
+- customerName, text, required
+- opportunityName, text, required
+- projectStartDate, date, required
+- projectEndDate, date, required
+- revenue, currency, required, calculationRole: revenue
+- costOfSale, currency, required, calculationRole: cost
+- grossProfit, currency, calculated
+- grossProfitPercentage, percentage, calculated
+- dealType, select, required, options: Net New, Renewal, Upsell, Cross-sell
+
+For Recruitment:
+- clientName, text, required
+- candidateName, text, required
+- placementType, select, required, options: Permanent, Contract
+- startDate, date, required
+- annualSalary, currency, optional
+- placementFeePercentage, percentage, optional
+- placementFee, currency, optional
+- monthlyBillRate, currency, optional
+- monthlyCost, currency, optional
+- monthlyGrossProfit, currency, calculated
+- guaranteePeriodDays, number, optional
+
+For Insurance:
+- clientName, text, required
+- policyNumber, text, optional
+- productType, select, required, options: Life Cover, Short-Term, Funeral, Investment, Medical
+- insurerName, text, required
+- monthlyPremium, currency, required
+- annualPremium, currency, calculated
+- commissionType, select, required, options: Upfront, Ongoing, Hybrid
+- policyStartDate, date, required
+- firstPremiumCollected, boolean, required
+
+For Vehicle Dealership:
+- customerName, text, required
+- vehicleMake, text, required
+- vehicleModel, text, required
+- vehicleYear, number, optional
+- vinNumber, text, optional
+- salePrice, currency, required
+- costPrice, currency, required
+- vehicleGrossProfit, currency, calculated
+- financeDealIncluded, boolean, optional
+- financeCommissionAmount, currency, optional
+- insuranceProductSold, boolean, optional
+- warrantySold, boolean, optional
+- deliveryDate, date, required
+
+For Property Sales:
+- sellerName, text, required
+- buyerName, text, required
+- propertyAddress, text, required
+- salePrice, currency, required
+- agencyCommissionPercentage, percentage, required
+- agencyCommissionAmount, currency, calculated
+- agentSplitPercentage, percentage, required
+- transferDate, date, optional
+- saleStatus, select, required, options: Offer Accepted, Bond Approved, Transfer Registered
+
+For Rental Management:
+- landlordName, text, required
+- tenantName, text, required
+- propertyAddress, text, required
+- monthlyRental, currency, required
+- leaseTermMonths, number, required
+- placementFeeType, select, required, options: One Month Rental, Percentage of Annual Rental, Fixed Fee
+- managementFeePercentage, percentage, optional
+- leaseStartDate, date, required
+- firstRentalCollected, boolean, optional
+
+For Telecom:
+- customerName, text, required
+- productType, select, required, options: Fibre, Mobile Contract, Data Contract, Voice, Cloud PBX, LTE
+- monthlyContractValue, currency, required
+- contractTermMonths, number, required
+- totalContractValue, currency, calculated
+- activationFee, currency, optional
+- activationDate, date, optional
+- activationStatus, select, required, options: Pending, Activated, Cancelled
+
+For SaaS:
+- customerName, text, required
+- productName, text, required
+- subscriptionType, select, required, options: Monthly, Annual, Multi-Year
+- monthlyRecurringRevenue, currency, required
+- contractTermMonths, number, required
+- annualRecurringRevenue, currency, calculated
+- totalContractValue, currency, calculated
+- customerActivationDate, date, optional
+- subscriptionStatus, select, required, options: Signed, Activated, Cancelled
+
+For Custom:
+- eventTitle, text, required
+- customerName, text, optional
+- commissionBaseAmount, currency, required
+- commissionPercentage, percentage, required
+- eventDate, date, required
+- notes, textarea, optional

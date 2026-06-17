@@ -641,6 +641,153 @@ async function main() {
   }
   console.log("✅ Industry templates created:", industryTemplates.length);
 
+  // ─── Deal Field Definitions ──────────────────────────────────────────────────
+  type FieldDef = {
+    id: string;
+    industryTemplateId: string;
+    fieldKey: string;
+    fieldLabel: string;
+    fieldType: string;
+    isRequired: boolean;
+    displayOrder: number;
+    calculationRole?: string | null;
+    optionsJson?: string[] | null;
+    isActive?: boolean;
+  };
+
+  const fieldDefs: FieldDef[] = [
+    // ── IT Consulting ──────────────────────────────────────────────────────────
+    { id: "fld-itc-001", industryTemplateId: "ind-tmpl-001", fieldKey: "customerName",          fieldLabel: "Customer Name",          fieldType: "text",       isRequired: true,  displayOrder: 1  },
+    { id: "fld-itc-002", industryTemplateId: "ind-tmpl-001", fieldKey: "opportunityName",        fieldLabel: "Opportunity Name",        fieldType: "text",       isRequired: true,  displayOrder: 2  },
+    { id: "fld-itc-003", industryTemplateId: "ind-tmpl-001", fieldKey: "projectStartDate",       fieldLabel: "Project Start Date",      fieldType: "date",       isRequired: true,  displayOrder: 3  },
+    { id: "fld-itc-004", industryTemplateId: "ind-tmpl-001", fieldKey: "projectEndDate",         fieldLabel: "Project End Date",        fieldType: "date",       isRequired: true,  displayOrder: 4  },
+    { id: "fld-itc-005", industryTemplateId: "ind-tmpl-001", fieldKey: "revenue",                fieldLabel: "Revenue",                 fieldType: "currency",   isRequired: true,  displayOrder: 5,  calculationRole: "REVENUE" },
+    { id: "fld-itc-006", industryTemplateId: "ind-tmpl-001", fieldKey: "costOfSale",             fieldLabel: "Cost of Sale",            fieldType: "currency",   isRequired: true,  displayOrder: 6,  calculationRole: "COST" },
+    { id: "fld-itc-007", industryTemplateId: "ind-tmpl-001", fieldKey: "grossProfit",            fieldLabel: "Gross Profit",            fieldType: "calculated", isRequired: false, displayOrder: 7  },
+    { id: "fld-itc-008", industryTemplateId: "ind-tmpl-001", fieldKey: "grossProfitPercentage",  fieldLabel: "Gross Profit %",          fieldType: "calculated", isRequired: false, displayOrder: 8  },
+    { id: "fld-itc-009", industryTemplateId: "ind-tmpl-001", fieldKey: "dealType",               fieldLabel: "Deal Type",               fieldType: "select",     isRequired: true,  displayOrder: 9,  optionsJson: ["Net New", "Renewal", "Upsell", "Cross-sell"] },
+
+    // ── Recruitment ────────────────────────────────────────────────────────────
+    { id: "fld-rec-001", industryTemplateId: "ind-tmpl-002", fieldKey: "clientName",             fieldLabel: "Client Name",             fieldType: "text",       isRequired: true,  displayOrder: 1  },
+    { id: "fld-rec-002", industryTemplateId: "ind-tmpl-002", fieldKey: "candidateName",          fieldLabel: "Candidate Name",          fieldType: "text",       isRequired: true,  displayOrder: 2  },
+    { id: "fld-rec-003", industryTemplateId: "ind-tmpl-002", fieldKey: "placementType",          fieldLabel: "Placement Type",          fieldType: "select",     isRequired: true,  displayOrder: 3,  optionsJson: ["Permanent", "Contract"] },
+    { id: "fld-rec-004", industryTemplateId: "ind-tmpl-002", fieldKey: "startDate",              fieldLabel: "Start Date",              fieldType: "date",       isRequired: true,  displayOrder: 4  },
+    { id: "fld-rec-005", industryTemplateId: "ind-tmpl-002", fieldKey: "annualSalary",           fieldLabel: "Annual Salary",           fieldType: "currency",   isRequired: false, displayOrder: 5  },
+    { id: "fld-rec-006", industryTemplateId: "ind-tmpl-002", fieldKey: "placementFeePercentage", fieldLabel: "Placement Fee %",         fieldType: "percentage", isRequired: false, displayOrder: 6  },
+    { id: "fld-rec-007", industryTemplateId: "ind-tmpl-002", fieldKey: "placementFee",           fieldLabel: "Placement Fee",           fieldType: "currency",   isRequired: false, displayOrder: 7,  calculationRole: "REVENUE" },
+    { id: "fld-rec-008", industryTemplateId: "ind-tmpl-002", fieldKey: "monthlyBillRate",        fieldLabel: "Monthly Bill Rate",       fieldType: "currency",   isRequired: false, displayOrder: 8  },
+    { id: "fld-rec-009", industryTemplateId: "ind-tmpl-002", fieldKey: "monthlyCost",            fieldLabel: "Monthly Cost",            fieldType: "currency",   isRequired: false, displayOrder: 9  },
+    { id: "fld-rec-010", industryTemplateId: "ind-tmpl-002", fieldKey: "monthlyGrossProfit",     fieldLabel: "Monthly Gross Profit",    fieldType: "calculated", isRequired: false, displayOrder: 10 },
+    { id: "fld-rec-011", industryTemplateId: "ind-tmpl-002", fieldKey: "guaranteePeriodDays",    fieldLabel: "Guarantee Period (days)", fieldType: "number",     isRequired: false, displayOrder: 11 },
+
+    // ── Insurance ──────────────────────────────────────────────────────────────
+    { id: "fld-ins-001", industryTemplateId: "ind-tmpl-003", fieldKey: "clientName",             fieldLabel: "Client Name",             fieldType: "text",       isRequired: true,  displayOrder: 1  },
+    { id: "fld-ins-002", industryTemplateId: "ind-tmpl-003", fieldKey: "policyNumber",           fieldLabel: "Policy Number",           fieldType: "text",       isRequired: false, displayOrder: 2  },
+    { id: "fld-ins-003", industryTemplateId: "ind-tmpl-003", fieldKey: "productType",            fieldLabel: "Product Type",            fieldType: "select",     isRequired: true,  displayOrder: 3,  optionsJson: ["Life Cover", "Short-Term", "Funeral", "Investment", "Medical"] },
+    { id: "fld-ins-004", industryTemplateId: "ind-tmpl-003", fieldKey: "insurerName",            fieldLabel: "Insurer Name",            fieldType: "text",       isRequired: true,  displayOrder: 4  },
+    { id: "fld-ins-005", industryTemplateId: "ind-tmpl-003", fieldKey: "monthlyPremium",         fieldLabel: "Monthly Premium",         fieldType: "currency",   isRequired: true,  displayOrder: 5,  calculationRole: "REVENUE" },
+    { id: "fld-ins-006", industryTemplateId: "ind-tmpl-003", fieldKey: "annualPremium",          fieldLabel: "Annual Premium",          fieldType: "calculated", isRequired: false, displayOrder: 6  },
+    { id: "fld-ins-007", industryTemplateId: "ind-tmpl-003", fieldKey: "commissionType",         fieldLabel: "Commission Type",         fieldType: "select",     isRequired: true,  displayOrder: 7,  optionsJson: ["Upfront", "Ongoing", "Hybrid"] },
+    { id: "fld-ins-008", industryTemplateId: "ind-tmpl-003", fieldKey: "policyStartDate",        fieldLabel: "Policy Start Date",       fieldType: "date",       isRequired: true,  displayOrder: 8  },
+    { id: "fld-ins-009", industryTemplateId: "ind-tmpl-003", fieldKey: "firstPremiumCollected",  fieldLabel: "First Premium Collected", fieldType: "boolean",    isRequired: true,  displayOrder: 9  },
+
+    // ── Vehicle Dealership ─────────────────────────────────────────────────────
+    { id: "fld-veh-001", industryTemplateId: "ind-tmpl-004", fieldKey: "customerName",           fieldLabel: "Customer Name",           fieldType: "text",       isRequired: true,  displayOrder: 1  },
+    { id: "fld-veh-002", industryTemplateId: "ind-tmpl-004", fieldKey: "vehicleMake",            fieldLabel: "Vehicle Make",            fieldType: "text",       isRequired: true,  displayOrder: 2  },
+    { id: "fld-veh-003", industryTemplateId: "ind-tmpl-004", fieldKey: "vehicleModel",           fieldLabel: "Vehicle Model",           fieldType: "text",       isRequired: true,  displayOrder: 3  },
+    { id: "fld-veh-004", industryTemplateId: "ind-tmpl-004", fieldKey: "vehicleYear",            fieldLabel: "Vehicle Year",            fieldType: "number",     isRequired: false, displayOrder: 4  },
+    { id: "fld-veh-005", industryTemplateId: "ind-tmpl-004", fieldKey: "vinNumber",              fieldLabel: "VIN Number",              fieldType: "text",       isRequired: false, displayOrder: 5  },
+    { id: "fld-veh-006", industryTemplateId: "ind-tmpl-004", fieldKey: "salePrice",              fieldLabel: "Sale Price",              fieldType: "currency",   isRequired: true,  displayOrder: 6,  calculationRole: "REVENUE" },
+    { id: "fld-veh-007", industryTemplateId: "ind-tmpl-004", fieldKey: "costPrice",              fieldLabel: "Cost Price",              fieldType: "currency",   isRequired: true,  displayOrder: 7,  calculationRole: "COST" },
+    { id: "fld-veh-008", industryTemplateId: "ind-tmpl-004", fieldKey: "vehicleGrossProfit",     fieldLabel: "Gross Profit",            fieldType: "calculated", isRequired: false, displayOrder: 8  },
+    { id: "fld-veh-009", industryTemplateId: "ind-tmpl-004", fieldKey: "financeDealIncluded",    fieldLabel: "Finance Deal Included",   fieldType: "boolean",    isRequired: false, displayOrder: 9  },
+    { id: "fld-veh-010", industryTemplateId: "ind-tmpl-004", fieldKey: "financeCommissionAmount",fieldLabel: "Finance Commission",      fieldType: "currency",   isRequired: false, displayOrder: 10 },
+    { id: "fld-veh-011", industryTemplateId: "ind-tmpl-004", fieldKey: "insuranceProductSold",   fieldLabel: "Insurance Product Sold",  fieldType: "boolean",    isRequired: false, displayOrder: 11 },
+    { id: "fld-veh-012", industryTemplateId: "ind-tmpl-004", fieldKey: "warrantySold",           fieldLabel: "Warranty Sold",           fieldType: "boolean",    isRequired: false, displayOrder: 12 },
+    { id: "fld-veh-013", industryTemplateId: "ind-tmpl-004", fieldKey: "deliveryDate",           fieldLabel: "Delivery Date",           fieldType: "date",       isRequired: true,  displayOrder: 13 },
+
+    // ── Property Sales ─────────────────────────────────────────────────────────
+    { id: "fld-prp-001", industryTemplateId: "ind-tmpl-005", fieldKey: "sellerName",                  fieldLabel: "Seller Name",                   fieldType: "text",       isRequired: true,  displayOrder: 1 },
+    { id: "fld-prp-002", industryTemplateId: "ind-tmpl-005", fieldKey: "buyerName",                   fieldLabel: "Buyer Name",                    fieldType: "text",       isRequired: true,  displayOrder: 2 },
+    { id: "fld-prp-003", industryTemplateId: "ind-tmpl-005", fieldKey: "propertyAddress",             fieldLabel: "Property Address",              fieldType: "text",       isRequired: true,  displayOrder: 3 },
+    { id: "fld-prp-004", industryTemplateId: "ind-tmpl-005", fieldKey: "salePrice",                   fieldLabel: "Sale Price",                    fieldType: "currency",   isRequired: true,  displayOrder: 4, calculationRole: "REVENUE" },
+    { id: "fld-prp-005", industryTemplateId: "ind-tmpl-005", fieldKey: "agencyCommissionPercentage",  fieldLabel: "Agency Commission %",           fieldType: "percentage", isRequired: true,  displayOrder: 5 },
+    { id: "fld-prp-006", industryTemplateId: "ind-tmpl-005", fieldKey: "agencyCommissionAmount",      fieldLabel: "Agency Commission Amount",      fieldType: "calculated", isRequired: false, displayOrder: 6 },
+    { id: "fld-prp-007", industryTemplateId: "ind-tmpl-005", fieldKey: "agentSplitPercentage",        fieldLabel: "Agent Split %",                 fieldType: "percentage", isRequired: true,  displayOrder: 7 },
+    { id: "fld-prp-008", industryTemplateId: "ind-tmpl-005", fieldKey: "transferDate",                fieldLabel: "Transfer Date",                 fieldType: "date",       isRequired: false, displayOrder: 8 },
+    { id: "fld-prp-009", industryTemplateId: "ind-tmpl-005", fieldKey: "saleStatus",                  fieldLabel: "Sale Status",                   fieldType: "select",     isRequired: true,  displayOrder: 9, optionsJson: ["Offer Accepted", "Bond Approved", "Transfer Registered"] },
+
+    // ── Rental Management ──────────────────────────────────────────────────────
+    { id: "fld-rnt-001", industryTemplateId: "ind-tmpl-006", fieldKey: "landlordName",           fieldLabel: "Landlord Name",           fieldType: "text",       isRequired: true,  displayOrder: 1 },
+    { id: "fld-rnt-002", industryTemplateId: "ind-tmpl-006", fieldKey: "tenantName",             fieldLabel: "Tenant Name",             fieldType: "text",       isRequired: true,  displayOrder: 2 },
+    { id: "fld-rnt-003", industryTemplateId: "ind-tmpl-006", fieldKey: "propertyAddress",        fieldLabel: "Property Address",        fieldType: "text",       isRequired: true,  displayOrder: 3 },
+    { id: "fld-rnt-004", industryTemplateId: "ind-tmpl-006", fieldKey: "monthlyRental",          fieldLabel: "Monthly Rental",          fieldType: "currency",   isRequired: true,  displayOrder: 4, calculationRole: "REVENUE" },
+    { id: "fld-rnt-005", industryTemplateId: "ind-tmpl-006", fieldKey: "leaseTermMonths",        fieldLabel: "Lease Term (months)",     fieldType: "number",     isRequired: true,  displayOrder: 5 },
+    { id: "fld-rnt-006", industryTemplateId: "ind-tmpl-006", fieldKey: "placementFeeType",       fieldLabel: "Placement Fee Type",      fieldType: "select",     isRequired: true,  displayOrder: 6, optionsJson: ["One Month Rental", "Percentage of Annual Rental", "Fixed Fee"] },
+    { id: "fld-rnt-007", industryTemplateId: "ind-tmpl-006", fieldKey: "managementFeePercentage",fieldLabel: "Management Fee %",        fieldType: "percentage", isRequired: false, displayOrder: 7 },
+    { id: "fld-rnt-008", industryTemplateId: "ind-tmpl-006", fieldKey: "leaseStartDate",         fieldLabel: "Lease Start Date",        fieldType: "date",       isRequired: true,  displayOrder: 8 },
+    { id: "fld-rnt-009", industryTemplateId: "ind-tmpl-006", fieldKey: "firstRentalCollected",   fieldLabel: "First Rental Collected",  fieldType: "boolean",    isRequired: false, displayOrder: 9 },
+
+    // ── Telecom ────────────────────────────────────────────────────────────────
+    { id: "fld-tel-001", industryTemplateId: "ind-tmpl-007", fieldKey: "customerName",           fieldLabel: "Customer Name",           fieldType: "text",       isRequired: true,  displayOrder: 1 },
+    { id: "fld-tel-002", industryTemplateId: "ind-tmpl-007", fieldKey: "productType",            fieldLabel: "Product Type",            fieldType: "select",     isRequired: true,  displayOrder: 2, optionsJson: ["Fibre", "Mobile Contract", "Data Contract", "Voice", "Cloud PBX", "LTE"] },
+    { id: "fld-tel-003", industryTemplateId: "ind-tmpl-007", fieldKey: "monthlyContractValue",   fieldLabel: "Monthly Contract Value",  fieldType: "currency",   isRequired: true,  displayOrder: 3, calculationRole: "REVENUE" },
+    { id: "fld-tel-004", industryTemplateId: "ind-tmpl-007", fieldKey: "contractTermMonths",     fieldLabel: "Contract Term (months)",  fieldType: "number",     isRequired: true,  displayOrder: 4 },
+    { id: "fld-tel-005", industryTemplateId: "ind-tmpl-007", fieldKey: "totalContractValue",     fieldLabel: "Total Contract Value",    fieldType: "calculated", isRequired: false, displayOrder: 5 },
+    { id: "fld-tel-006", industryTemplateId: "ind-tmpl-007", fieldKey: "activationFee",          fieldLabel: "Activation Fee",          fieldType: "currency",   isRequired: false, displayOrder: 6 },
+    { id: "fld-tel-007", industryTemplateId: "ind-tmpl-007", fieldKey: "activationDate",         fieldLabel: "Activation Date",         fieldType: "date",       isRequired: false, displayOrder: 7 },
+    { id: "fld-tel-008", industryTemplateId: "ind-tmpl-007", fieldKey: "activationStatus",       fieldLabel: "Activation Status",       fieldType: "select",     isRequired: true,  displayOrder: 8, optionsJson: ["Pending", "Activated", "Cancelled"] },
+
+    // ── SaaS ───────────────────────────────────────────────────────────────────
+    { id: "fld-sas-001", industryTemplateId: "ind-tmpl-008", fieldKey: "customerName",              fieldLabel: "Customer Name",              fieldType: "text",       isRequired: true,  displayOrder: 1 },
+    { id: "fld-sas-002", industryTemplateId: "ind-tmpl-008", fieldKey: "productName",               fieldLabel: "Product Name",               fieldType: "text",       isRequired: true,  displayOrder: 2 },
+    { id: "fld-sas-003", industryTemplateId: "ind-tmpl-008", fieldKey: "subscriptionType",          fieldLabel: "Subscription Type",          fieldType: "select",     isRequired: true,  displayOrder: 3, optionsJson: ["Monthly", "Annual", "Multi-Year"] },
+    { id: "fld-sas-004", industryTemplateId: "ind-tmpl-008", fieldKey: "monthlyRecurringRevenue",   fieldLabel: "Monthly Recurring Revenue",  fieldType: "currency",   isRequired: true,  displayOrder: 4, calculationRole: "REVENUE" },
+    { id: "fld-sas-005", industryTemplateId: "ind-tmpl-008", fieldKey: "contractTermMonths",        fieldLabel: "Contract Term (months)",     fieldType: "number",     isRequired: true,  displayOrder: 5 },
+    { id: "fld-sas-006", industryTemplateId: "ind-tmpl-008", fieldKey: "annualRecurringRevenue",    fieldLabel: "Annual Recurring Revenue",   fieldType: "calculated", isRequired: false, displayOrder: 6 },
+    { id: "fld-sas-007", industryTemplateId: "ind-tmpl-008", fieldKey: "totalContractValue",        fieldLabel: "Total Contract Value",       fieldType: "calculated", isRequired: false, displayOrder: 7 },
+    { id: "fld-sas-008", industryTemplateId: "ind-tmpl-008", fieldKey: "customerActivationDate",    fieldLabel: "Customer Activation Date",   fieldType: "date",       isRequired: false, displayOrder: 8 },
+    { id: "fld-sas-009", industryTemplateId: "ind-tmpl-008", fieldKey: "subscriptionStatus",        fieldLabel: "Subscription Status",        fieldType: "select",     isRequired: true,  displayOrder: 9, optionsJson: ["Signed", "Activated", "Cancelled"] },
+
+    // ── Custom ─────────────────────────────────────────────────────────────────
+    { id: "fld-cus-001", industryTemplateId: "ind-tmpl-009", fieldKey: "eventTitle",             fieldLabel: "Event Title",             fieldType: "text",       isRequired: true,  displayOrder: 1 },
+    { id: "fld-cus-002", industryTemplateId: "ind-tmpl-009", fieldKey: "customerName",           fieldLabel: "Customer Name",           fieldType: "text",       isRequired: false, displayOrder: 2 },
+    { id: "fld-cus-003", industryTemplateId: "ind-tmpl-009", fieldKey: "commissionBaseAmount",   fieldLabel: "Commission Base Amount",  fieldType: "currency",   isRequired: true,  displayOrder: 3, calculationRole: "REVENUE" },
+    { id: "fld-cus-004", industryTemplateId: "ind-tmpl-009", fieldKey: "commissionPercentage",   fieldLabel: "Commission %",            fieldType: "percentage", isRequired: true,  displayOrder: 4 },
+    { id: "fld-cus-005", industryTemplateId: "ind-tmpl-009", fieldKey: "eventDate",              fieldLabel: "Event Date",              fieldType: "date",       isRequired: true,  displayOrder: 5 },
+    { id: "fld-cus-006", industryTemplateId: "ind-tmpl-009", fieldKey: "notes",                  fieldLabel: "Notes",                   fieldType: "textarea",   isRequired: false, displayOrder: 6 },
+  ];
+
+  let fieldCount = 0;
+  for (const f of fieldDefs) {
+    await prisma.dealFieldDefinition.upsert({
+      where: { industryTemplateId_fieldKey: { industryTemplateId: f.industryTemplateId, fieldKey: f.fieldKey } },
+      update: {
+        fieldLabel: f.fieldLabel,
+        fieldType: f.fieldType,
+        isRequired: f.isRequired,
+        displayOrder: f.displayOrder,
+        calculationRole: f.calculationRole ?? null,
+        optionsJson: f.optionsJson ?? null,
+        isActive: true,
+      },
+      create: {
+        id: f.id,
+        industryTemplateId: f.industryTemplateId,
+        fieldKey: f.fieldKey,
+        fieldLabel: f.fieldLabel,
+        fieldType: f.fieldType,
+        isRequired: f.isRequired,
+        displayOrder: f.displayOrder,
+        calculationRole: f.calculationRole ?? null,
+        optionsJson: f.optionsJson ?? null,
+        isActive: true,
+      },
+    });
+    fieldCount++;
+  }
+  console.log("✅ Deal field definitions created:", fieldCount);
+
   console.log("\n🎉 Seed complete!");
   console.log("─────────────────────────────────────────────────────────────────");
   console.log("Demo login credentials (all use Password123!):");
