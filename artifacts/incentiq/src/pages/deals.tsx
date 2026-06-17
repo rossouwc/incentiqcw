@@ -53,6 +53,8 @@ import {
   TrendingUp,
   DollarSign,
   Eye,
+  Loader2,
+  CircleDot,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -228,6 +230,25 @@ export default function Deals() {
   const [viewDeal, setViewDeal] = useState<Deal | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [workflowDeal, setWorkflowDeal] = useState<{ id: string; name: string } | null>(null);
+  const [workflowSteps, setWorkflowSteps] = useState<any[]>([]);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+
+  async function openWorkflow(deal: Deal) {
+    setWorkflowDeal({ id: deal.id, name: deal.dealName });
+    setWorkflowSteps([]);
+    setWorkflowLoading(true);
+    try {
+      const res = await fetch(`/api/deals/${deal.id}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setWorkflowSteps(data.approvalWorkflows ?? []);
+      }
+    } catch { /* ignore */ } finally {
+      setWorkflowLoading(false);
+    }
+  }
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -528,7 +549,17 @@ export default function Deals() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <StatusBadge status={deal.status} />
+                          {deal.status === "DRAFT" ? (
+                            <StatusBadge status={deal.status} />
+                          ) : (
+                            <button
+                              onClick={() => openWorkflow(deal)}
+                              className="cursor-pointer hover:opacity-80 transition-opacity"
+                              title="View approval progress"
+                            >
+                              <StatusBadge status={deal.status} />
+                            </button>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-muted-foreground text-xs">
                           {deal.submittedAt ? formatDate(deal.submittedAt) : "—"}
@@ -783,6 +814,81 @@ export default function Deals() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Approval Workflow Dialog */}
+      <Dialog open={!!workflowDeal} onOpenChange={(open) => !open && setWorkflowDeal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Approval Progress</DialogTitle>
+            <p className="text-sm text-muted-foreground">{workflowDeal?.name}</p>
+          </DialogHeader>
+          {workflowLoading ? (
+            <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" /> Loading…
+            </div>
+          ) : workflowSteps.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">No approval steps recorded.</p>
+          ) : (
+            <ol className="relative mt-2 space-y-0">
+              {workflowSteps.map((step, idx) => {
+                const isApproved = step.status === "APPROVED";
+                const isRejected = step.status === "REJECTED";
+                const isActive   = step.status === "PENDING" && workflowSteps.slice(0, idx).every(s => s.status === "APPROVED");
+                const isLast     = idx === workflowSteps.length - 1;
+
+                const iconEl = isApproved
+                  ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  : isRejected
+                  ? <XCircle className="h-5 w-5 text-red-500" />
+                  : isActive
+                  ? <Clock className="h-5 w-5 text-amber-400" />
+                  : <CircleDot className="h-5 w-5 text-muted-foreground/40" />;
+
+                const labelCls = isApproved
+                  ? "text-emerald-500 font-medium"
+                  : isRejected
+                  ? "text-red-500 font-medium"
+                  : isActive
+                  ? "text-amber-400 font-medium"
+                  : "text-muted-foreground";
+
+                const stepLabel = isApproved ? "Approved" : isRejected ? "Rejected" : isActive ? "Awaiting" : "Pending";
+
+                return (
+                  <li key={step.id} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="mt-0.5">{iconEl}</div>
+                      {!isLast && <div className="w-px flex-1 bg-border mt-1 mb-1" />}
+                    </div>
+                    <div className={`pb-5 flex-1 ${isLast ? "" : ""}`}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">{step.stepName ?? `Step ${step.approvalLevel}`}</span>
+                        <span className={`text-xs ${labelCls}`}>{stepLabel}</span>
+                      </div>
+                      {step.approverName && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {isApproved || isRejected ? "by " : "assigned to "}{step.approverName}
+                        </p>
+                      )}
+                      {step.approvedAt && (
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(step.approvedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
+                        </p>
+                      )}
+                      {step.comments && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">"{step.comments}"</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setWorkflowDeal(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
