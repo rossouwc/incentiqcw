@@ -184,8 +184,9 @@ export default function Payouts() {
     effectiveRateOnCommission: number;
   } | null>(null);
 
+  const w = wallet as any;
   const availableBalance = wallet?.availableBalance ?? 0;
-  const pendingBalance = wallet?.pendingBalance ?? 0;
+  const pendingBalance = (w?.pendingApprovalAmount ?? 0) + (w?.payrollApprovedAmount ?? 0);
   const paidOutBalance = wallet?.paidOutBalance ?? 0;
 
   const currentMonths = getUpcomingMonths(12);
