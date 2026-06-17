@@ -12,18 +12,24 @@ import {
 } from "lucide-react";
 
 export default function PayrollDashboard() {
-  const { data: readyPayouts,  isLoading: loadingReady  } = useListPayouts({ status: "FINANCE_APPROVED" });
-  const { data: paidPayouts,   isLoading: loadingPaid   } = useListPayouts({ status: "PAYROLL_APPROVED" });
-  const { data: pendingPayouts, isLoading: loadingPending } = useListPayouts({ status: "PENDING" });
-  const { data: myTasks,       isLoading: loadingTasks  } = useGetMyTasks();
+  const { data: allPayouts, isLoading: loadingAll } = useListPayouts({ status: "ALL" } as any);
+  const { data: myTasks,    isLoading: loadingTasks } = useGetMyTasks();
   const { data: recentActivity, isLoading: loadingActivity } = useGetRecentActivity();
 
-  const readyList   = readyPayouts   ?? [];
-  const paidList    = paidPayouts    ?? [];
-  const pendingList = pendingPayouts ?? [];
+  const allList: any[] = (allPayouts as any) ?? [];
 
-  const totalReady  = readyList.reduce((s, p) => s + p.requestedAmount, 0);
-  const totalPaid   = paidList.reduce((s, p) => s + p.requestedAmount, 0);
+  const pendingList  = allList.filter(p => p.status === "PENDING");
+  const financeList  = allList.filter(p => p.status === "FINANCE_APPROVED");
+  const payrollList  = allList.filter(p => p.status === "PAYROLL_APPROVED");
+  const paidList     = allList.filter(p => p.status === "PAID");
+  const readyList    = [...financeList, ...payrollList]; // both are in the export queue
+
+  const totalReady = readyList.reduce((s: number, p: any) => s + p.requestedAmount, 0);
+  const totalPaid  = paidList.reduce((s: number, p: any) => s + p.requestedAmount, 0);
+
+  const loadingReady   = loadingAll;
+  const loadingPaid    = loadingAll;
+  const loadingPending = loadingAll;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -191,9 +197,9 @@ export default function PayrollDashboard() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: "Pending",           count: pendingList.length, amount: pendingList.reduce((s,p) => s+p.requestedAmount,0),  color: "bg-amber-100 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-400" },
-              { label: "Finance Approved",  count: readyList.length,   amount: readyList.reduce((s,p) => s+p.requestedAmount,0),    color: "bg-blue-100 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-400"         },
-              { label: "Paid",              count: paidList.length,    amount: paidList.reduce((s,p) => s+p.requestedAmount,0),     color: "bg-green-100 dark:bg-green-950/30 border-green-200 dark:border-green-900 text-green-700 dark:text-green-400"    },
+              { label: "Pending",           count: pendingList.length, amount: pendingList.reduce((s: number, p: any) => s+p.requestedAmount, 0),  color: "bg-amber-100 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-400" },
+              { label: "Finance Approved",  count: financeList.length, amount: financeList.reduce((s: number, p: any) => s+p.requestedAmount, 0),  color: "bg-blue-100 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-400"         },
+              { label: "Paid",              count: paidList.length,    amount: paidList.reduce((s: number, p: any) => s+p.requestedAmount, 0),     color: "bg-green-100 dark:bg-green-950/30 border-green-200 dark:border-green-900 text-green-700 dark:text-green-400"    },
               { label: "Tasks Pending",     count: myTasks?.pendingApprovals ?? 0, amount: 0, color: "bg-muted/50 border-border text-foreground" },
             ].map(({ label, count, amount, color }) => (
               <div key={label} className={`p-4 rounded-xl border ${color}`}>
