@@ -830,11 +830,13 @@ export default function Deals() {
             <p className="text-sm text-muted-foreground py-6 text-center">No approval steps recorded.</p>
           ) : (
             <ol className="relative mt-2 space-y-0">
-              {workflowSteps.map((step, idx) => {
+              {workflowSteps
+                .filter((s: any) => s.approverRole !== "SALES_EXECUTIVE" && s.approverRole !== "PAYROLL")
+                .map((step, idx, visibleSteps) => {
                 const isApproved = step.status === "APPROVED";
                 const isRejected = step.status === "REJECTED";
-                const isActive   = step.status === "PENDING" && workflowSteps.slice(0, idx).every((s: any) => s.status === "APPROVED");
-                const isLast     = idx === workflowSteps.length - 1;
+                const isActive   = step.status === "PENDING" && visibleSteps.slice(0, idx).every((s: any) => s.status === "APPROVED");
+                const isLast     = idx === visibleSteps.length - 1;
 
                 const ROLE_LABELS: Record<string, string> = {
                   MANAGER: "Sales Manager",
