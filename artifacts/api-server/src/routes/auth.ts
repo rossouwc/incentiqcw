@@ -29,7 +29,12 @@ function slugify(name: string): string {
 
 // POST /api/auth/register
 router.post("/register", async (req: Request, res: Response) => {
-  const { companyName, email, password, firstName, lastName, contactPhone, industry, registrationNumber, vatNumber } = req.body;
+  const {
+    companyName, email, password, firstName, lastName,
+    contactPhone, industry, registrationNumber, vatNumber,
+    contactName: bodyContactName, contactEmail: bodyContactEmail,
+  } = req.body;
+
   if (!companyName || !email || !password || !firstName || !lastName) {
     res.status(400).json({ error: "companyName, email, password, firstName and lastName are required" });
     return;
@@ -42,19 +47,53 @@ router.post("/register", async (req: Request, res: Response) => {
       return;
     }
 
+    // Resolve contact details — step 1 sends contactName/contactEmail separately from the admin email
+    const resolvedContactName  = bodyContactName  || `${firstName} ${lastName}`;
+    const resolvedContactEmail = bodyContactEmail || email.toLowerCase().trim();
+
     const passwordHash = await bcrypt.hash(password, 12);
+
+    const industryCode = industry ?? "CUSTOM";
 
     const tenant = await prisma.tenant.create({
       data: {
         companyName,
         registrationNumber: registrationNumber ?? null,
         vatNumber: vatNumber ?? null,
-        industry: industry ?? "Technology",
-        contactName: `${firstName} ${lastName}`,
-        contactEmail: email.toLowerCase().trim(),
+        industry: industryCode,
+        contactName: resolvedContactName,
+        contactEmail: resolvedContactEmail.toLowerCase().trim(),
         contactPhone: contactPhone ?? null,
         status: "ACTIVE",
         subscriptionPlan: "STARTER",
+      },
+    });
+
+    // Link tenant to IndustryTemplate + create TenantIndustryConfig
+    const industryTemplate = await prisma.industryTemplate.findUnique({
+      where: { code: industryCode },
+    });
+    if (industryTemplate) {
+      await prisma.tenantIndustryConfig.create({
+        data: {
+          tenantId:           tenant.id,
+          industryTemplateId: industryTemplate.id,
+          isCustomised:       false,
+        },
+      });
+    }
+
+    // Create default 3-step TenantApprovalWorkflow
+    await prisma.tenantApprovalWorkflow.create({
+      data: {
+        tenantId:     tenant.id,
+        workflowName: "Default Approval Workflow",
+        approvalStepsJson: [
+          { step: 1, stepName: "Manager Review",    approverRole: "MANAGER", approverUserId: null },
+          { step: 2, stepName: "Finance Review",    approverRole: "FINANCE", approverUserId: null },
+          { step: 3, stepName: "Director Approval", approverRole: "ADMIN",   approverUserId: null },
+        ],
+        isActive: true,
       },
     });
 
