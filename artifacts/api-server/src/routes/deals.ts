@@ -54,6 +54,7 @@ function dealToResponse(d: any) {
     status: d.status,
     submittedById: d.submittedById ?? null,
     submittedAt: d.submittedAt?.toISOString() ?? null,
+    metadata: (d as any).metadata ?? null,
     createdAt: d.createdAt.toISOString(),
     updatedAt: d.updatedAt.toISOString(),
   };
@@ -125,7 +126,7 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
 
 // POST /api/deals — create as DRAFT
 router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate } =
+  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate, metadata } =
     req.body;
   if (!customerName || !dealName || !dealType || revenue == null || cost == null) {
     res.status(400).json({ error: "customerName, dealName, dealType, revenue and cost are required" });
@@ -154,6 +155,7 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
         status: "DRAFT",
         contractStartDate: contractStartDate ? new Date(contractStartDate) : null,
         contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
+        ...(metadata !== undefined && { metadata }),
       },
       include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });
@@ -182,7 +184,7 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
 
 // PATCH /api/deals/:id
 router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
-  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate, status } =
+  const { customerName, dealName, dealType, revenue, cost, contractStartDate, contractEndDate, status, metadata } =
     req.body;
   try {
     const existing = await prisma.deal.findFirst({
@@ -219,6 +221,7 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
         ...(contractEndDate !== undefined && {
           contractEndDate: contractEndDate ? new Date(contractEndDate) : null,
         }),
+        ...(metadata !== undefined && { metadata }),
       },
       include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });

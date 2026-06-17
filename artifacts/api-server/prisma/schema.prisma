@@ -236,6 +236,7 @@ model Deal {
   status                DealStatus @default(DRAFT)
   submittedById         String?
   submittedAt           DateTime?
+  metadata              Json?
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
 

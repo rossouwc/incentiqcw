@@ -8,10 +8,13 @@ import { Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { INDUSTRY_OPTIONS } from "@/lib/industry-config";
 
 const registerSchema = z.object({
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
+  industry:    z.string().min(1, "Please select an industry"),
   firstName:   z.string().min(2, "First name is required"),
   lastName:    z.string().min(2, "Last name is required"),
   email:       z.string().email("Invalid email address"),
@@ -35,12 +38,12 @@ export default function Register() {
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { companyName: "", firstName: "", lastName: "", email: "", password: "", confirmPassword: "" },
+    defaultValues: { companyName: "", industry: "", firstName: "", lastName: "", email: "", password: "", confirmPassword: "" },
   });
 
   const onSubmit = (values: RegisterValues) => {
     const { confirmPassword: _, ...payload } = values;
-    registerMutation.mutate({ data: payload }, {
+    registerMutation.mutate({ data: payload as any }, {
       onSuccess: (res) => {
         localStorage.setItem("incentiq_token", res.token);
         queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
@@ -81,6 +84,31 @@ export default function Register() {
                   <FormControl>
                     <Input placeholder="Acme Corp (Pty) Ltd" {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="industry"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Industry <span className="text-destructive">*</span></FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select your industry" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {INDUSTRY_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

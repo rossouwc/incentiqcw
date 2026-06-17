@@ -6,10 +6,12 @@ import {
   useSubmitDeal,
   useDeleteDeal,
   useListCommissionRuleGroups,
+  useGetTenant,
   DealInputDealType,
 } from "@workspace/api-client-react";
 import type { Deal, CommissionRuleGroup } from "@workspace/api-client-react";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { getIndustryConfig } from "@/lib/industry-config";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -202,23 +204,27 @@ interface FormState {
   contractEndDate: string;
   revenue: string;
   cost: string;
+  metadata: Record<string, string>;
 }
 
 const emptyForm: FormState = {
   customerName: "", dealName: "", dealType: "",
   contractStartDate: "", contractEndDate: "",
   revenue: "", cost: "",
+  metadata: {},
 };
 
 function dealToForm(deal: Deal): FormState {
+  const meta = ((deal as any).metadata as Record<string, string> | null) ?? {};
   return {
     customerName:      deal.customerName,
     dealName:          deal.dealName,
-    dealType:          deal.dealType,
+    dealType:          meta.eventType ?? deal.dealType,
     contractStartDate: deal.contractStartDate ? deal.contractStartDate.substring(0, 10) : "",
     contractEndDate:   deal.contractEndDate   ? deal.contractEndDate.substring(0, 10)   : "",
     revenue:           String(deal.revenue),
     cost:              String(deal.cost),
+    metadata:          meta,
   };
 }
 
@@ -260,6 +266,9 @@ export default function Deals() {
     limit: 100,
   });
   const { data: commGroups = [] } = useListCommissionRuleGroups();
+  const { data: tenant } = useGetTenant();
+  const industryConfig = getIndustryConfig((tenant as any)?.industry);
+  const isIT = industryConfig.id === "IT_CONSULTING";
 
   const createM  = useCreateDeal();
   const updateM  = useUpdateDeal();
@@ -282,8 +291,13 @@ export default function Deals() {
   const cst     = parseFloat(form.cost)    || 0;
   const gp      = rev - cst;
   const gpPct   = rev > 0 ? (gp / rev) * 100 : 0;
-  const commInfo = useMemo(() => lookupCommInfo(form.dealType, commGroups), [form.dealType, commGroups]);
-  const commAmt = gp > 0 ? gp * (commInfo.pct / 100) : 0;
+  const commInfo = useMemo(
+    () => lookupCommInfo(isIT ? form.dealType : "NET_NEW", commGroups),
+    [form.dealType, commGroups, isIT]
+  );
+  const commAmt = industryConfig.showGP
+    ? (gp > 0 ? gp * (commInfo.pct / 100) : 0)
+    : rev * (commInfo.pct / 100);
 
   const stats = useMemo(() => {
     const total   = deals.length;
@@ -320,15 +334,20 @@ export default function Deals() {
     setForm(emptyForm);
   }
 
-  const getInput = () => ({
-    customerName: form.customerName,
-    dealName: form.dealName,
-    dealType: form.dealType as DealInputDealType,
-    revenue: rev,
-    cost: cst,
-    contractStartDate: form.contractStartDate || null,
-    contractEndDate:   form.contractEndDate   || null,
-  });
+  const getInput = () => {
+    const extraMeta: Record<string, string> = { industry: industryConfig.id };
+    if (!isIT && form.dealType) extraMeta.eventType = form.dealType;
+    return {
+      customerName: form.customerName,
+      dealName:     form.dealName,
+      dealType:     (isIT ? form.dealType : "NET_NEW") as DealInputDealType,
+      revenue:      rev,
+      cost:         isIT ? cst : 0,
+      contractStartDate: form.contractStartDate || null,
+      contractEndDate:   form.contractEndDate   || null,
+      metadata: { ...form.metadata, ...extraMeta },
+    };
+  };
 
   async function handleSaveDraft() {
     if (!form.customerName || !form.dealName || !form.dealType || !form.revenue) {
@@ -614,24 +633,26 @@ export default function Deals() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {editDeal ? `Edit Deal — ${editDeal.dealName}` : "New Deal"}
+              {editDeal
+                ? `Edit ${industryConfig.eventLabel} — ${editDeal.dealName}`
+                : `New ${industryConfig.eventLabel}`}
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="customerName">Customer Name <span className="text-destructive">*</span></Label>
+                <Label htmlFor="customerName">{industryConfig.entityLabel} <span className="text-destructive">*</span></Label>
                 <CustomerCombobox
                   value={form.customerName}
                   onChange={(v) => setField("customerName", v)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="dealName">Deal Name <span className="text-destructive">*</span></Label>
+                <Label htmlFor="dealName">{industryConfig.eventLabel} Name <span className="text-destructive">*</span></Label>
                 <Input
                   id="dealName"
-                  placeholder="e.g. Enterprise License 2025"
+                  placeholder={`e.g. ${industryConfig.eventLabel} 2025`}
                   value={form.dealName}
                   onChange={(e) => setField("dealName", e.target.value)}
                 />
@@ -640,20 +661,20 @@ export default function Deals() {
 
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label>Deal Type <span className="text-destructive">*</span></Label>
+                <Label>Type <span className="text-destructive">*</span></Label>
                 <Select value={form.dealType} onValueChange={(v) => setField("dealType", v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {DEAL_TYPES.map((t) => (
+                    {industryConfig.eventTypes.map((t) => (
                       <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Contract Start</Label>
+                <Label>{isIT ? "Contract Start" : "Start Date"}</Label>
                 <DatePicker
                   value={form.contractStartDate}
                   onChange={(v) => setField("contractStartDate", v)}
@@ -661,7 +682,7 @@ export default function Deals() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Contract End</Label>
+                <Label>{isIT ? "Contract End" : "End Date"}</Label>
                 <DatePicker
                   value={form.contractEndDate}
                   onChange={(v) => setField("contractEndDate", v)}
@@ -670,9 +691,9 @@ export default function Deals() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${industryConfig.costLabel ? "grid-cols-2" : "grid-cols-1"}`}>
               <div className="space-y-1.5">
-                <Label htmlFor="revenue">Revenue (ZAR) <span className="text-destructive">*</span></Label>
+                <Label htmlFor="revenue">{industryConfig.revenueLabel} (ZAR) <span className="text-destructive">*</span></Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
                   <Input
@@ -687,23 +708,75 @@ export default function Deals() {
                   />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="cost">Cost (ZAR) <span className="text-destructive">*</span></Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
-                  <Input
-                    id="cost"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.cost}
-                    onChange={(e) => setField("cost", e.target.value)}
-                    className="pl-7"
-                  />
+              {industryConfig.costLabel && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="cost">{industryConfig.costLabel} (ZAR)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
+                    <Input
+                      id="cost"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={form.cost}
+                      onChange={(e) => setField("cost", e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
+
+            {industryConfig.extraFields.length > 0 && (
+              <div className={`grid gap-4 ${industryConfig.extraFields.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                {industryConfig.extraFields.map((field) => (
+                  <div key={field.key} className="space-y-1.5">
+                    <Label htmlFor={field.key}>
+                      {field.label}
+                      {field.required && <span className="text-destructive ml-1">*</span>}
+                    </Label>
+                    {field.type === "select" && field.options ? (
+                      <Select
+                        value={form.metadata[field.key] ?? ""}
+                        onValueChange={(v) => setForm(f => ({ ...f, metadata: { ...f.metadata, [field.key]: v } }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={field.placeholder ?? "Select..."} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.options.map(opt => (
+                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : field.type === "currency" ? (
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R</span>
+                        <Input
+                          id={field.key}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder={field.placeholder ?? "0.00"}
+                          value={form.metadata[field.key] ?? ""}
+                          onChange={(e) => setForm(f => ({ ...f, metadata: { ...f.metadata, [field.key]: e.target.value } }))}
+                          className="pl-7"
+                        />
+                      </div>
+                    ) : (
+                      <Input
+                        id={field.key}
+                        type={field.type === "number" ? "number" : "text"}
+                        placeholder={field.placeholder}
+                        value={form.metadata[field.key] ?? ""}
+                        onChange={(e) => setForm(f => ({ ...f, metadata: { ...f.metadata, [field.key]: e.target.value } }))}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {(rev > 0 || cst > 0) && (
               <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
@@ -711,18 +784,28 @@ export default function Deals() {
                   Commission Preview
                 </p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Gross Profit</span>
-                    <span className={`font-medium ${gp >= 0 ? "text-foreground" : "text-destructive"}`}>
-                      {formatCurrency(gp)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">GP%</span>
-                    <span className="font-medium text-foreground">
-                      {gpPct.toFixed(1)}%
-                    </span>
-                  </div>
+                  {industryConfig.showGP && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Gross Profit</span>
+                        <span className={`font-medium ${gp >= 0 ? "text-foreground" : "text-destructive"}`}>
+                          {formatCurrency(gp)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">GP%</span>
+                        <span className="font-medium text-foreground">
+                          {gpPct.toFixed(1)}%
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {!industryConfig.showGP && (
+                    <div className="flex justify-between col-span-2">
+                      <span className="text-muted-foreground">{industryConfig.revenueLabel}</span>
+                      <span className="font-medium text-foreground">{formatCurrency(rev)}</span>
+                    </div>
+                  )}
                   {form.dealType && (
                     <>
                       <div className="flex justify-between col-span-2">

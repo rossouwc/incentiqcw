@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireRole, ADMIN_ROLES } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { INDUSTRY_CONFIGS, INDUSTRY_OPTIONS, getIndustryConfig } from "../industry-config";
 
 const router = Router();
 
@@ -59,6 +60,19 @@ router.patch("/", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request,
     res.json(tenantToResponse(tenant));
   } catch (err) {
     logger.error({ err }, "UpdateTenant error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/tenant/industry-config
+router.get("/industry-config", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: req.user!.tenantId } });
+    if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+    const config = getIndustryConfig(tenant.industry);
+    res.json({ industry: tenant.industry, config, allIndustries: INDUSTRY_OPTIONS });
+  } catch (err) {
+    logger.error({ err }, "GetIndustryConfig error");
     res.status(500).json({ error: "Server error" });
   }
 });

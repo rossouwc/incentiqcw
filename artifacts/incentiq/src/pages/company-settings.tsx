@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2, Factory } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { INDUSTRY_OPTIONS, getIndustryConfig } from "@/lib/industry-config";
 
 function authHeaders() {
   const token = localStorage.getItem("incentiq_token");
@@ -21,6 +23,8 @@ export default function CompanySettings() {
   const [cutoffDay, setCutoffDay] = useState<number>(20);
   const [loadingPayroll, setLoadingPayroll] = useState(true);
   const [savingPayroll, setSavingPayroll] = useState(false);
+  const [industry, setIndustry] = useState<string>("");
+  const [savingIndustry, setSavingIndustry] = useState(false);
 
   useEffect(() => {
     fetch("/api/tenant/payroll-config", { headers: authHeaders() as any })
@@ -34,6 +38,29 @@ export default function CompanySettings() {
       .catch(() => {})
       .finally(() => setLoadingPayroll(false));
   }, []);
+
+  useEffect(() => {
+    if ((tenant as any)?.industry) setIndustry((tenant as any).industry);
+  }, [(tenant as any)?.industry]);
+
+  const saveIndustry = async () => {
+    if (!industry) return;
+    setSavingIndustry(true);
+    try {
+      const res = await fetch("/api/tenant", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(authHeaders() as any) },
+        body: JSON.stringify({ industry }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const cfg = getIndustryConfig(industry);
+      toast({ title: "Industry updated", description: `Platform configured for ${cfg.label} — events now called "${cfg.eventLabel}".` });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSavingIndustry(false);
+    }
+  };
 
   const savePayrollConfig = async () => {
     if (payrollDay < 1 || payrollDay > 28 || cutoffDay < 1 || cutoffDay > 28) {
@@ -145,6 +172,61 @@ export default function CompanySettings() {
               <div className="flex justify-end">
                 <Button className="gap-2"><Save className="h-4 w-4" /> Save</Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Industry Configuration */}
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Factory className="h-5 w-5 text-primary" />
+                Industry Configuration
+              </CardTitle>
+              <CardDescription>
+                Your industry drives field labels, commission methods, event names, and approval workflows
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoading ? (
+                <Skeleton className="h-10 w-full" />
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Industry</Label>
+                    <Select value={industry} onValueChange={setIndustry}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select industry" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INDUSTRY_OPTIONS.map(opt => (
+                          <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {industry && (() => {
+                    const cfg = getIndustryConfig(industry);
+                    return (
+                      <div className="rounded-lg bg-muted/40 border border-border p-4 text-sm space-y-2">
+                        <p className="font-medium text-foreground">Configuration preview</p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+                          <span>Event name</span><span className="text-foreground font-medium">{cfg.eventLabel}</span>
+                          <span>Entity label</span><span className="text-foreground font-medium">{cfg.entityLabel}</span>
+                          <span>Revenue label</span><span className="text-foreground font-medium">{cfg.revenueLabel}</span>
+                          <span>Commission method</span><span className="text-foreground font-medium">{cfg.commissionMethodLabel}</span>
+                          <span>Trigger</span><span className="text-foreground font-medium col-span-1">{cfg.triggerLabel}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex justify-end">
+                    <Button className="gap-2" onClick={saveIndustry} disabled={savingIndustry}>
+                      {savingIndustry ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Industry
+                    </Button>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
