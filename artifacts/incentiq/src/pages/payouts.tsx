@@ -42,30 +42,30 @@ function getWorkflowSteps(status: string): { label: string; sublabel: string; st
 
   if (status === "REJECTED") return [
     base,
-    rej("Finance Review", "Request was rejected"),
-    pend("Payroll Processing", "Not reached"),
+    rej("Payroll Review", "Request was rejected"),
+    pend("Payment Processing", "Not reached"),
   ];
   if (status === "DEFERRED") return [
     base,
     active("Deferred", "Payout deferred to a future month"),
-    pend("Payroll Processing", "Awaiting processing"),
+    pend("Payment Processing", "Awaiting processing"),
   ];
   if (status === "PENDING") return [
     base,
-    active("Finance Review", "Awaiting finance approval"),
-    pend("Payroll Processing", "Awaiting payroll"),
+    active("Payroll Review", "Awaiting payroll approval"),
+    pend("Payment Processing", "Pending payroll approval"),
   ];
-  if (status === "FINANCE_APPROVED") return [
+  if (status === "FINANCE_APPROVED" || status === "PAYROLL_APPROVED") return [
     base,
-    done("Finance Review", "Approved by finance"),
-    active("Payroll Processing", "Awaiting payroll approval"),
+    done("Payroll Review", "Approved by payroll"),
+    active("Payment Processing", "Scheduled for payment"),
   ];
-  if (status === "PAYROLL_APPROVED" || status === "PAID") return [
+  if (status === "PAID") return [
     base,
-    done("Finance Review", "Approved by finance"),
-    done("Payroll Processing", "Approved by payroll"),
+    done("Payroll Review", "Approved by payroll"),
+    done("Payment Processing", "Payment disbursed"),
   ];
-  return [base, pend("Finance Review", ""), pend("Payroll Processing", "")];
+  return [base, pend("Payroll Review", ""), pend("Payment Processing", "")];
 }
 
 function StepIcon({ state }: { state: StepState }) {
