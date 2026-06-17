@@ -19,6 +19,7 @@ import PlatformUsers from "@/pages/platform-users";
 import AuditLogs from "@/pages/audit-logs";
 
 import Users from "@/pages/users";
+import Customers from "@/pages/customers";
 import CommissionRules from "@/pages/commission-rules";
 import ApprovalWorkflow from "@/pages/approval-workflow";
 import CompanySettings from "@/pages/company-settings";
@@ -75,6 +76,7 @@ function Router() {
 
       {/* Company Admin */}
       <Route path="/users"><P component={Users} /></Route>
+      <Route path="/customers"><P component={Customers} /></Route>
       <Route path="/commission-rules"><P component={CommissionRules} /></Route>
       <Route path="/approval-workflow"><P component={ApprovalWorkflow} /></Route>
       <Route path="/company-settings"><P component={CompanySettings} /></Route>

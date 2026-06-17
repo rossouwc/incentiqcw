@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   useListDeals,
   useCreateDeal,
@@ -55,6 +55,80 @@ import {
   Eye,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+// ─── Customer Name Autocomplete ───────────────────────────────────────────────
+
+function getAuthHeaders(): HeadersInit {
+  const token = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function CustomerCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!value.trim()) { setSuggestions([]); setOpen(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/customers?search=${encodeURIComponent(value)}`, {
+          headers: getAuthHeaders(),
+        });
+        if (res.ok) {
+          const data: { name: string }[] = await res.json();
+          setSuggestions(data.map(c => c.name));
+          setOpen(data.length > 0);
+        }
+      } catch { /* ignore */ }
+    }, 250);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [value]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        placeholder="e.g. Acme Corp"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+        autoComplete="off"
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 w-full rounded-md border border-border bg-popover shadow-md overflow-hidden">
+          {suggestions.map(name => (
+            <div
+              key={name}
+              className="px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
+              onMouseDown={e => {
+                e.preventDefault();
+                onChange(name);
+                setOpen(false);
+              }}
+            >
+              {name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const DEAL_TYPES = [
   { value: "NET_NEW",   label: "Net New" },
@@ -517,11 +591,9 @@ export default function Deals() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="customerName">Customer Name <span className="text-destructive">*</span></Label>
-                <Input
-                  id="customerName"
-                  placeholder="e.g. Acme Corp"
+                <CustomerCombobox
                   value={form.customerName}
-                  onChange={(e) => setField("customerName", e.target.value)}
+                  onChange={(v) => setField("customerName", v)}
                 />
               </div>
               <div className="space-y-1.5">

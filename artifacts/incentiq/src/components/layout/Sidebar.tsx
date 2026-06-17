@@ -36,6 +36,7 @@ function getNavGroups(role: string): NavGroup[] {
             { name: "Dashboard",         path: "/dashboard",          icon: LayoutDashboard },
             { name: "All Deals",         path: "/all-deals",          icon: Briefcase },
             { name: "Users",             path: "/users",              icon: Users },
+            { name: "Customers",         path: "/customers",          icon: Building2 },
             { name: "Commission Rules",  path: "/commission-rules",   icon: Sliders },
             { name: "Approval Workflow", path: "/approval-workflow",  icon: ClipboardCheck },
             { name: "Company Settings",  path: "/company-settings",   icon: Settings },

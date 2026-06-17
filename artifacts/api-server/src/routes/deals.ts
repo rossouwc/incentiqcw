@@ -156,6 +156,12 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       },
       include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });
+    // Auto-save customer name for future autocomplete
+    await prisma.customer.upsert({
+      where: { tenantId_name: { tenantId: req.user!.tenantId, name: customerName } },
+      create: { tenantId: req.user!.tenantId, name: customerName },
+      update: {},
+    });
     await prisma.auditLog.create({
       data: {
         tenantId: req.user!.tenantId,
