@@ -574,6 +574,73 @@ async function main() {
   ]});
   console.log("✅ Audit logs created");
 
+  // ─── Industry Templates ──────────────────────────────────────────────────────
+  const industryTemplates = [
+    {
+      id: "ind-tmpl-001",
+      code: "IT_CONSULTING",
+      name: "IT Consulting",
+      description: "Software, managed services, and technology consulting companies tracking contract-based commission on closed deals.",
+    },
+    {
+      id: "ind-tmpl-002",
+      code: "RECRUITMENT",
+      name: "Recruitment",
+      description: "Staffing and recruitment agencies earning placement fees when a candidate successfully starts with a client.",
+    },
+    {
+      id: "ind-tmpl-003",
+      code: "INSURANCE",
+      name: "Insurance",
+      description: "Insurance brokers and agents earning commission on new policies once the policy is active and the first premium is collected.",
+    },
+    {
+      id: "ind-tmpl-004",
+      code: "VEHICLE_DEALERSHIP",
+      name: "Vehicle Dealership",
+      description: "Motor vehicle dealers tracking commission per unit sold, triggered when the vehicle is delivered to the buyer.",
+    },
+    {
+      id: "ind-tmpl-005",
+      code: "PROPERTY_SALES",
+      name: "Property Sales",
+      description: "Real estate agents and agencies earning commission on property sales, triggered upon transfer registration.",
+    },
+    {
+      id: "ind-tmpl-006",
+      code: "RENTAL_MANAGEMENT",
+      name: "Rental Management",
+      description: "Property rental agents earning commission on new leases, triggered when the lease is signed or the first rental is collected.",
+    },
+    {
+      id: "ind-tmpl-007",
+      code: "TELECOM",
+      name: "Telecom",
+      description: "Telecommunications sales agents earning commission on new service activations and contract upgrades.",
+    },
+    {
+      id: "ind-tmpl-008",
+      code: "SAAS",
+      name: "SaaS",
+      description: "Software-as-a-Service companies tracking commission on new subscriptions and expansions when the customer is activated.",
+    },
+    {
+      id: "ind-tmpl-009",
+      code: "CUSTOM",
+      name: "Custom",
+      description: "Fully configurable industry for organisations with unique commission structures not covered by the standard templates.",
+    },
+  ];
+
+  for (const tmpl of industryTemplates) {
+    await prisma.industryTemplate.upsert({
+      where: { code: tmpl.code },
+      update: { name: tmpl.name, description: tmpl.description, isActive: true },
+      create: { id: tmpl.id, code: tmpl.code, name: tmpl.name, description: tmpl.description, isActive: true },
+    });
+  }
+  console.log("✅ Industry templates created:", industryTemplates.length);
+
   console.log("\n🎉 Seed complete!");
   console.log("─────────────────────────────────────────────────────────────────");
   console.log("Demo login credentials (all use Password123!):");
