@@ -833,8 +833,17 @@ export default function Deals() {
               {workflowSteps.map((step, idx) => {
                 const isApproved = step.status === "APPROVED";
                 const isRejected = step.status === "REJECTED";
-                const isActive   = step.status === "PENDING" && workflowSteps.slice(0, idx).every(s => s.status === "APPROVED");
+                const isActive   = step.status === "PENDING" && workflowSteps.slice(0, idx).every((s: any) => s.status === "APPROVED");
                 const isLast     = idx === workflowSteps.length - 1;
+
+                const ROLE_LABELS: Record<string, string> = {
+                  MANAGER: "Sales Manager",
+                  FINANCE: "Finance",
+                  EXECUTIVE: "Executive",
+                  SALES_EXECUTIVE: "Sales Executive",
+                  PAYROLL: "Payroll",
+                };
+                const roleLabel = ROLE_LABELS[step.approverRole] ?? step.approverRole;
 
                 const iconEl = isApproved
                   ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -844,35 +853,53 @@ export default function Deals() {
                   ? <Clock className="h-5 w-5 text-amber-400" />
                   : <CircleDot className="h-5 w-5 text-muted-foreground/40" />;
 
-                const labelCls = isApproved
-                  ? "text-emerald-500 font-medium"
+                const statusPill = isApproved
+                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 font-medium">Approved</span>
                   : isRejected
-                  ? "text-red-500 font-medium"
+                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-400 font-medium">Rejected</span>
                   : isActive
-                  ? "text-amber-400 font-medium"
-                  : "text-muted-foreground";
-
-                const stepLabel = isApproved ? "Approved" : isRejected ? "Rejected" : isActive ? "Awaiting" : "Pending";
+                  ? <span className="text-xs px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 font-medium">Awaiting</span>
+                  : <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Not yet reached</span>;
 
                 return (
                   <li key={step.id} className="flex gap-4">
                     <div className="flex flex-col items-center">
-                      <div className="mt-0.5">{iconEl}</div>
+                      <div className="mt-0.5 shrink-0">{iconEl}</div>
                       {!isLast && <div className="w-px flex-1 bg-border mt-1 mb-1" />}
                     </div>
-                    <div className={`pb-5 flex-1 ${isLast ? "" : ""}`}>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-sm font-medium text-foreground">{step.stepName ?? `Step ${step.approvalLevel}`}</span>
-                        <span className={`text-xs ${labelCls}`}>{stepLabel}</span>
+                    <div className="pb-5 flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-sm font-semibold text-foreground">
+                            {step.stepName ?? `Step ${step.approvalLevel}`}
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground">({roleLabel})</span>
+                        </div>
+                        {statusPill}
                       </div>
-                      {step.approverName && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {isApproved || isRejected ? "by " : "assigned to "}{step.approverName}
+                      {isApproved && step.approverName && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          ✓ Approved by <span className="font-medium text-foreground">{step.approverName}</span>
+                          {step.approvedAt && (
+                            <span className="ml-1">
+                              · {new Date(step.approvedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
+                            </span>
+                          )}
                         </p>
                       )}
-                      {step.approvedAt && (
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(step.approvedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
+                      {isRejected && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          ✗ Rejected{step.approverName ? <> by <span className="font-medium text-foreground">{step.approverName}</span></> : null}
+                          {step.approvedAt && (
+                            <span className="ml-1">
+                              · {new Date(step.approvedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                      {isActive && (
+                        <p className="text-xs text-amber-400/80 mt-1">
+                          Waiting for <span className="font-medium">{step.approverName ?? roleLabel}</span> to review
                         </p>
                       )}
                       {step.comments && (

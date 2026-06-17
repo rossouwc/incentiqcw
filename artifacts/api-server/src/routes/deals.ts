@@ -109,6 +109,7 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       approvalWorkflows: ((deal as any).approvalWorkflows as any[]).map((aw) => ({
         id: aw.id,
         approvalLevel: aw.approvalLevel,
+        stepName: aw.stepName ?? null,
         approverRole: aw.approverRole,
         approverName: aw.approver ? `${aw.approver.firstName} ${aw.approver.lastName}` : null,
         status: aw.status,
