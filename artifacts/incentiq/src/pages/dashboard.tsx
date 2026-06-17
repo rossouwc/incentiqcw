@@ -6,6 +6,7 @@ import FinanceDashboard from "./dashboard-finance";
 import ManagerDashboard from "./dashboard-manager";
 import PayrollDashboard from "./dashboard-payroll";
 import PlatformDashboard from "./platform-dashboard";
+import ExecutiveDashboard from "./dashboard-executive";
 
 export default function Dashboard() {
   const { user, isLoading } = useAuth();
@@ -31,6 +32,7 @@ export default function Dashboard() {
     case "FINANCE":         return <FinanceDashboard />;
     case "MANAGER":         return <ManagerDashboard />;
     case "PAYROLL":         return <PayrollDashboard />;
+    case "EXECUTIVE":       return <ExecutiveDashboard />;
     case "SALES_EXECUTIVE":
     default:                return <SalesDashboard />;
   }
