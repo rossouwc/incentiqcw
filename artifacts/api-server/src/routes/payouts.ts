@@ -34,8 +34,9 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   const where: any = {
     tenantId: req.user!.tenantId,
     ...(isSalesExec && { userId: req.user!.userId }),
-    ...(isPayroll && { status: "FINANCE_APPROVED" }),
-    ...(status && !isPayroll && { status }),
+    ...(isPayroll && !status && { status: { in: ["PENDING", "FINANCE_APPROVED"] } }),
+    ...(isPayroll && status && { status }),
+    ...(!isPayroll && status && { status }),
     ...(month && { payoutMonth: month }),
   };
   try {
@@ -328,8 +329,8 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
       where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "Payout not found" }); return; }
-    if (existing.status !== "FINANCE_APPROVED") {
-      res.status(400).json({ error: "Only FINANCE_APPROVED payouts can be marked as paid" }); return;
+    if (!["PENDING", "FINANCE_APPROVED"].includes(existing.status)) {
+      res.status(400).json({ error: "Only PENDING or FINANCE_APPROVED payouts can be marked as paid" }); return;
     }
 
     const payout = await prisma.payoutRequest.update({
