@@ -5,7 +5,8 @@ import { logger } from "../lib/logger";
 import { getIndustryConfig } from "../industry-config";
 import { calculateCommission } from "../lib/commission-formula";
 import { getDefaultWorkflow, parseWorkflowSteps } from "../lib/industry-workflows";
-import { ApprovalStatus } from "@prisma/client";
+import { getIndustryTriggers } from "../lib/industry-triggers";
+import { ApprovalStatus, TriggerStatus } from "@prisma/client";
 
 const router = Router();
 
@@ -254,7 +255,7 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
         commissionBaseAmount:      calcResult.commissionBaseAmount,
         commissionPercentage:      calcResult.commissionPercentage,
         calculatedCommissionAmount: calcResult.calculatedCommissionAmount,
-        triggerStatus:   "PENDING",
+        triggerStatus:   "NOT_TRIGGERED",
         approvalStatus:  "DRAFT",
         walletStatus:    "PENDING",
       },
@@ -337,12 +338,27 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       status:            (idx === 0 ? ApprovalStatus.PENDING : ApprovalStatus.WAITING),
     }));
 
+    // Build trigger records for this industry + event type
+    const industryTriggers = getIndustryTriggers(industryCode, existing.eventType);
+    const triggerRecords = industryTriggers.map((t) => ({
+      tenantId:          req.user!.tenantId,
+      commissionEventId: existing.id,
+      triggerEventType:  t.type,
+      label:             t.label,
+      description:       t.description ?? null,
+    }));
+
     await prisma.$transaction(async (tx) => {
       await tx.commissionEventApproval.deleteMany({ where: { commissionEventId: existing.id } });
       await tx.commissionEventApproval.createMany({ data: stepRecords });
+
+      // Reset and create trigger events
+      await tx.commissionEventTrigger.deleteMany({ where: { commissionEventId: existing.id } });
+      await tx.commissionEventTrigger.createMany({ data: triggerRecords });
+
       await tx.commissionEvent.update({
         where: { id: existing.id },
-        data: { approvalStatus: "PENDING_APPROVAL", submittedAt: new Date() },
+        data: { approvalStatus: "PENDING_APPROVAL", triggerStatus: "NOT_TRIGGERED", submittedAt: new Date() },
       });
       await tx.wallet.upsert({
         where:  { userId: req.user!.userId },
@@ -361,7 +377,7 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
           entityType: "CommissionEvent",
           entityId:   existing.id,
           oldValue:   JSON.stringify({ approvalStatus: "DRAFT" }),
-          newValue:   JSON.stringify({ approvalStatus: "PENDING_APPROVAL", industryCode }),
+          newValue:   JSON.stringify({ approvalStatus: "PENDING_APPROVAL", industryCode, triggerCount: triggerRecords.length }),
         },
       });
     });
@@ -389,6 +405,176 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
     res.json({ message: "Submitted for approval" });
   } catch (err) {
     logger.error({ err }, "SubmitCommissionEvent error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── Wallet credit helper — only fires when BOTH approved AND triggered ─────────
+
+async function checkAndCreditWallet(commissionEventId: string, tenantId: string) {
+  const ev = await prisma.commissionEvent.findUnique({
+    where: { id: commissionEventId },
+  });
+  if (!ev) return;
+  if (ev.approvalStatus !== "APPROVED") return;
+  if (ev.triggerStatus  !== "TRIGGERED") return;
+  if (ev.walletStatus   === "CREDITED")  return; // already done
+
+  const wallet = await prisma.wallet.findUnique({ where: { userId: ev.salesExecutiveId } });
+  if (!wallet) return;
+
+  const amt = ev.calculatedCommissionAmount;
+  await prisma.$transaction(async (tx) => {
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: {
+        availableBalance: { increment: amt },
+        pendingBalance:   { decrement: amt },
+      },
+    });
+    await tx.walletTransaction.create({
+      data: {
+        tenantId,
+        walletId:        wallet.id,
+        transactionType: "TRIGGER_RELEASED",
+        amount:          amt,
+        referenceType:   "COMMISSION_EVENT",
+        referenceId:     ev.id,
+        description:     `Commission released: ${ev.eventTitle}`,
+      },
+    });
+    await tx.commissionEvent.update({
+      where: { id: commissionEventId },
+      data:  { walletStatus: "CREDITED" },
+    });
+    await tx.notification.create({
+      data: {
+        tenantId,
+        userId:     ev.salesExecutiveId,
+        title:      "Commission Released to Wallet",
+        message:    `R${amt.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for "${ev.eventTitle}" is now available in your wallet.`,
+        type:       "WALLET_CREDITED",
+        readStatus: false,
+      },
+    });
+  });
+}
+
+// ── GET /api/commission-events/:id/triggers ────────────────────────────────────
+
+router.get("/:id/triggers", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+
+    const triggers = await prisma.commissionEventTrigger.findMany({
+      where:   { commissionEventId: req.params.id as string },
+      include: { triggeredBy: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json({
+      triggerStatus: event.triggerStatus,
+      triggers: triggers.map((t) => ({
+        id:               t.id,
+        triggerEventType: t.triggerEventType,
+        label:            t.label,
+        description:      t.description ?? null,
+        status:           t.status,
+        notes:            t.notes ?? null,
+        triggeredById:    t.triggeredById ?? null,
+        triggeredByName:  t.triggeredBy
+          ? `${t.triggeredBy.firstName} ${t.triggeredBy.lastName}`
+          : null,
+        triggeredAt: t.triggeredAt?.toISOString() ?? null,
+        createdAt:   t.createdAt.toISOString(),
+      })),
+    });
+  } catch (err) {
+    logger.error({ err }, "GetTriggers error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── POST /api/commission-events/:id/triggers/:triggerId/action ─────────────────
+
+router.post("/:id/triggers/:triggerId/action", requireAuth, async (req: Request, res: Response) => {
+  const { action, notes } = req.body as { action?: string; notes?: string };
+
+  if (!action || !["TRIGGER", "WAIVE", "FAIL"].includes(action)) {
+    res.status(400).json({ error: "action must be TRIGGER, WAIVE, or FAIL" });
+    return;
+  }
+  if (!["MANAGER", "ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
+    res.status(403).json({ error: "Not authorised to manage trigger events" });
+    return;
+  }
+
+  try {
+    const trigger = await prisma.commissionEventTrigger.findFirst({
+      where: {
+        id:               req.params.triggerId as string,
+        commissionEventId: req.params.id as string,
+        tenantId:         req.user!.tenantId,
+      },
+    });
+    if (!trigger) { res.status(404).json({ error: "Trigger not found" }); return; }
+
+    const newStatus =
+      action === "TRIGGER" ? TriggerStatus.TRIGGERED
+      : action === "WAIVE" ? TriggerStatus.WAIVED
+      : TriggerStatus.FAILED;
+
+    await prisma.commissionEventTrigger.update({
+      where: { id: trigger.id },
+      data: {
+        status:        newStatus,
+        notes:         notes ?? null,
+        triggeredById: req.user!.userId,
+        triggeredAt:   new Date(),
+      },
+    });
+
+    // Re-read all triggers to compute overall event trigger status
+    const allTriggers = await prisma.commissionEventTrigger.findMany({
+      where: { commissionEventId: req.params.id as string },
+    });
+
+    const anyFailed  = allTriggers.some((t) => t.status === TriggerStatus.FAILED);
+    const allResolved = allTriggers.every(
+      (t) => t.status === TriggerStatus.TRIGGERED || t.status === TriggerStatus.WAIVED
+    );
+
+    let newEventStatus: string | null = null;
+    if (anyFailed)    newEventStatus = "FAILED";
+    else if (allResolved) newEventStatus = "TRIGGERED";
+
+    if (newEventStatus) {
+      await prisma.commissionEvent.update({
+        where: { id: req.params.id as string },
+        data:  { triggerStatus: newEventStatus },
+      });
+      if (newEventStatus === "TRIGGERED") {
+        await checkAndCreditWallet(req.params.id as string, req.user!.tenantId);
+      }
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId:   req.user!.tenantId,
+        userId:     req.user!.userId,
+        action:     `TRIGGER_${action}`,
+        entityType: "CommissionEventTrigger",
+        entityId:   trigger.id,
+        newValue:   JSON.stringify({ status: newStatus, notes, triggerId: trigger.id }),
+      },
+    });
+
+    res.json({ message: "Trigger updated", status: newStatus, eventTriggerStatus: newEventStatus });
+  } catch (err) {
+    logger.error({ err }, "TriggerAction error");
     res.status(500).json({ error: "Server error" });
   }
 });

@@ -21,8 +21,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Plus, Search, Trash2, SendHorizontal, Briefcase, Clock,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
+  Zap, ZapOff, CheckSquare,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -110,6 +112,26 @@ function useCommissionEvents() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   return { data, loading, refetch: fetchData };
+}
+
+// ── Trigger status display ─────────────────────────────────────────────────────
+
+const TRIGGER_STATUS_CFG: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
+  NOT_TRIGGERED: { label: "Awaiting Trigger", cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",   Icon: ZapOff      },
+  TRIGGERED:     { label: "Triggered",        cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400", Icon: Zap          },
+  WAIVED:        { label: "Waived",           cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",     Icon: CheckSquare  },
+  FAILED:        { label: "Failed",           cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",         Icon: XCircle      },
+};
+
+function TriggerBadge({ status, onClick }: { status: string; onClick?: () => void }) {
+  const s = TRIGGER_STATUS_CFG[status] ?? TRIGGER_STATUS_CFG.NOT_TRIGGERED;
+  const tag = (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>
+      <s.Icon className="h-3 w-3" />{s.label}
+    </span>
+  );
+  if (onClick) return <button onClick={onClick} className="hover:opacity-80 transition-opacity">{tag}</button>;
+  return tag;
 }
 
 // ── Status display ────────────────────────────────────────────────────────────
@@ -392,10 +414,171 @@ function ApprovalStepsModal({
   );
 }
 
+// ── TriggerEventsModal ─────────────────────────────────────────────────────────
+
+interface TriggerRecord {
+  id: string;
+  triggerEventType: string;
+  label: string;
+  description: string | null;
+  status: string;
+  notes: string | null;
+  triggeredByName: string | null;
+  triggeredAt: string | null;
+}
+
+function TriggerEventsModal({
+  eventId, eventTitle, canManage, onClose, onUpdated,
+}: {
+  eventId: string;
+  eventTitle: string;
+  canManage: boolean;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const { toast } = useToast();
+  const [triggers, setTriggers]     = useState<TriggerRecord[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [acting, setActing]         = useState<string | null>(null); // triggerId being actioned
+  const [notesMap, setNotesMap]     = useState<Record<string, string>>({});
+
+  const fetchTriggers = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/commission-events/${eventId}/triggers`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((d) => setTriggers(d.triggers ?? []))
+      .catch(() => setTriggers([]))
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  useEffect(() => { fetchTriggers(); }, [fetchTriggers]);
+
+  const handleAction = async (triggerId: string, action: "TRIGGER" | "WAIVE" | "FAIL") => {
+    setActing(triggerId);
+    try {
+      const res = await fetch(
+        `/api/commission-events/${eventId}/triggers/${triggerId}/action`,
+        {
+          method: "POST",
+          headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ action, notes: notesMap[triggerId] ?? "" }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) { toast({ title: "Error", description: json.error ?? "Failed", variant: "destructive" }); return; }
+      toast({
+        title: action === "TRIGGER" ? "Trigger Confirmed" : action === "WAIVE" ? "Trigger Waived" : "Trigger Failed",
+        description: `Trigger event has been marked as ${action.toLowerCase()}d.`,
+      });
+      fetchTriggers();
+      onUpdated();
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const TRIGGER_ROW_STATUS: Record<string, { cls: string; label: string; Icon: React.ElementType }> = {
+    NOT_TRIGGERED: { cls: "text-slate-400",  label: "Not Triggered", Icon: ZapOff      },
+    TRIGGERED:     { cls: "text-green-500",  label: "Triggered",     Icon: Zap          },
+    WAIVED:        { cls: "text-blue-500",   label: "Waived",        Icon: CheckSquare  },
+    FAILED:        { cls: "text-red-500",    label: "Failed",        Icon: XCircle      },
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-500" />
+            Trigger Events
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{eventTitle}</p>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="space-y-2 py-4">
+            {[1,2,3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+          </div>
+        ) : triggers.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4">No trigger events defined for this commission event.</p>
+        ) : (
+          <div className="space-y-3 py-2">
+            {triggers.map((t) => {
+              const sc = TRIGGER_ROW_STATUS[t.status] ?? TRIGGER_ROW_STATUS.NOT_TRIGGERED;
+              const isPending = t.status === "NOT_TRIGGERED" || t.status === "FAILED";
+              return (
+                <div key={t.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <sc.Icon className={`h-4 w-4 shrink-0 ${sc.cls}`} />
+                        <p className="text-sm font-medium text-foreground">{t.label}</p>
+                      </div>
+                      {t.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5 ml-6">{t.description}</p>
+                      )}
+                      {t.triggeredByName && (
+                        <p className="text-xs text-muted-foreground mt-0.5 ml-6">
+                          By {t.triggeredByName}
+                          {t.triggeredAt && ` · ${new Date(t.triggeredAt).toLocaleDateString("en-ZA")}`}
+                        </p>
+                      )}
+                      {t.notes && (
+                        <p className="text-xs italic text-muted-foreground mt-0.5 ml-6">"{t.notes}"</p>
+                      )}
+                    </div>
+                    <span className={`text-xs font-semibold shrink-0 ${sc.cls}`}>{sc.label}</span>
+                  </div>
+
+                  {canManage && isPending && (
+                    <div className="ml-6 space-y-2">
+                      <Input
+                        placeholder="Notes (optional)"
+                        className="h-7 text-xs"
+                        value={notesMap[t.id] ?? ""}
+                        onChange={(e) => setNotesMap((m) => ({ ...m, [t.id]: e.target.value }))}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm" className="h-7 gap-1 text-xs flex-1"
+                          onClick={() => handleAction(t.id, "TRIGGER")}
+                          disabled={!!acting}
+                        >
+                          {acting === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                          Mark Triggered
+                        </Button>
+                        <Button
+                          size="sm" variant="outline" className="h-7 gap-1 text-xs"
+                          onClick={() => handleAction(t.id, "WAIVE")}
+                          disabled={!!acting}
+                        >
+                          <CheckSquare className="h-3 w-3" /> Waive
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
+                          onClick={() => handleAction(t.id, "FAIL")}
+                          disabled={!!acting}
+                        >
+                          <XCircle className="h-3 w-3" /> Fail
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Deals() {
   const { toast }                  = useToast();
+  const { user: currentUser }      = useAuth();
   const { data: fc, loading: fcLoading } = useFieldConfig();
   const { data: events, loading, refetch } = useCommissionEvents();
 
@@ -403,6 +586,9 @@ export default function Deals() {
   const [showForm, setShowForm]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CommEvent | null>(null);
   const [viewApprovals, setViewApprovals] = useState<{ id: string; title: string } | null>(null);
+  const [viewTriggers, setViewTriggers] = useState<{ id: string; title: string } | null>(null);
+
+  const canManageTriggers = ["MANAGER", "ADMIN", "SUPER_ADMIN"].includes(currentUser?.role ?? "");
 
   // Form state
   const [eventTitle, setEventTitle] = useState("");
@@ -715,17 +901,25 @@ export default function Deals() {
                           <div className="text-xs text-muted-foreground">{ev.commissionPercentage}%</div>
                         </td>
                         <td className="px-6 py-4">
-                          {ev.approvalStatus === "DRAFT" ? (
-                            <StatusBadge status={ev.approvalStatus} />
-                          ) : (
-                            <button
-                              onClick={() => setViewApprovals({ id: ev.id, title: ev.eventTitle })}
-                              className="hover:opacity-80 transition-opacity"
-                              title="View approval progress"
-                            >
+                          <div className="flex flex-col gap-1">
+                            {ev.approvalStatus === "DRAFT" ? (
                               <StatusBadge status={ev.approvalStatus} />
-                            </button>
-                          )}
+                            ) : (
+                              <button
+                                onClick={() => setViewApprovals({ id: ev.id, title: ev.eventTitle })}
+                                className="hover:opacity-80 transition-opacity text-left"
+                                title="View approval progress"
+                              >
+                                <StatusBadge status={ev.approvalStatus} />
+                              </button>
+                            )}
+                            {ev.approvalStatus !== "DRAFT" && ev.triggerStatus && (
+                              <TriggerBadge
+                                status={ev.triggerStatus}
+                                onClick={() => setViewTriggers({ id: ev.id, title: ev.eventTitle })}
+                              />
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-xs text-muted-foreground">
                           {formatDate(ev.createdAt)}
@@ -740,6 +934,16 @@ export default function Deals() {
                                 title="View approvals"
                               >
                                 <Eye className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {ev.approvalStatus !== "DRAFT" && (
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-8 w-8 text-amber-500 hover:text-amber-600"
+                                onClick={() => setViewTriggers({ id: ev.id, title: ev.eventTitle })}
+                                title="Manage trigger events"
+                              >
+                                <Zap className="h-4 w-4" />
                               </Button>
                             )}
                             {ev.approvalStatus === "DRAFT" && (
@@ -904,6 +1108,17 @@ export default function Deals() {
           eventId={viewApprovals.id}
           eventTitle={viewApprovals.title}
           onClose={() => setViewApprovals(null)}
+        />
+      )}
+
+      {/* ── Trigger events modal ── */}
+      {viewTriggers && (
+        <TriggerEventsModal
+          eventId={viewTriggers.id}
+          eventTitle={viewTriggers.title}
+          canManage={canManageTriggers}
+          onClose={() => setViewTriggers(null)}
+          onUpdated={refetch}
         />
       )}
     </div>

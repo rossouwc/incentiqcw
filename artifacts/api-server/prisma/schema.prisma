@@ -86,11 +86,19 @@ enum TransactionType {
   PENDING_COMMISSION_ADDED
   PENDING_COMMISSION_REMOVED
   COMMISSION_APPROVED
+  TRIGGER_RELEASED
   PAYOUT_REQUESTED
   PAYOUT_APPROVED
   PAYOUT_PAID
   PAYOUT_DEFERRED
   MANUAL_ADJUSTMENT
+}
+
+enum TriggerStatus {
+  NOT_TRIGGERED
+  TRIGGERED
+  WAIVED
+  FAILED
 }
 
 enum NotificationType {
@@ -138,8 +146,9 @@ model Tenant {
   customers            Customer[]
   tenantIndustryConfig    TenantIndustryConfig?
   tenantApprovalWorkflows TenantApprovalWorkflow[]
-  commissionEvents        CommissionEvent[]
+  commissionEvents         CommissionEvent[]
   commissionEventApprovals CommissionEventApproval[]
+  commissionEventTriggers  CommissionEventTrigger[]
 }
 
 model User {
@@ -167,6 +176,7 @@ model User {
   commissionGroups     CommissionRuleGroupMember[]
   commissionEventsAsExecutive CommissionEvent[]          @relation("CommissionEventSalesExecutive")
   commissionEventApprovals    CommissionEventApproval[]
+  triggeredTriggers           CommissionEventTrigger[]  @relation("TriggeredBy")
 
   @@unique([tenantId, email])
 }
@@ -528,7 +538,7 @@ model CommissionEvent {
   commissionBaseAmount      Float     @default(0)
   commissionPercentage      Float     @default(0)
   calculatedCommissionAmount Float    @default(0)
-  triggerStatus             String    @default("PENDING")
+  triggerStatus             String    @default("NOT_TRIGGERED")
   approvalStatus            String    @default("DRAFT")
   walletStatus              String    @default("PENDING")
   submittedAt               DateTime?
@@ -540,6 +550,7 @@ model CommissionEvent {
   industryTemplate IndustryTemplate?  @relation(fields: [industryTemplateId], references: [id])
   salesExecutive   User               @relation("CommissionEventSalesExecutive", fields: [salesExecutiveId], references: [id])
   approvals        CommissionEventApproval[]
+  triggers         CommissionEventTrigger[]
 }
 
 model CommissionEventApproval {
@@ -559,4 +570,25 @@ model CommissionEventApproval {
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
   approver        User?           @relation(fields: [approverUserId], references: [id])
+}
+
+// ─── Commission Event Trigger Models ─────────────────────────────────────────
+
+model CommissionEventTrigger {
+  id                String        @id @default(cuid())
+  tenantId          String
+  commissionEventId String
+  triggerEventType  String
+  label             String
+  description       String?
+  status            TriggerStatus @default(NOT_TRIGGERED)
+  notes             String?
+  triggeredById     String?
+  triggeredAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
+  triggeredBy     User?           @relation("TriggeredBy", fields: [triggeredById], references: [id])
 }
