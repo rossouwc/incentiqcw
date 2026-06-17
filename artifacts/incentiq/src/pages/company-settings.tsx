@@ -1,13 +1,60 @@
+import { useState, useEffect } from "react";
 import { useGetTenant } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Globe, Mail, Phone, Save } from "lucide-react";
+import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+function authHeaders() {
+  const token = localStorage.getItem("incentiq_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export default function CompanySettings() {
   const { data: tenant, isLoading } = useGetTenant();
+  const { toast } = useToast();
+
+  const [payrollDay, setPayrollDay] = useState<number>(25);
+  const [cutoffDay, setCutoffDay] = useState<number>(20);
+  const [loadingPayroll, setLoadingPayroll] = useState(true);
+  const [savingPayroll, setSavingPayroll] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/tenant/payroll-config", { headers: authHeaders() as any })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d) {
+          setPayrollDay(d.payrollDay ?? 25);
+          setCutoffDay(d.commissionCutoffDay ?? 20);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPayroll(false));
+  }, []);
+
+  const savePayrollConfig = async () => {
+    if (payrollDay < 1 || payrollDay > 28 || cutoffDay < 1 || cutoffDay > 28) {
+      toast({ title: "Invalid dates", description: "Day values must be between 1 and 28", variant: "destructive" });
+      return;
+    }
+    setSavingPayroll(true);
+    try {
+      const res = await fetch("/api/tenant/payroll-config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(authHeaders() as any) },
+        body: JSON.stringify({ payrollDay, commissionCutoffDay: cutoffDay }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Payroll settings saved", description: `Payroll runs on the ${payrollDay}th, cut-off on the ${cutoffDay}th of each month.` });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSavingPayroll(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -98,6 +145,71 @@ export default function CompanySettings() {
               <div className="flex justify-end">
                 <Button className="gap-2"><Save className="h-4 w-4" /> Save</Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Payroll Settings */}
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-primary" />
+                Payroll Settings
+              </CardTitle>
+              <CardDescription>
+                Control when commissions are processed and cut off each month
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {loadingPayroll ? (
+                <div className="space-y-4">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label>Payroll Date (day of month)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={28}
+                        value={payrollDay}
+                        onChange={e => setPayrollDay(Number(e.target.value))}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Payroll runs on the <span className="font-medium text-foreground">{payrollDay}{["st","nd","rd"][payrollDay-1] ?? "th"}</span> of each month. Commission statuses are automatically moved to <span className="font-medium text-foreground">Paid</span> on this date.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Commission Cut-off Date (day of month)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={28}
+                        value={cutoffDay}
+                        onChange={e => setCutoffDay(Number(e.target.value))}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Deals approved <span className="font-medium text-foreground">after the {cutoffDay}{["st","nd","rd"][cutoffDay-1] ?? "th"}</span> are included in the <span className="font-medium text-foreground">next month's</span> payroll. Deals approved on or before this date are included in the current month.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-muted/50 border border-border p-4 text-sm space-y-1.5">
+                    <p className="font-medium text-foreground">How this works</p>
+                    <ul className="text-muted-foreground space-y-1 list-disc list-inside text-xs">
+                      <li>All deals fully approved on or before the <strong>{cutoffDay}{["st","nd","rd"][cutoffDay-1] ?? "th"}</strong> are included in <strong>this month's</strong> payroll run.</li>
+                      <li>Any deal approved after the <strong>{cutoffDay}{["st","nd","rd"][cutoffDay-1] ?? "th"}</strong> rolls over to <strong>next month's</strong> payroll.</li>
+                      <li>On the <strong>{payrollDay}{["st","nd","rd"][payrollDay-1] ?? "th"}</strong> of each month, all <em>Payroll Approved</em> commissions are automatically marked as <strong>Paid</strong> — no manual action required.</li>
+                    </ul>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button className="gap-2" onClick={savePayrollConfig} disabled={savingPayroll}>
+                      {savingPayroll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Payroll Settings
+                    </Button>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

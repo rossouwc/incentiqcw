@@ -223,7 +223,14 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         const amt = Number(payoutAmount);
         const tax = amt * 0.25;
         const net = amt - tax;
-        const payoutMonth = new Date().toISOString().slice(0, 7);
+        const tenant = await prisma.tenant.findUnique({ where: { id: req.user!.tenantId } });
+        const cutoffDay = tenant?.commissionCutoffDay ?? 20;
+        const now = new Date();
+        const isAfterCutoff = now.getDate() > cutoffDay;
+        const payoutDate = isAfterCutoff
+          ? new Date(now.getFullYear(), now.getMonth() + 1, 1)
+          : now;
+        const payoutMonth = `${payoutDate.getFullYear()}-${String(payoutDate.getMonth() + 1).padStart(2, "0")}`;
         await prisma.payoutRequest.create({
           data: {
             tenantId: req.user!.tenantId,

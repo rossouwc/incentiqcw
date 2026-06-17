@@ -394,4 +394,70 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
   }
 });
 
+// POST /api/payouts/process-payroll — auto-mark PAYROLL_APPROVED → PAID when payroll date is reached
+router.post("/process-payroll", requireAuth, async (req: Request, res: Response) => {
+  if (!["PAYROLL", "ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
+    res.status(403).json({ error: "Payroll role required" }); return;
+  }
+  const tenantId = req.user!.tenantId;
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const payrollDay = tenant?.payrollDay ?? 25;
+    const today = new Date();
+
+    const eligible = await prisma.payoutRequest.findMany({
+      where: { tenantId, status: "PAYROLL_APPROVED" },
+      include: { user: { select: { firstName: true, lastName: true } } },
+    });
+
+    let processed = 0;
+    for (const p of eligible) {
+      const [year, month] = p.payoutMonth.split("-").map(Number);
+      const payrollDate = new Date(year, month - 1, payrollDay);
+      if (today >= payrollDate) {
+        await prisma.payoutRequest.update({
+          where: { id: p.id },
+          data: { status: "PAID", paidAt: new Date() },
+        });
+        const wallet = await prisma.wallet.findUnique({ where: { userId: p.userId } });
+        if (wallet) {
+          await prisma.wallet.update({
+            where: { id: wallet.id },
+            data: {
+              pendingBalance: Math.max(0, wallet.pendingBalance - p.requestedAmount),
+              paidOutBalance: wallet.paidOutBalance + p.requestedAmount,
+            },
+          });
+          await prisma.walletTransaction.create({
+            data: {
+              tenantId,
+              walletId: wallet.id,
+              transactionType: "PAYOUT_PAID",
+              amount: p.requestedAmount,
+              referenceType: "PAYOUT_REQUEST",
+              referenceId: p.id,
+              description: `Auto-paid on payroll date — ${p.payoutMonth}`,
+            },
+          });
+        }
+        await prisma.notification.create({
+          data: {
+            tenantId,
+            userId: p.userId,
+            title: "Payout Paid",
+            message: `Your commission payout of R${p.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${p.payoutMonth} has been paid`,
+            type: "PAYOUT_PAID",
+            readStatus: false,
+          },
+        });
+        processed++;
+      }
+    }
+    res.json({ processed, payrollDay });
+  } catch (err) {
+    logger.error({ err }, "ProcessPayroll error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export { router as payoutsRouter };

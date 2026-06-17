@@ -1,23 +1,24 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPayouts,
-  useMarkPayoutPaid,
-  useExportPayouts,
   getListPayoutsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Download, Receipt, CheckCircle2, DollarSign,
-  Users, FileSpreadsheet, Loader2, AlertCircle,
+  Download, Receipt, DollarSign, Users, FileSpreadsheet, Loader2, AlertCircle, CalendarDays,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+
+function authHeaders() {
+  const token = localStorage.getItem("incentiq_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 function monthLabel(value: string): string {
   const [year, month] = value.split("-").map(Number);
@@ -34,17 +35,23 @@ function getRecentMonthValues(count: number): string[] {
   return months;
 }
 
+function ordinal(n: number): string {
+  if (n === 1 || n === 21) return `${n}st`;
+  if (n === 2 || n === 22) return `${n}nd`;
+  if (n === 3 || n === 23) return `${n}rd`;
+  return `${n}th`;
+}
+
 export default function PayrollExport() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const markPaid = useMarkPayoutPaid();
-  const [confirmPayout, setConfirmPayout] = useState<any>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [exportingMonth, setExportingMonth] = useState<string | null>(null);
+  const [payrollConfig, setPayrollConfig] = useState<{ payrollDay: number; commissionCutoffDay: number } | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   const { data: payoutsData, isLoading } = useListPayouts();
   const list: any[] = (Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [])
-    .filter((p: any) => ["FINANCE_APPROVED", "PAYROLL_APPROVED"].includes(p.status));
+    .filter((p: any) => ["FINANCE_APPROVED", "PAYROLL_APPROVED", "PAID"].includes(p.status));
 
   const PERIODS = useMemo(() => {
     const recentSet = new Set(getRecentMonthValues(8));
@@ -60,29 +67,35 @@ export default function PayrollExport() {
     [list, period]
   );
 
-  const totalNet = filteredList.reduce((s: number, p: any) => s + p.estimatedNetPayout, 0);
   const totalGross = filteredList.reduce((s: number, p: any) => s + p.requestedAmount, 0);
   const uniqueEmployees = new Set(filteredList.map((p: any) => p.userId)).size;
 
-  const openConfirm = (payout: any) => {
-    setConfirmPayout(payout);
-    setConfirmOpen(true);
-  };
+  // Load payroll config + auto-process on mount
+  useEffect(() => {
+    fetch("/api/tenant/payroll-config", { headers: authHeaders() as any })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setPayrollConfig(d); })
+      .catch(() => {});
 
-  const handleMarkPaid = async () => {
-    if (!confirmPayout) return;
-    try {
-      await markPaid.mutateAsync({ payoutId: confirmPayout.id });
-      qc.invalidateQueries({ queryKey: getListPayoutsQueryKey() });
-      toast({
-        title: "Payout marked as paid",
-        description: `${confirmPayout.userName} — ${formatCurrency(confirmPayout.requestedAmount)} processed.`,
-      });
-      setConfirmOpen(false);
-    } catch (err: any) {
-      toast({ title: "Failed to mark as paid", description: err?.response?.data?.error ?? "Please try again", variant: "destructive" });
-    }
-  };
+    // Auto-process: mark PAYROLL_APPROVED as PAID if payroll date has been reached
+    setProcessing(true);
+    fetch("/api/payouts/process-payroll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(authHeaders() as any) },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d && d.processed > 0) {
+          qc.invalidateQueries({ queryKey: getListPayoutsQueryKey() });
+          toast({
+            title: `${d.processed} payout${d.processed > 1 ? "s" : ""} auto-paid`,
+            description: `Payroll date reached — commissions automatically marked as Paid.`,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setProcessing(false));
+  }, []);
 
   const handleExportExcel = async () => {
     setExportingMonth(period);
@@ -93,24 +106,24 @@ export default function PayrollExport() {
         "Payout Month": p.payoutMonth,
         "Commission Amount (ZAR)": p.requestedAmount,
         "Approved Date": p.approvedAt ? formatDate(p.approvedAt) : "—",
+        "Status": p.status,
         "Reference": p.id,
       }));
 
       const ws = XLSX.utils.json_to_sheet(rows);
-      // Column widths
       ws["!cols"] = [
-        { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 32 },
+        { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 32 },
       ];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Approved Payouts");
 
-      // Summary sheet
       const summaryData = [
         { Field: "Period", Value: PERIODS.find((p) => p.value === period)?.label ?? period },
         { Field: "Records", Value: rows.length },
         { Field: "Total Commission (ZAR)", Value: totalGross },
         { Field: "Unique Employees", Value: uniqueEmployees },
+        { Field: "Payroll Date", Value: payrollConfig ? ordinal(payrollConfig.payrollDay) : "—" },
         { Field: "Generated At", Value: new Date().toLocaleString("en-ZA") },
       ];
       const wsSummary = XLSX.utils.json_to_sheet(summaryData);
@@ -131,7 +144,7 @@ export default function PayrollExport() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Payroll Processing</h1>
-          <p className="text-muted-foreground">Mark approved payouts as paid and export for payroll</p>
+          <p className="text-muted-foreground">Review approved payouts and export for payroll</p>
         </div>
         <Button
           className="gap-2"
@@ -142,6 +155,24 @@ export default function PayrollExport() {
           Export to Excel
         </Button>
       </div>
+
+      {/* Payroll config info banner */}
+      {payrollConfig && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CalendarDays className="h-4 w-4 text-primary shrink-0" />
+            <span>
+              Payroll runs on the <span className="font-semibold text-foreground">{ordinal(payrollConfig.payrollDay)}</span> of each month.
+              Deals approved after the <span className="font-semibold text-foreground">{ordinal(payrollConfig.commissionCutoffDay)}</span> roll over to the next month's payroll.
+            </span>
+          </div>
+          {processing && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+              <Loader2 className="h-3 w-3 animate-spin" /> Checking payroll dates…
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Period selector */}
       <Card className="shadow-sm">
@@ -196,8 +227,15 @@ export default function PayrollExport() {
       <Card className="shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Approved Payouts — {PERIODS.find((p) => p.value === period)?.label ?? period}</CardTitle>
-            <CardDescription>Finance-approved payouts ready for salary processing</CardDescription>
+            <CardTitle>Payouts — {PERIODS.find((p) => p.value === period)?.label ?? period}</CardTitle>
+            <CardDescription>
+              Finance-approved payouts for this pay period.
+              {payrollConfig && (
+                <span className="ml-1">
+                  Payroll Approved statuses are <strong>automatically marked Paid</strong> on the {ordinal(payrollConfig.payrollDay)} of each month.
+                </span>
+              )}
+            </CardDescription>
           </div>
           {filteredList.length > 0 && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -219,13 +257,12 @@ export default function PayrollExport() {
                     <th className="px-6 py-4 font-medium">Month</th>
                     <th className="px-6 py-4 font-medium">Approved</th>
                     <th className="px-6 py-4 font-medium">Status</th>
-                    <th className="px-6 py-4 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredList.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
                         <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-40" />
                         No approved payouts for this period
                       </td>
@@ -240,15 +277,6 @@ export default function PayrollExport() {
                       <td className="px-6 py-4 text-muted-foreground">{p.payoutMonth}</td>
                       <td className="px-6 py-4 text-muted-foreground text-xs">{p.approvedAt ? formatDate(p.approvedAt) : "—"}</td>
                       <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
-                      <td className="px-6 py-4">
-                        <Button
-                          size="sm"
-                          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
-                          onClick={() => openConfirm(p)}
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Mark Paid
-                        </Button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -263,41 +291,6 @@ export default function PayrollExport() {
           )}
         </CardContent>
       </Card>
-
-      {/* Confirm mark paid dialog */}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Confirm Payment</DialogTitle>
-          </DialogHeader>
-          {confirmPayout && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Employee</span>
-                  <span className="font-medium">{confirmPayout.userName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Commission amount</span>
-                  <span className="font-semibold">{formatCurrency(confirmPayout.requestedAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Month</span>
-                  <span>{confirmPayout.payoutMonth}</span>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground">This will mark the payout as paid and notify the employee. This action cannot be undone.</p>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-                <Button onClick={handleMarkPaid} disabled={markPaid.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                  {markPaid.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {markPaid.isPending ? "Processing…" : "Confirm & Mark Paid"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
