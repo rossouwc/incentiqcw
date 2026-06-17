@@ -13,7 +13,7 @@ import {
 
 export default function PayrollDashboard() {
   const { data: readyPayouts,  isLoading: loadingReady  } = useListPayouts({ status: "FINANCE_APPROVED" });
-  const { data: paidPayouts,   isLoading: loadingPaid   } = useListPayouts({ status: "PAID" });
+  const { data: paidPayouts,   isLoading: loadingPaid   } = useListPayouts({ status: "PAYROLL_APPROVED" });
   const { data: pendingPayouts, isLoading: loadingPending } = useListPayouts({ status: "PENDING" });
   const { data: myTasks,       isLoading: loadingTasks  } = useGetMyTasks();
   const { data: recentActivity, isLoading: loadingActivity } = useGetRecentActivity();

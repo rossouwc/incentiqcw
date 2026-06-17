@@ -59,7 +59,7 @@ router.get("/export", requireAuth, async (req: Request, res: Response) => {
     const payouts = await prisma.payoutRequest.findMany({
       where: {
         tenantId: req.user!.tenantId,
-        status: "FINANCE_APPROVED",
+        status: { in: ["FINANCE_APPROVED", "PAYROLL_APPROVED"] },
         ...(month && { payoutMonth: month }),
       },
       include: { user: { select: { firstName: true, lastName: true, email: true } } },
@@ -335,7 +335,7 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
 
     const payout = await prisma.payoutRequest.update({
       where: { id: req.params.id as string },
-      data: { status: "PAID", paidAt: new Date() },
+      data: { status: "PAYROLL_APPROVED", paidAt: new Date() },
       include: { user: { select: { firstName: true, lastName: true } } },
     });
 
@@ -367,6 +367,17 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
         userId: existing.userId,
         title: "Payout Paid",
         message: `Your payout of R${existing.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${existing.payoutMonth} has been paid`,
+        type: "PAYOUT_PAID",
+        readStatus: false,
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        tenantId: req.user!.tenantId,
+        userId: existing.userId,
+        title: "Payout Payroll Approved",
+        message: `Your payout of R${existing.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${existing.payoutMonth} has been approved by payroll`,
         type: "PAYOUT_PAID",
         readStatus: false,
       },

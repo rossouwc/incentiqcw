@@ -70,6 +70,7 @@ enum ApprovalStatus {
 enum PayoutStatus {
   PENDING
   FINANCE_APPROVED
+  PAYROLL_APPROVED
   PAID
   REJECTED
   DEFERRED

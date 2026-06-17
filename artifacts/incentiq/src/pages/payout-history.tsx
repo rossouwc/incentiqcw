@@ -20,7 +20,7 @@ const MONTHLY_HIST = [
 
 export default function PayoutHistory() {
   const [search, setSearch] = useState("");
-  const { data: payoutsData, isLoading } = useListPayouts({ status: "PAID" });
+  const { data: payoutsData, isLoading } = useListPayouts({ status: "PAYROLL_APPROVED" });
   const list = (Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? []);
   const filtered = list.filter((p: any) =>
     !search || (p.userName ?? "").toLowerCase().includes(search.toLowerCase())

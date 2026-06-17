@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -23,10 +24,121 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Wallet, Clock, CheckCircle2, ArrowDownCircle,
   CalendarDays, MessageSquare, Info, ArrowRightCircle, AlertCircle,
+  XCircle, CircleDot,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 type PayoutType = "FULL" | "PARTIAL" | "DEFER";
+
+type StepState = "done" | "active" | "pending" | "rejected";
+
+function getWorkflowSteps(status: string): { label: string; sublabel: string; state: StepState }[] {
+  const done   = (label: string, sublabel: string) => ({ label, sublabel, state: "done"     as StepState });
+  const active = (label: string, sublabel: string) => ({ label, sublabel, state: "active"   as StepState });
+  const pend   = (label: string, sublabel: string) => ({ label, sublabel, state: "pending"  as StepState });
+  const rej    = (label: string, sublabel: string) => ({ label, sublabel, state: "rejected" as StepState });
+
+  const base = done("Request Submitted", "Payout request created");
+
+  if (status === "REJECTED") return [
+    base,
+    rej("Finance Review", "Request was rejected"),
+    pend("Payroll Processing", "Not reached"),
+  ];
+  if (status === "DEFERRED") return [
+    base,
+    active("Deferred", "Payout deferred to a future month"),
+    pend("Payroll Processing", "Awaiting processing"),
+  ];
+  if (status === "PENDING") return [
+    base,
+    active("Finance Review", "Awaiting finance approval"),
+    pend("Payroll Processing", "Awaiting payroll"),
+  ];
+  if (status === "FINANCE_APPROVED") return [
+    base,
+    done("Finance Review", "Approved by finance"),
+    active("Payroll Processing", "Awaiting payroll approval"),
+  ];
+  if (status === "PAYROLL_APPROVED" || status === "PAID") return [
+    base,
+    done("Finance Review", "Approved by finance"),
+    done("Payroll Processing", "Approved by payroll"),
+  ];
+  return [base, pend("Finance Review", ""), pend("Payroll Processing", "")];
+}
+
+function StepIcon({ state }: { state: StepState }) {
+  if (state === "done")     return <CheckCircle2 className="h-6 w-6 text-emerald-500" />;
+  if (state === "active")   return <CircleDot className="h-6 w-6 text-indigo-400 animate-pulse" />;
+  if (state === "rejected") return <XCircle className="h-6 w-6 text-red-500" />;
+  return <div className="h-6 w-6 rounded-full border-2 border-border bg-background" />;
+}
+
+function PayoutTrackingBody({ payout }: { payout: any }) {
+  const steps = getWorkflowSteps(payout.status);
+  return (
+    <div className="mt-6 space-y-6">
+      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Amount</span>
+          <span className="font-semibold">{formatCurrency(payout.requestedAmount)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Est. tax</span>
+          <span className="text-red-400">- {formatCurrency(payout.estimatedTax)}</span>
+        </div>
+        <div className="flex justify-between border-t border-border pt-2">
+          <span className="text-muted-foreground">Net payout</span>
+          <span className="font-bold text-emerald-500">{formatCurrency(payout.estimatedNetPayout)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Month</span>
+          <span>{payout.payoutMonth}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Requested</span>
+          <span>{formatDate(payout.requestedAt)}</span>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wide mb-4">Approval Progress</p>
+        <div className="relative">
+          {steps.map((step, i) => (
+            <div key={i} className="flex gap-4">
+              <div className="flex flex-col items-center">
+                <StepIcon state={step.state} />
+                {i < steps.length - 1 && (
+                  <div
+                    className={`w-0.5 flex-1 my-1 ${step.state === "done" ? "bg-emerald-500/50" : "bg-border"}`}
+                    style={{ minHeight: "2rem" }}
+                  />
+                )}
+              </div>
+              <div className={`pb-6 ${i === steps.length - 1 ? "pb-0" : ""}`}>
+                <p className={`font-medium text-sm ${
+                  step.state === "done" ? "text-foreground"
+                  : step.state === "active" ? "text-indigo-400"
+                  : step.state === "rejected" ? "text-red-400"
+                  : "text-muted-foreground"
+                }`}>{step.label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{step.sublabel}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {payout.reviewerComments && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
+          <p className="font-medium mb-1">Reviewer note:</p>
+          <p>"{payout.reviewerComments}"</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function getUpcomingMonths(count: number, startFromNext = false): { label: string; value: string }[] {
   const months: { label: string; value: string }[] = [];
@@ -59,6 +171,7 @@ export default function Payouts() {
   const list: any[] = Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [];
 
   const [open, setOpen] = useState(false);
+  const [trackingPayout, setTrackingPayout] = useState<any>(null);
   const [payoutType, setPayoutType] = useState<PayoutType>("FULL");
   const [amount, setAmount] = useState("");
   const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1)[0].value);
@@ -164,10 +277,11 @@ export default function Payouts() {
   };
 
   const pending = list.filter((p) => p.status === "PENDING").length;
-  const totalPaid = list.filter((p) => p.status === "PAID").reduce((s: number, p: any) => s + p.requestedAmount, 0);
+  const totalPaid = list.filter((p) => ["PAID","PAYROLL_APPROVED"].includes(p.status)).reduce((s: number, p: any) => s + p.requestedAmount, 0);
   const deferred = list.filter((p) => p.status === "DEFERRED").length;
 
   return (
+    <>
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -457,7 +571,19 @@ export default function Payouts() {
                       <td className="px-6 py-4 text-right text-red-400">- {formatCurrency(p.estimatedTax)}</td>
                       <td className="px-6 py-4 text-right text-emerald-500 font-semibold">{formatCurrency(p.estimatedNetPayout)}</td>
                       <td className="px-6 py-4 text-muted-foreground">{p.deferredToMonth ? `→ ${p.deferredToMonth}` : p.payoutMonth}</td>
-                      <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
+                      <td className="px-6 py-4">
+                        {isSalesExec ? (
+                          <button
+                            onClick={() => setTrackingPayout(p)}
+                            className="hover:opacity-80 transition-opacity cursor-pointer"
+                            title="Click to view approval progress"
+                          >
+                            <StatusBadge status={p.status} />
+                          </button>
+                        ) : (
+                          <StatusBadge status={p.status} />
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-muted-foreground text-xs">{formatDate(p.requestedAt)}</td>
                       <td className="px-6 py-4 text-muted-foreground text-xs max-w-xs">
                         {p.comments && <span className="block truncate">{p.comments}</span>}
@@ -473,5 +599,16 @@ export default function Payouts() {
         </CardContent>
       </Card>
     </div>
+
+    {/* Payout tracking sheet — sales exec only */}
+    <Sheet open={!!trackingPayout} onOpenChange={(v) => { if (!v) setTrackingPayout(null); }}>
+      <SheetContent className="w-full sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Payout Progress</SheetTitle>
+        </SheetHeader>
+        {trackingPayout && <PayoutTrackingBody payout={trackingPayout} />}
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }

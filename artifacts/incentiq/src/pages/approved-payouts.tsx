@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { CheckCircle2, XCircle, Clock, AlertCircle, DollarSign, MessageSquare, Banknote } from "lucide-react";
 
-type Filter = "ALL" | "PENDING" | "FINANCE_APPROVED" | "REJECTED";
+type Filter = "ALL" | "PENDING" | "FINANCE_APPROVED" | "PAYROLL_APPROVED" | "REJECTED";
 
 export default function ApprovedPayouts() {
   const qc = useQueryClient();
@@ -46,6 +46,7 @@ export default function ApprovedPayouts() {
 
   const pendingCount = all.filter((p: any) => p.status === "PENDING").length;
   const financeApprovedCount = all.filter((p: any) => p.status === "FINANCE_APPROVED").length;
+  const payrollApprovedCount = all.filter((p: any) => p.status === "PAYROLL_APPROVED").length;
   const actionableCount = pendingCount + financeApprovedCount;
   const totalPendingValue = all
     .filter((p: any) => ["PENDING", "FINANCE_APPROVED"].includes(p.status))
@@ -102,12 +103,13 @@ export default function ApprovedPayouts() {
 
   const FILTERS: { key: Filter; label: string }[] = [
     { key: "PENDING", label: "Pending" },
-    { key: "FINANCE_APPROVED", label: isPayroll ? "Finance Approved" : "Approved" },
+    { key: "FINANCE_APPROVED", label: "Finance Approved" },
+    { key: "PAYROLL_APPROVED", label: "Payroll Approved" },
     { key: "REJECTED", label: "Rejected" },
     { key: "ALL", label: "All" },
   ];
 
-  const showPayrollActions = isPayroll && ["PENDING", "FINANCE_APPROVED", "ALL"].includes(filter);
+  const showPayrollActions = isPayroll && ["PENDING", "FINANCE_APPROVED", "ALL"].includes(filter) && filter !== "PAYROLL_APPROVED";
   const showFinanceActions = !isPayroll && filter === "PENDING";
 
   return (
@@ -181,8 +183,13 @@ export default function ApprovedPayouts() {
               </span>
             )}
             {isPayroll && f.key === "FINANCE_APPROVED" && financeApprovedCount > 0 && (
-              <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-500 text-white text-xs font-bold">
+              <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-500 text-white text-xs font-bold">
                 {financeApprovedCount}
+              </span>
+            )}
+            {f.key === "PAYROLL_APPROVED" && payrollApprovedCount > 0 && (
+              <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-emerald-500 text-white text-xs font-bold">
+                {payrollApprovedCount}
               </span>
             )}
           </button>
@@ -196,7 +203,9 @@ export default function ApprovedPayouts() {
             {filter === "PENDING"
               ? "Pending Requests"
               : filter === "FINANCE_APPROVED"
-              ? isPayroll ? "Finance Approved — Ready to Process" : "Approved — Sent to Payroll"
+              ? "Finance Approved — Ready for Payroll"
+              : filter === "PAYROLL_APPROVED"
+              ? "Payroll Approved"
               : filter === "REJECTED"
               ? "Rejected Requests"
               : "All Payout Requests"}
@@ -266,7 +275,7 @@ export default function ApprovedPayouts() {
                                   className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950"
                                   onClick={() => openMarkPaid(p)}
                                 >
-                                  <Banknote className="h-3.5 w-3.5" /> Mark Paid
+                                  <Banknote className="h-3.5 w-3.5" /> Payroll Approve
                                 </Button>
                               )}
                               {canFinanceAction && (
@@ -402,7 +411,7 @@ export default function ApprovedPayouts() {
                   disabled={markPaid.isPending}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
-                  {markPaid.isPending ? "Processing…" : "Confirm Payment"}
+                  {markPaid.isPending ? "Processing…" : "Payroll Approve"}
                 </Button>
               </div>
             </div>
