@@ -329,59 +329,63 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
       where: { id: req.params.id as string, tenantId: req.user!.tenantId },
     });
     if (!existing) { res.status(404).json({ error: "Payout not found" }); return; }
-    if (!["PENDING", "FINANCE_APPROVED"].includes(existing.status)) {
-      res.status(400).json({ error: "Only PENDING or FINANCE_APPROVED payouts can be marked as paid" }); return;
+    if (!["PENDING", "FINANCE_APPROVED", "PAYROLL_APPROVED"].includes(existing.status)) {
+      res.status(400).json({ error: "Only PENDING, FINANCE_APPROVED, or PAYROLL_APPROVED payouts can be processed" }); return;
     }
+
+    const isFinalPayment = existing.status === "PAYROLL_APPROVED";
+    const newStatus = isFinalPayment ? "PAID" : "PAYROLL_APPROVED";
 
     const payout = await prisma.payoutRequest.update({
       where: { id: req.params.id as string },
-      data: { status: "PAYROLL_APPROVED", paidAt: new Date() },
+      data: { status: newStatus, paidAt: isFinalPayment ? new Date() : undefined },
       include: { user: { select: { firstName: true, lastName: true } } },
     });
 
-    const wallet = await prisma.wallet.findUnique({ where: { userId: existing.userId } });
-    if (wallet) {
-      await prisma.wallet.update({
-        where: { id: wallet.id },
-        data: {
-          pendingBalance: Math.max(0, wallet.pendingBalance - existing.requestedAmount),
-          paidOutBalance: wallet.paidOutBalance + existing.requestedAmount,
-        },
-      });
-      await prisma.walletTransaction.create({
+    if (isFinalPayment) {
+      const wallet = await prisma.wallet.findUnique({ where: { userId: existing.userId } });
+      if (wallet) {
+        await prisma.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            pendingBalance: Math.max(0, wallet.pendingBalance - existing.requestedAmount),
+            paidOutBalance: wallet.paidOutBalance + existing.requestedAmount,
+          },
+        });
+        await prisma.walletTransaction.create({
+          data: {
+            tenantId: req.user!.tenantId,
+            walletId: wallet.id,
+            transactionType: "PAYOUT_PAID",
+            amount: existing.requestedAmount,
+            referenceType: "PAYOUT_REQUEST",
+            referenceId: payout.id,
+            description: `Payout paid — ${existing.payoutMonth}`,
+          },
+        });
+      }
+      await prisma.notification.create({
         data: {
           tenantId: req.user!.tenantId,
-          walletId: wallet.id,
-          transactionType: "PAYOUT_PAID",
-          amount: existing.requestedAmount,
-          referenceType: "PAYOUT_REQUEST",
-          referenceId: payout.id,
-          description: `Payout processed — ${existing.payoutMonth}`,
+          userId: existing.userId,
+          title: "Payout Paid",
+          message: `Your commission payout of R${existing.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${existing.payoutMonth} has been paid`,
+          type: "PAYOUT_PAID",
+          readStatus: false,
+        },
+      });
+    } else {
+      await prisma.notification.create({
+        data: {
+          tenantId: req.user!.tenantId,
+          userId: existing.userId,
+          title: "Payout Payroll Approved",
+          message: `Your payout of R${existing.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${existing.payoutMonth} has been approved by payroll`,
+          type: "PAYOUT_PAID",
+          readStatus: false,
         },
       });
     }
-
-    await prisma.notification.create({
-      data: {
-        tenantId: req.user!.tenantId,
-        userId: existing.userId,
-        title: "Payout Paid",
-        message: `Your payout of R${existing.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${existing.payoutMonth} has been paid`,
-        type: "PAYOUT_PAID",
-        readStatus: false,
-      },
-    });
-
-    await prisma.notification.create({
-      data: {
-        tenantId: req.user!.tenantId,
-        userId: existing.userId,
-        title: "Payout Payroll Approved",
-        message: `Your payout of R${existing.requestedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${existing.payoutMonth} has been approved by payroll`,
-        type: "PAYOUT_PAID",
-        readStatus: false,
-      },
-    });
 
     res.json(payoutToResponse(payout));
   } catch (err) {
