@@ -45,7 +45,7 @@ export default function PayrollExport() {
 
   const { data: payoutsData, isLoading } = useListPayouts();
   const list: any[] = (Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [])
-    .filter((p: any) => p.status === "FINANCE_APPROVED");
+    .filter((p: any) => ["FINANCE_APPROVED", "PAYROLL_APPROVED"].includes(p.status));
 
   const filteredList = useMemo(
     () => list.filter((p: any) => !period || p.payoutMonth === period),

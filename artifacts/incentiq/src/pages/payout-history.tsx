@@ -25,7 +25,7 @@ export default function PayoutHistory() {
   const filtered = list.filter((p: any) =>
     !search || (p.userName ?? "").toLowerCase().includes(search.toLowerCase())
   );
-  const total = list.reduce((s: number, p: any) => s + (p.amount ?? 0), 0);
+  const total = list.reduce((s: number, p: any) => s + (p.estimatedNetPayout ?? 0), 0);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -118,9 +118,9 @@ export default function PayoutHistory() {
                     <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-6 py-4 font-medium text-foreground">{p.userName ?? p.userId?.slice(0, 8)}</td>
                       <td className="px-6 py-4 font-mono text-xs text-muted-foreground">{p.id.slice(0, 12)}…</td>
-                      <td className="px-6 py-4 text-right font-semibold text-emerald-600">{formatCurrency(p.amount)}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{p.period ?? "Jun 2026"}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{formatDate(p.updatedAt ?? p.createdAt)}</td>
+                      <td className="px-6 py-4 text-right font-semibold text-emerald-600">{formatCurrency(p.estimatedNetPayout)}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{p.payoutMonth}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{formatDate(p.approvedAt ?? p.requestedAt)}</td>
                       <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
                     </tr>
                   ))}

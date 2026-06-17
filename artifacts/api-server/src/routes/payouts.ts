@@ -34,7 +34,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   const where: any = {
     tenantId: req.user!.tenantId,
     ...(isSalesExec && { userId: req.user!.userId }),
-    ...(isPayroll && !status && { status: { in: ["PENDING", "FINANCE_APPROVED"] } }),
+    ...(isPayroll && !status && { status: { in: ["PENDING", "FINANCE_APPROVED", "PAYROLL_APPROVED"] } }),
     ...(isPayroll && status && { status }),
     ...(!isPayroll && status && { status }),
     ...(month && { payoutMonth: month }),
