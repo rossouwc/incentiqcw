@@ -74,7 +74,7 @@ export function DatePicker({
       <PopoverContent
         className="w-auto p-0"
         align="start"
-        style={{ zIndex: 9999 }}
+        style={{ zIndex: 9999, ["--cell-size" as string]: "2.5rem" }}
         onInteractOutside={(e) => {
           e.preventDefault()
           setOpen(false)
