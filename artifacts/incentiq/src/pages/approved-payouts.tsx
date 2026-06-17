@@ -37,7 +37,7 @@ export default function ApprovedPayouts() {
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [markPaidPayout, setMarkPaidPayout] = useState<any>(null);
 
-  const queryParams = filter === "ALL" ? undefined : { status: filter };
+  const queryParams = filter === "ALL" ? { status: "ALL" } : { status: filter };
   const { data: payoutsData, isLoading } = useListPayouts(queryParams);
   const list: any[] = Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [];
 

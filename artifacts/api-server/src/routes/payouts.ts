@@ -35,8 +35,8 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
     tenantId: req.user!.tenantId,
     ...(isSalesExec && { userId: req.user!.userId }),
     ...(isPayroll && !status && { status: { in: ["PENDING", "FINANCE_APPROVED", "PAYROLL_APPROVED"] } }),
-    ...(isPayroll && status && { status }),
-    ...(!isPayroll && status && { status }),
+    ...(isPayroll && status && status !== "ALL" && { status }),
+    ...(!isPayroll && status && status !== "ALL" && { status }),
     ...(month && { payoutMonth: month }),
   };
   try {
