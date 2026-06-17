@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { getIndustryConfig } from "../industry-config";
+import { calculateCommission } from "../lib/commission-formula";
 
 const router = Router();
 
@@ -33,33 +34,6 @@ async function lookupCommissionPct(tenantId: string, salesExecutiveId: string): 
   return 10;
 }
 
-// ── Financial extraction from eventDataJson ───────────────────────────────────
-
-function extractFinancials(data: Record<string, any>, fieldDefs: any[]) {
-  let revenueAmount = 0;
-  let costAmount = 0;
-  let commissionBaseAmount = 0;
-  let commissionPct: number | null = null;
-
-  for (const f of fieldDefs) {
-    const raw = data[f.fieldKey];
-    if (raw === undefined || raw === null || raw === "") continue;
-    const num = parseFloat(String(raw).replace(/[^0-9.-]/g, "")) || 0;
-    switch (f.calculationRole) {
-      case "REVENUE":          revenueAmount        = num; break;
-      case "COST":             costAmount           = num; break;
-      case "COMMISSION_BASE":  commissionBaseAmount = num; break;
-      case "COMMISSION_PCT":   commissionPct        = num; break;
-    }
-  }
-
-  const grossProfitAmount = revenueAmount - costAmount;
-  if (commissionBaseAmount === 0) {
-    commissionBaseAmount = grossProfitAmount > 0 ? grossProfitAmount : revenueAmount;
-  }
-
-  return { revenueAmount, costAmount, grossProfitAmount, commissionBaseAmount, commissionPct };
-}
 
 // ── Load TenantIndustryConfig with template + field defs ─────────────────────
 
@@ -119,7 +93,10 @@ async function loadTenantConfig(tenantId: string) {
 
 router.get("/field-config", requireAuth, async (req: Request, res: Response) => {
   try {
-    const tc = await loadTenantConfig(req.user!.tenantId);
+    const [tc, defaultCommissionPct] = await Promise.all([
+      loadTenantConfig(req.user!.tenantId),
+      lookupCommissionPct(req.user!.tenantId, req.user!.userId),
+    ]);
     const cfg = getIndustryConfig(tc.industryCode);
 
     res.json({
@@ -134,6 +111,7 @@ router.get("/field-config", requireAuth, async (req: Request, res: Response) => 
       costLabel:            cfg.costLabel,
       commissionMethodLabel: cfg.commissionMethodLabel,
       eventTypes:           cfg.eventTypes,
+      defaultCommissionPct,
       fieldDefinitions:     tc.fieldDefs.map((f) => ({
         id:              f.id,
         fieldKey:        f.fieldKey,
@@ -251,20 +229,13 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    const tc = await loadTenantConfig(req.user!.tenantId);
+    const [tc, commissionPct] = await Promise.all([
+      loadTenantConfig(req.user!.tenantId),
+      lookupCommissionPct(req.user!.tenantId, req.user!.userId),
+    ]);
     const dataMap: Record<string, any> = eventDataJson ?? {};
 
-    const {
-      revenueAmount, costAmount, grossProfitAmount,
-      commissionBaseAmount, commissionPct: explicitPct,
-    } = extractFinancials(dataMap, tc.fieldDefs);
-
-    const commissionPct = explicitPct !== null
-      ? explicitPct
-      : await lookupCommissionPct(req.user!.tenantId, req.user!.userId);
-
-    const calculatedCommissionAmount =
-      Math.round(commissionBaseAmount * (commissionPct / 100) * 100) / 100;
+    const calcResult = calculateCommission(tc.industryCode, dataMap, commissionPct);
 
     const event = await prisma.commissionEvent.create({
       data: {
@@ -274,12 +245,12 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
         eventTitle,
         eventType,
         eventDataJson: dataMap,
-        revenueAmount,
-        costAmount,
-        grossProfitAmount,
-        commissionBaseAmount,
-        commissionPercentage:        commissionPct,
-        calculatedCommissionAmount,
+        revenueAmount:             calcResult.revenueAmount,
+        costAmount:                calcResult.costAmount,
+        grossProfitAmount:         calcResult.grossProfitAmount,
+        commissionBaseAmount:      calcResult.commissionBaseAmount,
+        commissionPercentage:      calcResult.commissionPercentage,
+        calculatedCommissionAmount: calcResult.calculatedCommissionAmount,
         triggerStatus:   "PENDING",
         approvalStatus:  "DRAFT",
         walletStatus:    "PENDING",

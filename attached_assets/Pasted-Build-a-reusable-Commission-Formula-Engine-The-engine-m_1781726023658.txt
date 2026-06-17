@@ -1,0 +1,64 @@
+Build a reusable Commission Formula Engine.
+
+The engine must support calculation types:
+- GP_PERCENTAGE
+- REVENUE_PERCENTAGE
+- FIXED_AMOUNT
+- PLACEMENT_FEE_PERCENTAGE
+- ANNUAL_PREMIUM_PERCENTAGE
+- MONTHLY_PREMIUM_PERCENTAGE
+- VEHICLE_GP_PLUS_PRODUCTS
+- PROPERTY_AGENCY_SPLIT
+- RENTAL_PLACEMENT_FEE
+- CONTRACT_VALUE_PERCENTAGE
+- ARR_PERCENTAGE
+- CUSTOM
+
+Implement default formulas:
+
+IT Consulting:
+commission = grossProfitAmount * commissionPercentage / 100
+
+Recruitment Permanent:
+placementFee = annualSalary * placementFeePercentage / 100
+commission = placementFee * commissionPercentage / 100
+
+Recruitment Contract:
+monthlyGrossProfit = monthlyBillRate - monthlyCost
+commission = monthlyGrossProfit * commissionPercentage / 100
+
+Insurance Upfront:
+annualPremium = monthlyPremium * 12
+commission = annualPremium * commissionPercentage / 100
+
+Insurance Ongoing:
+commission = monthlyPremium * commissionPercentage / 100
+
+Vehicle Dealership:
+vehicleGrossProfit = salePrice - costPrice
+commission = vehicleGrossProfit * commissionPercentage / 100
+Add optional financeCommissionAmount if included
+
+Property Sales:
+agencyCommissionAmount = salePrice * agencyCommissionPercentage / 100
+commission = agencyCommissionAmount * agentSplitPercentage / 100
+
+Rental Management:
+If placementFeeType = One Month Rental, commissionBaseAmount = monthlyRental
+If placementFeeType = Percentage of Annual Rental, commissionBaseAmount = monthlyRental * 12 * commissionPercentage / 100
+If placementFeeType = Fixed Fee, use fixed amount
+commission = commissionBaseAmount
+
+Telecom:
+totalContractValue = monthlyContractValue * contractTermMonths
+commission = totalContractValue * commissionPercentage / 100
+
+SaaS:
+annualRecurringRevenue = monthlyRecurringRevenue * 12
+totalContractValue = monthlyRecurringRevenue * contractTermMonths
+commission = annualRecurringRevenue * commissionPercentage / 100
+
+Custom:
+commission = commissionBaseAmount * commissionPercentage / 100
+
+Return a full calculation breakdown that can be shown to the user before submitting.

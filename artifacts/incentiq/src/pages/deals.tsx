@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getIndustryConfig } from "@/lib/industry-config";
+import { calculateCommission, CalcResult } from "@/lib/commission-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,7 @@ interface FieldConfig {
   commissionMethodLabel: string;
   eventTypes: EventType[];
   fieldDefinitions: FieldDef[];
+  defaultCommissionPct: number;
 }
 
 interface CommEvent {
@@ -254,48 +256,61 @@ function DynamicField({
   }
 }
 
-// ── Calculation preview ───────────────────────────────────────────────────────
+// ── Commission breakdown panel ────────────────────────────────────────────────
 
-interface CalcValues {
-  revenue: number;
-  cost: number;
-  grossProfit: number;
-  commissionBase: number;
-  showGP: boolean;
-  revenueLabel: string;
-  costLabel: string | null;
-}
+function CalcBreakdown({ result }: { result: CalcResult }) {
+  if (result.lineItems.length === 0) return null;
 
-function CalcPreview({ calc }: { calc: CalcValues }) {
+  const fmtVal = (item: CalcResult["lineItems"][number]) => {
+    if (item.isCurrency || item.isResult) return formatCurrency(item.value);
+    if (item.isPct)                       return `${item.value}%`;
+    if (Number.isInteger(item.value))     return `${item.value} months`;
+    return String(item.value);
+  };
+
+  const resultItem = result.lineItems.find((i) => i.isResult);
+
   return (
-    <div className="rounded-lg bg-primary/5 border border-primary/20 p-4">
-      <p className="text-[10px] font-semibold text-primary uppercase tracking-widest mb-3 flex items-center gap-1">
-        <DollarSign className="h-3 w-3" /> Live Commission Preview
+    <div className="rounded-lg bg-primary/5 border border-primary/20 p-4 space-y-3">
+      <p className="text-[10px] font-semibold text-primary uppercase tracking-widest flex items-center gap-1">
+        <DollarSign className="h-3 w-3" /> Commission Breakdown
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-        <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{calc.revenueLabel}</p>
-          <p className="font-semibold text-foreground">{formatCurrency(calc.revenue)}</p>
-        </div>
-        {calc.showGP && calc.costLabel && (
-          <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{calc.costLabel}</p>
-            <p className="font-semibold text-foreground">{formatCurrency(calc.cost)}</p>
-          </div>
-        )}
-        {calc.showGP && (
-          <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Gross Profit</p>
-            <p className={`font-semibold ${calc.grossProfit >= 0 ? "text-foreground" : "text-destructive"}`}>
-              {formatCurrency(calc.grossProfit)}
-            </p>
-          </div>
-        )}
-        <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Comm. Base</p>
-          <p className="font-semibold text-primary">{formatCurrency(calc.commissionBase)}</p>
-        </div>
+
+      {/* Step-by-step line items */}
+      <div className="space-y-1.5">
+        {result.lineItems.map((item, idx) => (
+          item.isResult ? null : (
+            <div key={idx} className="flex items-center justify-between text-sm">
+              <span className={`${item.isIntermediate ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                {item.label}
+              </span>
+              <span className={`font-mono text-xs tabular-nums ${
+                item.isIntermediate ? "font-semibold text-foreground" :
+                item.isPct          ? "text-amber-500 dark:text-amber-400" :
+                "text-muted-foreground"
+              }`}>
+                {fmtVal(item)}
+              </span>
+            </div>
+          )
+        ))}
       </div>
+
+      {/* Separator + final result */}
+      {resultItem && (
+        <>
+          <div className="border-t border-primary/20" />
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-foreground">{resultItem.label}</span>
+            <span className="text-lg font-bold text-primary tabular-nums">
+              {formatCurrency(resultItem.value)}
+            </span>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Based on your commission rate of {result.commissionPercentage}%
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -414,31 +429,17 @@ export default function Deals() {
   };
   const newLabel = fc ? (NEW_LABEL_MAP[fc.industryCode] ?? `New ${entitySingular}`) : "New Deal";
 
-  // ── Live calculations from form values ──
-  const calc = useMemo<CalcValues>(() => {
-    let revenue = 0, cost = 0, commBase = 0;
-    if (fc) {
-      for (const f of fc.fieldDefinitions) {
-        const num = parseFloat(formValues[f.fieldKey] ?? "0") || 0;
-        if (f.calculationRole === "REVENUE")         revenue  = num;
-        else if (f.calculationRole === "COST")       cost     = num;
-        else if (f.calculationRole === "COMMISSION_BASE") commBase = num;
-      }
-    }
-    const gp = revenue - cost;
-    if (commBase === 0) commBase = gp > 0 ? gp : revenue;
-    return {
-      revenue, cost,
-      grossProfit: gp,
-      commissionBase: commBase,
-      showGP:        fc?.showGP ?? false,
-      revenueLabel:  fc?.revenueLabel ?? "Revenue",
-      costLabel:     fc?.costLabel ?? null,
-    };
+  // ── Live commission breakdown from formula engine ──
+  const calcResult = useMemo<CalcResult | null>(() => {
+    if (!fc) return null;
+    const data: Record<string, unknown> = { ...formValues };
+    return calculateCommission(fc.industryCode, data, fc.defaultCommissionPct || 10);
   }, [formValues, fc]);
 
   // ── Validation ──
-  const hasCalcValues = calc.revenue > 0 || calc.commissionBase > 0;
+  const hasCalcValues = (calcResult?.revenueAmount ?? 0) > 0 ||
+                        (calcResult?.commissionBaseAmount ?? 0) > 0 ||
+                        (calcResult?.calculatedCommissionAmount ?? 0) > 0;
   const requiredFilled = useMemo(() => {
     if (!eventTitle.trim() || !eventType) return false;
     if (!fc) return false;
@@ -841,8 +842,8 @@ export default function Deals() {
                   </div>
                 )}
 
-                {/* Calculation preview */}
-                {hasCalcValues && <CalcPreview calc={calc} />}
+                {/* Commission breakdown */}
+                {hasCalcValues && calcResult && <CalcBreakdown result={calcResult} />}
               </>
             )}
           </div>
