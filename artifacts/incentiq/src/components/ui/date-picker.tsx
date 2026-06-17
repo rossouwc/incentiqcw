@@ -48,7 +48,7 @@ export function DatePicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -71,13 +71,23 @@ export function DatePicker({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent
+        className="w-auto p-0"
+        align="start"
+        style={{ zIndex: 9999 }}
+        onInteractOutside={(e) => {
+          e.preventDefault()
+          setOpen(false)
+        }}
+      >
         <Calendar
           mode="single"
           selected={date}
           onSelect={handleSelect}
           captionLayout="dropdown"
-          defaultMonth={date}
+          startMonth={new Date(2015, 0)}
+          endMonth={new Date(2035, 11)}
+          defaultMonth={date ?? new Date()}
           initialFocus
         />
       </PopoverContent>
