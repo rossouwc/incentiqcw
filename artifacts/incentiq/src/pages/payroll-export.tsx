@@ -19,15 +19,17 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
-function getRecentMonths(count: number): { label: string; value: string }[] {
-  const months: { label: string; value: string }[] = [];
+function monthLabel(value: string): string {
+  const [year, month] = value.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
+}
+
+function getRecentMonthValues(count: number): string[] {
+  const months: string[] = [];
   const now = new Date();
   for (let i = 0; i < count; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({
-      label: d.toLocaleDateString("en-ZA", { month: "long", year: "numeric" }),
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-    });
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
   return months;
 }
@@ -40,12 +42,18 @@ export default function PayrollExport() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [exportingMonth, setExportingMonth] = useState<string | null>(null);
 
-  const PERIODS = getRecentMonths(8);
-  const [period, setPeriod] = useState(PERIODS[0].value);
-
   const { data: payoutsData, isLoading } = useListPayouts();
   const list: any[] = (Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [])
     .filter((p: any) => ["FINANCE_APPROVED", "PAYROLL_APPROVED"].includes(p.status));
+
+  const PERIODS = useMemo(() => {
+    const recentSet = new Set(getRecentMonthValues(8));
+    const fromData = list.map((p: any) => p.payoutMonth as string).filter(Boolean);
+    const all = Array.from(new Set([...recentSet, ...fromData])).sort((a, b) => b.localeCompare(a));
+    return all.map((v) => ({ label: monthLabel(v), value: v }));
+  }, [list]);
+
+  const [period, setPeriod] = useState<string>(() => getRecentMonthValues(1)[0]);
 
   const filteredList = useMemo(
     () => list.filter((p: any) => !period || p.payoutMonth === period),
