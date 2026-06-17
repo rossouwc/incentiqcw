@@ -4,6 +4,7 @@ import AdminDashboard from "./dashboard-admin";
 import SalesDashboard from "./dashboard-sales";
 import FinanceDashboard from "./dashboard-finance";
 import ManagerDashboard from "./dashboard-manager";
+import PayrollDashboard from "./dashboard-payroll";
 import PlatformDashboard from "./platform-dashboard";
 
 export default function Dashboard() {
@@ -29,6 +30,7 @@ export default function Dashboard() {
     case "ADMIN":           return <AdminDashboard />;
     case "FINANCE":         return <FinanceDashboard />;
     case "MANAGER":         return <ManagerDashboard />;
+    case "PAYROLL":         return <PayrollDashboard />;
     case "SALES_EXECUTIVE":
     default:                return <SalesDashboard />;
   }

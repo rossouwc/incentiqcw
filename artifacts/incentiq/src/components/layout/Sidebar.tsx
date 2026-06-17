@@ -103,6 +103,7 @@ function getNavGroups(role: string): NavGroup[] {
         {
           label: "Payroll",
           items: [
+            { name: "Dashboard",        path: "/dashboard",        icon: LayoutDashboard },
             { name: "Approved Payouts", path: "/approved-payouts", icon: PayCard },
             { name: "Payroll Export",   path: "/payroll-export",   icon: Receipt },
             { name: "Payout History",   path: "/payout-history",   icon: History },

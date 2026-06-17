@@ -152,9 +152,20 @@ router.get("/recent-activity", requireAuth, async (req: Request, res: Response) 
 router.get("/my-tasks", requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId;
   const tenantId = req.user!.tenantId;
-  const roleToLevel: Record<string, number> = { MANAGER: 1, FINANCE: 2, ADMIN: 3, SUPER_ADMIN: 3 };
-  const level = roleToLevel[req.user!.role];
+  const role = req.user!.role;
+
   try {
+    // PAYROLL: tasks are payout requests needing action, not deal approval workflows
+    if (role === "PAYROLL") {
+      const [pendingApprovals, approvedForPayroll] = await Promise.all([
+        prisma.payoutRequest.count({ where: { tenantId, status: "PENDING" } }),
+        prisma.payoutRequest.count({ where: { tenantId, status: "FINANCE_APPROVED" } }),
+      ]);
+      return res.json({ pendingApprovals, payoutRequests: 0, approvedForPayroll, informationRequired: 0 });
+    }
+
+    const roleToLevel: Record<string, number> = { MANAGER: 1, FINANCE: 2, ADMIN: 3, SUPER_ADMIN: 3 };
+    const level = roleToLevel[role];
     const [pendingApprovals, payoutRequests, approvedForPayroll, infoRequired] = await Promise.all([
       level ? prisma.approvalWorkflow.count({ where: { tenantId, approvalLevel: level, status: "PENDING" } }) : Promise.resolve(0),
       prisma.payoutRequest.count({ where: { userId, tenantId, status: "PENDING" } }),
