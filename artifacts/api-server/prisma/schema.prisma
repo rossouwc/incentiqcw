@@ -135,6 +135,10 @@ model Tenant {
   auditLogs            AuditLog[]
   notifications        Notification[]
   customers            Customer[]
+  tenantIndustryConfig    TenantIndustryConfig?
+  tenantApprovalWorkflows TenantApprovalWorkflow[]
+  commissionEvents        CommissionEvent[]
+  commissionEventApprovals CommissionEventApproval[]
 }
 
 model User {
@@ -160,6 +164,8 @@ model User {
   auditLogs            AuditLog[]
   notifications        Notification[]
   commissionGroups     CommissionRuleGroupMember[]
+  commissionEventsAsExecutive CommissionEvent[]          @relation("CommissionEventSalesExecutive")
+  commissionEventApprovals    CommissionEventApproval[]
 
   @@unique([tenantId, email])
 }
@@ -412,4 +418,142 @@ model Notification {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id])
+}
+
+// ─── Industry Template Models ─────────────────────────────────────────────────
+
+model IndustryTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenantConfigs            TenantIndustryConfig[]
+  dealFieldDefinitions     DealFieldDefinition[]
+  commissionFormulas       CommissionFormulaTemplate[]
+  approvalWorkflowTemplates ApprovalWorkflowTemplate[]
+  commissionEvents         CommissionEvent[]
+}
+
+model TenantIndustryConfig {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  industryTemplateId  String
+  customIndustryName  String?
+  dealEntityName      String?
+  commissionEventName String?
+  triggerEventName    String?
+  isCustomised        Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  industryTemplate IndustryTemplate  @relation(fields: [industryTemplateId], references: [id])
+}
+
+model DealFieldDefinition {
+  id                 String   @id @default(cuid())
+  industryTemplateId String
+  fieldKey           String
+  fieldLabel         String
+  fieldType          String
+  isRequired         Boolean  @default(false)
+  displayOrder       Int      @default(0)
+  calculationRole    String?
+  optionsJson        Json?
+  validationJson     Json?
+  isActive           Boolean  @default(true)
+
+  industryTemplate IndustryTemplate @relation(fields: [industryTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([industryTemplateId, fieldKey])
+}
+
+model CommissionFormulaTemplate {
+  id                 String   @id @default(cuid())
+  industryTemplateId String
+  formulaName        String
+  formulaCode        String
+  formulaDescription String?
+  calculationType    String
+  formulaJson        Json?
+  triggerEvent       String?
+  isDefault          Boolean  @default(false)
+  isActive           Boolean  @default(true)
+
+  industryTemplate IndustryTemplate @relation(fields: [industryTemplateId], references: [id], onDelete: Cascade)
+}
+
+model ApprovalWorkflowTemplate {
+  id                 String   @id @default(cuid())
+  industryTemplateId String
+  workflowName       String
+  approvalStepsJson  Json
+  isDefault          Boolean  @default(false)
+  isActive           Boolean  @default(true)
+
+  industryTemplate IndustryTemplate @relation(fields: [industryTemplateId], references: [id], onDelete: Cascade)
+}
+
+model TenantApprovalWorkflow {
+  id                String   @id @default(cuid())
+  tenantId          String
+  workflowName      String
+  approvalStepsJson Json
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ─── Commission Event Models ───────────────────────────────────────────────────
+
+model CommissionEvent {
+  id                        String    @id @default(cuid())
+  tenantId                  String
+  industryTemplateId        String?
+  salesExecutiveId          String
+  eventTitle                String
+  eventType                 String
+  eventDataJson             Json?
+  revenueAmount             Float     @default(0)
+  costAmount                Float     @default(0)
+  grossProfitAmount         Float     @default(0)
+  commissionBaseAmount      Float     @default(0)
+  commissionPercentage      Float     @default(0)
+  calculatedCommissionAmount Float    @default(0)
+  triggerStatus             String    @default("PENDING")
+  approvalStatus            String    @default("DRAFT")
+  walletStatus              String    @default("PENDING")
+  submittedAt               DateTime?
+  approvedAt                DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  industryTemplate IndustryTemplate?  @relation(fields: [industryTemplateId], references: [id])
+  salesExecutive   User               @relation("CommissionEventSalesExecutive", fields: [salesExecutiveId], references: [id])
+  approvals        CommissionEventApproval[]
+}
+
+model CommissionEventApproval {
+  id                String         @id @default(cuid())
+  tenantId          String
+  commissionEventId String
+  approvalStep      Int
+  approverRole      UserRole
+  approverUserId    String?
+  status            ApprovalStatus @default(PENDING)
+  comments          String?
+  approvedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
+  approver        User?           @relation(fields: [approverUserId], references: [id])
 }
