@@ -98,14 +98,6 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
       icon: WalletIcon,
     },
     {
-      label: "Submitted for Payout",
-      value: pendingApprovalAmount,
-      description: "Payout request awaiting finance / payroll",
-      colorClass: "border-l-amber-400",
-      valueClass: "text-amber-600",
-      icon: Clock,
-    },
-    {
       label: "Payroll Approved",
       value: payrollApprovedAmount,
       description: "Approved — awaiting pay date",
@@ -140,7 +132,7 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {cards.map((c) => {
         const Icon = c.icon;
         return (
