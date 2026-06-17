@@ -83,9 +83,7 @@ export default function PayrollExport() {
         "#": idx + 1,
         "Employee Name": p.userName,
         "Payout Month": p.payoutMonth,
-        "Gross Amount (ZAR)": p.requestedAmount,
-        "Estimated Tax (ZAR)": p.estimatedTax,
-        "Net Payout (ZAR)": p.estimatedNetPayout,
+        "Commission Amount (ZAR)": p.requestedAmount,
         "Approved Date": p.approvedAt ? formatDate(p.approvedAt) : "—",
         "Reference": p.id,
       }));
@@ -93,7 +91,7 @@ export default function PayrollExport() {
       const ws = XLSX.utils.json_to_sheet(rows);
       // Column widths
       ws["!cols"] = [
-        { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 32 },
+        { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 32 },
       ];
 
       const wb = XLSX.utils.book_new();
@@ -103,8 +101,7 @@ export default function PayrollExport() {
       const summaryData = [
         { Field: "Period", Value: PERIODS.find((p) => p.value === period)?.label ?? period },
         { Field: "Records", Value: rows.length },
-        { Field: "Total Gross (ZAR)", Value: totalGross },
-        { Field: "Total Net (ZAR)", Value: totalNet },
+        { Field: "Total Commission (ZAR)", Value: totalGross },
         { Field: "Unique Employees", Value: uniqueEmployees },
         { Field: "Generated At", Value: new Date().toLocaleString("en-ZA") },
       ];
@@ -173,10 +170,10 @@ export default function PayrollExport() {
         </Card>
         <Card className="border-l-4 border-l-emerald-500 shadow-sm">
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Net Payout</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Commission Amount</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent>{isLoading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold text-emerald-500">{formatCurrency(totalNet)}</div>}</CardContent>
+          <CardContent>{isLoading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-bold text-emerald-500">{formatCurrency(totalGross)}</div>}</CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-400 shadow-sm">
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
@@ -210,9 +207,7 @@ export default function PayrollExport() {
                 <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                   <tr>
                     <th className="px-6 py-4 font-medium">Employee</th>
-                    <th className="px-6 py-4 font-medium text-right">Gross</th>
-                    <th className="px-6 py-4 font-medium text-right">Tax</th>
-                    <th className="px-6 py-4 font-medium text-right">Net Payout</th>
+                    <th className="px-6 py-4 font-medium text-right">Commission Amount</th>
                     <th className="px-6 py-4 font-medium">Month</th>
                     <th className="px-6 py-4 font-medium">Approved</th>
                     <th className="px-6 py-4 font-medium">Status</th>
@@ -222,7 +217,7 @@ export default function PayrollExport() {
                 <tbody>
                   {filteredList.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
                         <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-40" />
                         No approved payouts for this period
                       </td>
@@ -234,8 +229,6 @@ export default function PayrollExport() {
                         <div className="text-xs text-muted-foreground font-mono">{p.id.slice(0, 10)}…</div>
                       </td>
                       <td className="px-6 py-4 text-right font-semibold">{formatCurrency(p.requestedAmount)}</td>
-                      <td className="px-6 py-4 text-right text-red-400 text-xs">- {formatCurrency(p.estimatedTax)}</td>
-                      <td className="px-6 py-4 text-right font-bold text-emerald-500">{formatCurrency(p.estimatedNetPayout)}</td>
                       <td className="px-6 py-4 text-muted-foreground">{p.payoutMonth}</td>
                       <td className="px-6 py-4 text-muted-foreground text-xs">{p.approvedAt ? formatDate(p.approvedAt) : "—"}</td>
                       <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
@@ -254,8 +247,8 @@ export default function PayrollExport() {
               </table>
               {filteredList.length > 0 && (
                 <div className="px-6 py-3 border-t border-border bg-muted/20 flex justify-between text-sm">
-                  <span className="text-muted-foreground">{filteredList.length} record{filteredList.length !== 1 ? "s" : ""} · Total gross: {formatCurrency(totalGross)}</span>
-                  <span className="font-semibold text-emerald-500">Net total: {formatCurrency(totalNet)}</span>
+                  <span className="text-muted-foreground">{filteredList.length} record{filteredList.length !== 1 ? "s" : ""}</span>
+                  <span className="font-semibold text-emerald-500">Total commission: {formatCurrency(totalGross)}</span>
                 </div>
               )}
             </div>
@@ -277,16 +270,8 @@ export default function PayrollExport() {
                   <span className="font-medium">{confirmPayout.userName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Gross amount</span>
+                  <span className="text-muted-foreground">Commission amount</span>
                   <span className="font-semibold">{formatCurrency(confirmPayout.requestedAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Est. tax deducted</span>
-                  <span className="text-red-400">- {formatCurrency(confirmPayout.estimatedTax)}</span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-2">
-                  <span className="font-medium">Net payout</span>
-                  <span className="font-bold text-emerald-500">{formatCurrency(confirmPayout.estimatedNetPayout)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Month</span>

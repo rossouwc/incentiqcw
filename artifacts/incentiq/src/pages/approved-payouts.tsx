@@ -227,9 +227,7 @@ export default function ApprovedPayouts() {
                 <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                   <tr>
                     <th className="px-6 py-4 font-medium">Employee</th>
-                    <th className="px-6 py-4 font-medium text-right">Gross</th>
-                    <th className="px-6 py-4 font-medium text-right">Tax</th>
-                    <th className="px-6 py-4 font-medium text-right">Net</th>
+                    <th className="px-6 py-4 font-medium text-right">Commission Amount</th>
                     <th className="px-6 py-4 font-medium">Month</th>
                     <th className="px-6 py-4 font-medium">Requested</th>
                     <th className="px-6 py-4 font-medium">Status</th>
@@ -240,7 +238,7 @@ export default function ApprovedPayouts() {
                 <tbody>
                   {list.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                      <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
                         <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-40" />
                         {filter === "PENDING" ? "No pending payout requests" : "No records found"}
                       </td>
@@ -255,8 +253,6 @@ export default function ApprovedPayouts() {
                           <div className="text-xs text-muted-foreground font-mono">{p.id.slice(0, 10)}…</div>
                         </td>
                         <td className="px-6 py-4 text-right font-semibold">{formatCurrency(p.requestedAmount)}</td>
-                        <td className="px-6 py-4 text-right text-red-400 text-xs">- {formatCurrency(p.estimatedTax)}</td>
-                        <td className="px-6 py-4 text-right text-emerald-500 font-semibold">{formatCurrency(p.estimatedNetPayout)}</td>
                         <td className="px-6 py-4 text-muted-foreground">{p.payoutMonth}</td>
                         <td className="px-6 py-4 text-muted-foreground text-xs">{formatDate(p.requestedAt)}</td>
                         <td className="px-6 py-4"><StatusBadge status={p.status} /></td>
@@ -319,16 +315,8 @@ export default function ApprovedPayouts() {
                   <span className="font-medium">{selectedPayout.userName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Gross amount</span>
+                  <span className="text-muted-foreground">Commission amount</span>
                   <span className="font-semibold">{formatCurrency(selectedPayout.requestedAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Estimated tax</span>
-                  <span className="text-red-400">- {formatCurrency(selectedPayout.estimatedTax)}</span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-2">
-                  <span className="text-muted-foreground">Net payout</span>
-                  <span className="font-bold text-emerald-500">{formatCurrency(selectedPayout.estimatedNetPayout)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Payout month</span>
@@ -382,16 +370,8 @@ export default function ApprovedPayouts() {
                   <span className="font-medium">{markPaidPayout.userName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Gross amount</span>
+                  <span className="text-muted-foreground">Commission amount</span>
                   <span className="font-semibold">{formatCurrency(markPaidPayout.requestedAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Estimated tax</span>
-                  <span className="text-red-400">- {formatCurrency(markPaidPayout.estimatedTax)}</span>
-                </div>
-                <div className="flex justify-between border-t border-border pt-2">
-                  <span className="text-muted-foreground">Net payout</span>
-                  <span className="font-bold text-emerald-500">{formatCurrency(markPaidPayout.estimatedNetPayout)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Payout month</span>
