@@ -84,6 +84,32 @@ const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 // ─── Balance Cards ─────────────────────────────────────────────────────────────
 
 function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading: boolean }) {
+  const w = wallet as any;
+  const pendingApprovalAmount: number = w?.pendingApprovalAmount ?? 0;
+  const payrollApprovedAmount: number = w?.payrollApprovedAmount ?? 0;
+
+  // Determine what's in the "pending" bucket and pick the best label
+  const hasPendingApproval   = pendingApprovalAmount > 0;
+  const hasPayrollApproved   = payrollApprovedAmount > 0;
+  const pendingLabel       = hasPayrollApproved && !hasPendingApproval
+    ? "Payroll Approved"
+    : hasPendingApproval && hasPayrollApproved
+    ? "In Progress"
+    : "Submitted for Payout";
+  const pendingDescription = hasPayrollApproved && !hasPendingApproval
+    ? "Approved — awaiting pay date"
+    : hasPendingApproval && hasPayrollApproved
+    ? `R${pendingApprovalAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} pending · R${payrollApprovedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} payroll approved`
+    : hasPendingApproval
+    ? "Awaiting finance / payroll review"
+    : "Awaiting payment processing";
+  const pendingColor       = hasPayrollApproved && !hasPendingApproval
+    ? "border-l-emerald-400"
+    : "border-l-amber-400";
+  const pendingValueClass  = hasPayrollApproved && !hasPendingApproval
+    ? "text-emerald-600"
+    : "text-amber-600";
+
   const cards = [
     {
       label: "Available Balance",
@@ -95,12 +121,12 @@ function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading
       highlight: true,
     },
     {
-      label: "Pending Approval",
+      label: pendingLabel,
       value: wallet?.pendingBalance ?? 0,
-      description: "Awaiting final approval",
-      colorClass: "border-l-amber-400",
-      valueClass: "text-amber-600",
-      icon: Clock,
+      description: pendingDescription,
+      colorClass: pendingColor,
+      valueClass: pendingValueClass,
+      icon: hasPayrollApproved && !hasPendingApproval ? CheckCircle2 : Clock,
       highlight: false,
     },
     {

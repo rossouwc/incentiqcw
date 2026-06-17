@@ -67,7 +67,24 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const wallet = await getOrCreateWallet(req.user!.userId, req.user!.tenantId);
     const walletWithYtd = await attachPaidYtd(wallet, req.user!.tenantId);
-    res.json(walletToResponse(walletWithYtd));
+
+    // Compute payout breakdown by status from PayoutRequest table
+    const payoutBreakdown = await prisma.payoutRequest.groupBy({
+      by: ["status"],
+      where: { userId: req.user!.userId, tenantId: req.user!.tenantId, status: { in: ["PENDING", "FINANCE_APPROVED", "PAYROLL_APPROVED"] } },
+      _sum: { requestedAmount: true },
+    });
+    const byStatus: Record<string, number> = {};
+    for (const row of payoutBreakdown) {
+      byStatus[row.status] = row._sum.requestedAmount ?? 0;
+    }
+
+    const response = {
+      ...walletToResponse(walletWithYtd),
+      pendingApprovalAmount: (byStatus["PENDING"] ?? 0) + (byStatus["FINANCE_APPROVED"] ?? 0),
+      payrollApprovedAmount: byStatus["PAYROLL_APPROVED"] ?? 0,
+    };
+    res.json(response);
   } catch (err) {
     logger.error({ err }, "GetWallet error");
     res.status(500).json({ error: "Server error" });
