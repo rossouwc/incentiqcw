@@ -78,6 +78,7 @@ const TX_META: Record<string, TxMeta> = {
   PAYOUT_PAID:                { label: "Payout Paid",                icon: ArrowUpRight,   colorClass: "text-indigo-600", bgClass: "bg-indigo-50",  isCredit: false },
   PAYOUT_DEFERRED:            { label: "Payout Deferred",            icon: Pause,          colorClass: "text-orange-600", bgClass: "bg-orange-50",  isCredit: false },
   MANUAL_ADJUSTMENT:          { label: "Manual Adjustment",          icon: Sliders,        colorClass: "text-gray-600",   bgClass: "bg-gray-100",   isCredit: true  },
+  CLAWBACK_PENDING:           { label: "Potential Clawback",        icon: AlertCircle,    colorClass: "text-amber-600",  bgClass: "bg-amber-50",   isCredit: false },
   CLAWBACK_DEDUCTION:         { label: "Clawback Deduction",         icon: TrendingDown,   colorClass: "text-red-600",    bgClass: "bg-red-50",     isCredit: false },
   FUTURE_OFFSET_APPLIED:      { label: "Future Commission Offset",   icon: ArrowRightLeft, colorClass: "text-red-600",    bgClass: "bg-red-50",     isCredit: false },
   COMMISSION_SPLIT_DEDUCTION: { label: "Commission Split Deduction", icon: ArrowUpRight,   colorClass: "text-orange-600", bgClass: "bg-orange-50",  isCredit: false },

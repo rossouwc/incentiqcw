@@ -51,6 +51,18 @@ function clawbackToResponse(cb: any) {
       referenceId:    r.referenceId ?? null,
       createdAt:      r.createdAt.toISOString(),
     })),
+    approvalSteps:            (cb.approvalSteps ?? []).map((s: any) => ({
+      id:           s.id,
+      stepOrder:    s.stepOrder,
+      stepName:     s.stepName,
+      approverRole: s.approverRole,
+      status:       s.status,
+      comments:     s.comments ?? null,
+      approvedById: s.approvedById ?? null,
+      approvedAt:   s.approvedAt?.toISOString() ?? null,
+    })),
+    approvalCurrentStep:      cb.approvalCurrentStep ?? null,
+    walletPendingTxId:        cb.walletPendingTxId ?? null,
   };
 }
 
@@ -60,6 +72,7 @@ const clawbackInclude = {
   createdBy:       { select: { firstName: true, lastName: true } },
   approvedBy:      { select: { firstName: true, lastName: true } },
   recoveries:      true,
+  approvalSteps:   { orderBy: { stepOrder: "asc" as const } },
 };
 
 // ── GET /api/clawbacks ────────────────────────────────────────────────────────
@@ -275,7 +288,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
     notes?: string;
   };
 
-  const validActions = ["SUBMIT", "APPROVE", "DECLINE", "WAIVE", "DISPUTE", "EXECUTE", "RECOVER"];
+  const validActions = ["SUBMIT", "APPROVE", "DECLINE", "WAIVE", "DISPUTE", "EXECUTE", "RECOVER", "REQUEST_CHANGES"];
   if (!action || !validActions.includes(action)) {
     res.status(400).json({ error: `action must be one of: ${validActions.join(", ")}` }); return;
   }
@@ -293,27 +306,257 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
     const eventTitle = (cb.commissionEvent as any).eventTitle as string;
     const actorName  = `${(req.user as any).firstName ?? ""} ${(req.user as any).lastName ?? ""}`.trim() || "Admin";
 
-    // ── SUBMIT (DRAFT → PENDING_APPROVAL) ────────────────────────────────────
+    // ── SUBMIT (DRAFT → PENDING_APPROVAL, multi-step approval) ──────────────
     if (action === "SUBMIT") {
       if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
       if (cb.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT clawbacks can be submitted" }); return; }
 
-      const updated = await prisma.commissionClawback.update({
-        where:   { id: cb.id },
-        data:    { status: "PENDING_APPROVAL" },
-        include: clawbackInclude,
+      const clawbackAmt = Number(cb.clawbackAmount);
+
+      // Load tenant's ClawbackApprovalConfig (or fall back to sensible defaults)
+      const tenantConfigs = await prisma.clawbackApprovalConfig.findMany({
+        where:   { tenantId: req.user!.tenantId, isActive: true },
+        orderBy: { stepOrder: "asc" },
       });
-      res.json(clawbackToResponse(updated)); return;
+
+      type StepDef = { stepOrder: number; stepName: string; approverRole: string };
+      let steps: StepDef[];
+
+      if (tenantConfigs.length > 0) {
+        steps = tenantConfigs
+          .filter(c => c.thresholdAmount == null || clawbackAmt >= Number(c.thresholdAmount))
+          .map(c => ({ stepOrder: c.stepOrder, stepName: c.stepName, approverRole: c.approverRole }));
+      } else {
+        // Default: Finance → Manager; add Executive step if amount > 50 000
+        steps = [
+          { stepOrder: 1, stepName: "Finance Validation",     approverRole: "FINANCE" },
+          { stepOrder: 2, stepName: "Sales Manager Approval", approverRole: "MANAGER" },
+        ];
+        if (clawbackAmt > 50000) {
+          steps.push({ stepOrder: 3, stepName: "Executive Approval", approverRole: "EXECUTIVE" });
+        }
+      }
+
+      if (steps.length === 0) {
+        // All threshold-based steps excluded — auto-approve
+        const autoApproved = await prisma.commissionClawback.update({
+          where:   { id: cb.id },
+          data:    { status: "APPROVED", approvedById: req.user!.userId, approvedAt: new Date(), approvalCurrentStep: 0 },
+          include: clawbackInclude,
+        });
+        res.json(clawbackToResponse(autoApproved)); return;
+      }
+
+      // Create CLAWBACK_PENDING wallet transaction so exec sees potential deduction
+      let pendingTxId: string | null = null;
+      const execWallet = await prisma.wallet.findUnique({ where: { userId: execId } });
+      if (execWallet) {
+        const pendingTx = await prisma.walletTransaction.create({
+          data: {
+            tenantId:        req.user!.tenantId,
+            walletId:        execWallet.id,
+            transactionType: "CLAWBACK_PENDING",
+            amount:          clawbackAmt,
+            referenceType:   "CLAWBACK",
+            referenceId:     cb.id,
+            description:     `Potential clawback pending approval: ${eventTitle}`,
+          },
+        });
+        pendingTxId = pendingTx.id;
+      }
+
+      // Create approval steps + transition clawback to PENDING_APPROVAL
+      await prisma.$transaction([
+        ...steps.map(s => prisma.clawbackApprovalStep.create({
+          data: {
+            tenantId:    req.user!.tenantId,
+            clawbackId:  cb.id,
+            stepOrder:   s.stepOrder,
+            stepName:    s.stepName,
+            approverRole: s.approverRole as any,
+            status:      "PENDING",
+          },
+        })),
+        prisma.commissionClawback.update({
+          where: { id: cb.id },
+          data:  {
+            status:              "PENDING_APPROVAL",
+            approvalCurrentStep: steps[0].stepOrder,
+            ...(pendingTxId && { walletPendingTxId: pendingTxId }),
+          },
+        }),
+      ]);
+
+      // Notify first-step approvers
+      const firstApprovers = await prisma.user.findMany({
+        where:  { tenantId: req.user!.tenantId, role: steps[0].approverRole as any, status: "ACTIVE" },
+        select: { id: true },
+      });
+      await Promise.all(firstApprovers.map(u =>
+        prisma.notification.create({
+          data: {
+            tenantId:   req.user!.tenantId,
+            userId:     u.id,
+            title:      "Clawback Awaiting Review",
+            message:    `A clawback of ${clawbackAmt.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" requires your review (Step 1: ${steps[0].stepName}).`,
+            type:       "CLAWBACK_CREATED",
+            readStatus: false,
+          },
+        }).catch(() => {}),
+      ));
+
+      // Notify sales exec of potential deduction
+      await prisma.notification.create({
+        data: {
+          tenantId:   req.user!.tenantId,
+          userId:     execId,
+          title:      "Potential Commission Clawback",
+          message:    `A clawback of ${clawbackAmt.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" has been submitted for approval and will appear as a potential deduction in your wallet.`,
+          type:       "CLAWBACK_CREATED",
+          readStatus: false,
+        },
+      }).catch(() => {});
+
+      const refreshed = await prisma.commissionClawback.findUnique({ where: { id: cb.id }, include: clawbackInclude });
+      res.json(clawbackToResponse(refreshed!)); return;
     }
 
-    // ── APPROVE (PENDING_APPROVAL → APPROVED) ────────────────────────────────
+    // ── APPROVE (step-by-step, advances through approval chain) ─────────────
     if (action === "APPROVE") {
       if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
-      if (cb.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only PENDING_APPROVAL clawbacks can be approved" }); return; }
+      if (!["PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(cb.status)) {
+        res.status(400).json({ error: "Clawback must be PENDING_APPROVAL or CHANGES_REQUESTED to approve" }); return;
+      }
+
+      const currentStepOrder = cb.approvalCurrentStep;
+      if (currentStepOrder == null) {
+        res.status(400).json({ error: "No active approval step found — re-submit this clawback" }); return;
+      }
+
+      const allSteps = await prisma.clawbackApprovalStep.findMany({
+        where:   { clawbackId: cb.id },
+        orderBy: { stepOrder: "asc" },
+      });
+
+      const currentStep = allSteps.find(s => s.stepOrder === currentStepOrder);
+      if (!currentStep) { res.status(400).json({ error: "Current approval step record not found" }); return; }
+
+      // Admins/Super-admins can bypass role check; everyone else must match the step role
+      const isBypass = ["ADMIN", "SUPER_ADMIN"].includes(req.user!.role);
+      if (!isBypass && req.user!.role !== currentStep.approverRole) {
+        res.status(403).json({ error: `Step ${currentStepOrder} (${currentStep.stepName}) requires a ${currentStep.approverRole}` }); return;
+      }
+
+      // Approve the current step
+      await prisma.clawbackApprovalStep.update({
+        where: { id: currentStep.id },
+        data:  { status: "APPROVED", approvedById: req.user!.userId, approvedAt: new Date(), comments: notes?.trim() ?? null },
+      });
+
+      // Find the next PENDING step
+      const nextStep = allSteps.find(s => s.stepOrder > currentStepOrder && s.status === "PENDING");
+
+      if (nextStep) {
+        // Advance to next step
+        await prisma.commissionClawback.update({
+          where: { id: cb.id },
+          data:  { status: "PENDING_APPROVAL", approvalCurrentStep: nextStep.stepOrder },
+        });
+
+        const nextApprovers = await prisma.user.findMany({
+          where:  { tenantId: req.user!.tenantId, role: nextStep.approverRole as any, status: "ACTIVE" },
+          select: { id: true },
+        });
+        await Promise.all(nextApprovers.map(u =>
+          prisma.notification.create({
+            data: {
+              tenantId:   req.user!.tenantId,
+              userId:     u.id,
+              title:      "Clawback Awaiting Your Approval",
+              message:    `A clawback of ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" is at Step ${nextStep.stepOrder}: ${nextStep.stepName}.`,
+              type:       "CLAWBACK_STEP_APPROVED",
+              readStatus: false,
+            },
+          }).catch(() => {}),
+        ));
+
+        await prisma.notification.create({
+          data: {
+            tenantId:   req.user!.tenantId,
+            userId:     execId,
+            title:      "Clawback Approval In Progress",
+            message:    `Step ${currentStepOrder} (${currentStep.stepName}) approved. Now pending Step ${nextStep.stepOrder}: ${nextStep.stepName}.`,
+            type:       "CLAWBACK_STEP_APPROVED",
+            readStatus: false,
+          },
+        }).catch(() => {});
+      } else {
+        // All steps done — fully approve clawback
+        if (cb.walletPendingTxId) {
+          await prisma.walletTransaction.delete({ where: { id: cb.walletPendingTxId } }).catch(() => {});
+        }
+
+        await prisma.commissionClawback.update({
+          where: { id: cb.id },
+          data:  {
+            status:           "APPROVED",
+            approvedById:     req.user!.userId,
+            approvedAt:       new Date(),
+            walletPendingTxId: null,
+            ...(notes && { notes: notes.trim() }),
+          },
+        });
+
+        await prisma.notification.create({
+          data: {
+            tenantId:   req.user!.tenantId,
+            userId:     execId,
+            title:      "Clawback Approved",
+            message:    `Your commission clawback for "${eventTitle}" has been fully approved. Amount: ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })}`,
+            type:       "CLAWBACK_APPROVED",
+            readStatus: false,
+          },
+        }).catch(() => {});
+
+        await prisma.auditLog.create({
+          data: {
+            tenantId:   req.user!.tenantId,
+            userId:     req.user!.userId,
+            action:     "CLAWBACK_APPROVED",
+            entityType: "CommissionClawback",
+            entityId:   cb.id,
+            newValue:   JSON.stringify({ status: "APPROVED" }),
+          },
+        }).catch(() => {});
+      }
+
+      const refreshed = await prisma.commissionClawback.findUnique({ where: { id: cb.id }, include: clawbackInclude });
+      res.json(clawbackToResponse(refreshed!)); return;
+    }
+
+    // ── DECLINE → CANCELLED (per spec: rejected = cancelled, no wallet impact) ─
+    if (action === "DECLINE") {
+      if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
+      if (!["PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(cb.status)) {
+        res.status(400).json({ error: "Clawback must be PENDING_APPROVAL or CHANGES_REQUESTED to decline" }); return;
+      }
+
+      // Mark current step as REJECTED
+      if (cb.approvalCurrentStep != null) {
+        await prisma.clawbackApprovalStep.updateMany({
+          where: { clawbackId: cb.id, stepOrder: cb.approvalCurrentStep },
+          data:  { status: "REJECTED", comments: notes?.trim() ?? null },
+        });
+      }
+
+      // Remove pending wallet tx — no wallet impact on rejection
+      if (cb.walletPendingTxId) {
+        await prisma.walletTransaction.delete({ where: { id: cb.walletPendingTxId } }).catch(() => {});
+      }
 
       const updated = await prisma.commissionClawback.update({
         where:   { id: cb.id },
-        data:    { status: "APPROVED", approvedById: req.user!.userId, approvedAt: new Date(), ...(notes && { notes: notes.trim() }) },
+        data:    { status: "CANCELLED", walletPendingTxId: null, ...(notes && { notes: notes.trim() }) },
         include: clawbackInclude,
       });
 
@@ -321,39 +564,49 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     execId,
-          title:      "Clawback Approved",
-          message:    `Your commission clawback for "${eventTitle}" has been approved. Amount: ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })}`,
-          type:       "CLAWBACK_APPROVED",
+          title:      "Clawback Cancelled",
+          message:    `The clawback for "${eventTitle}" has been rejected and cancelled.${notes ? ` Reason: ${notes.trim().slice(0, 100)}` : ""}`,
+          type:       "CLAWBACK_CANCELLED",
           readStatus: false,
+        },
+      }).catch(() => {});
+
+      await prisma.auditLog.create({
+        data: {
+          tenantId:   req.user!.tenantId,
+          userId:     req.user!.userId,
+          action:     "CLAWBACK_CANCELLED",
+          entityType: "CommissionClawback",
+          entityId:   cb.id,
+          newValue:   JSON.stringify({ status: "CANCELLED", notes }),
         },
       }).catch(() => {});
 
       res.json(clawbackToResponse(updated)); return;
     }
 
-    // ── DECLINE (PENDING_APPROVAL → DECLINED) ────────────────────────────────
-    if (action === "DECLINE") {
-      if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
-      if (cb.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only PENDING_APPROVAL clawbacks can be declined" }); return; }
-
-      const updated = await prisma.commissionClawback.update({
-        where:   { id: cb.id },
-        data:    { status: "DECLINED", ...(notes && { notes: notes.trim() }) },
-        include: clawbackInclude,
-      });
-      res.json(clawbackToResponse(updated)); return;
-    }
-
-    // ── WAIVE (APPROVED → WAIVED) ─────────────────────────────────────────────
+    // ── WAIVE — no recovery, mandatory audit log ──────────────────────────────
     if (action === "WAIVE") {
       if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
-      if (!["APPROVED", "PENDING_APPROVAL"].includes(cb.status)) {
-        res.status(400).json({ error: "Clawback must be APPROVED or PENDING_APPROVAL to waive" }); return;
+      if (!["APPROVED", "PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(cb.status)) {
+        res.status(400).json({ error: "Clawback must be APPROVED, PENDING_APPROVAL, or CHANGES_REQUESTED to waive" }); return;
       }
+      if (!waiveReason?.trim()) { res.status(400).json({ error: "waiveReason is required when waiving a clawback" }); return; }
+
+      // Remove pending wallet tx — waived means no deduction
+      if (cb.walletPendingTxId) {
+        await prisma.walletTransaction.delete({ where: { id: cb.walletPendingTxId } }).catch(() => {});
+      }
+
+      // Mark any remaining PENDING steps as WAIVED
+      await prisma.clawbackApprovalStep.updateMany({
+        where: { clawbackId: cb.id, status: "PENDING" },
+        data:  { status: "WAIVED" },
+      });
 
       const updated = await prisma.commissionClawback.update({
         where:   { id: cb.id },
-        data:    { status: "WAIVED", waiveReason: waiveReason?.trim() ?? null },
+        data:    { status: "WAIVED", waiveReason: waiveReason.trim(), walletPendingTxId: null },
         include: clawbackInclude,
       });
 
@@ -362,21 +615,42 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           tenantId:   req.user!.tenantId,
           userId:     execId,
           title:      "Clawback Waived",
-          message:    `Your commission clawback for "${eventTitle}" has been waived.${waiveReason ? ` Reason: ${waiveReason.trim().slice(0, 100)}` : ""}`,
+          message:    `Your commission clawback for "${eventTitle}" has been waived. Reason: ${waiveReason.trim().slice(0, 150)}`,
           type:       "CLAWBACK_WAIVED",
           readStatus: false,
         },
       }).catch(() => {});
 
+      // Audit log required per business spec
+      await prisma.auditLog.create({
+        data: {
+          tenantId:   req.user!.tenantId,
+          userId:     req.user!.userId,
+          action:     "CLAWBACK_WAIVED",
+          entityType: "CommissionClawback",
+          entityId:   cb.id,
+          newValue:   JSON.stringify({ status: "WAIVED", waiveReason: waiveReason.trim() }),
+        },
+      });
+
       res.json(clawbackToResponse(updated)); return;
     }
 
-    // ── DISPUTE (APPROVED → DISPUTED) ────────────────────────────────────────
+    // ── DISPUTE — freezes recovery until resolved ─────────────────────────────
     if (action === "DISPUTE") {
-      if (cb.status !== "APPROVED") { res.status(400).json({ error: "Only APPROVED clawbacks can be disputed" }); return; }
-      // Sales exec can dispute their own; admin/manager can also dispute
+      if (!["APPROVED", "PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(cb.status)) {
+        res.status(400).json({ error: "Only APPROVED or PENDING_APPROVAL clawbacks can be disputed" }); return;
+      }
       const canDispute = cb.salesExecutiveId === req.user!.userId || managerRoles.includes(req.user!.role);
       if (!canDispute) { res.status(403).json({ error: "Forbidden" }); return; }
+
+      // Mark current step as DISPUTED if in approval flow
+      if (cb.approvalCurrentStep != null) {
+        await prisma.clawbackApprovalStep.updateMany({
+          where: { clawbackId: cb.id, stepOrder: cb.approvalCurrentStep },
+          data:  { status: "DISPUTED" },
+        });
+      }
 
       const updated = await prisma.commissionClawback.update({
         where:   { id: cb.id },
@@ -389,11 +663,59 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           tenantId:   req.user!.tenantId,
           userId:     cb.createdById,
           title:      "Clawback Disputed",
-          message:    `${actorName} has disputed the clawback for "${eventTitle}".${disputeNote ? ` Note: ${disputeNote.trim().slice(0, 100)}` : ""}`,
+          message:    `${actorName} has disputed the clawback for "${eventTitle}". Recovery is frozen until resolved.${disputeNote ? ` Note: ${disputeNote.trim().slice(0, 100)}` : ""}`,
           type:       "CLAWBACK_DISPUTED",
           readStatus: false,
         },
       }).catch(() => {});
+
+      res.json(clawbackToResponse(updated)); return;
+    }
+
+    // ── REQUEST_CHANGES — send back for revision ──────────────────────────────
+    if (action === "REQUEST_CHANGES") {
+      if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
+      if (cb.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only PENDING_APPROVAL clawbacks can have changes requested" }); return; }
+
+      // Mark current step as CHANGES_REQUESTED
+      if (cb.approvalCurrentStep != null) {
+        await prisma.clawbackApprovalStep.updateMany({
+          where: { clawbackId: cb.id, stepOrder: cb.approvalCurrentStep },
+          data:  { status: "CHANGES_REQUESTED", comments: notes?.trim() ?? null },
+        });
+      }
+
+      const updated = await prisma.commissionClawback.update({
+        where:   { id: cb.id },
+        data:    { status: "CHANGES_REQUESTED", ...(notes && { notes: notes.trim() }) },
+        include: clawbackInclude,
+      });
+
+      // Notify creator
+      await prisma.notification.create({
+        data: {
+          tenantId:   req.user!.tenantId,
+          userId:     cb.createdById,
+          title:      "Clawback Changes Requested",
+          message:    `Changes have been requested on the clawback for "${eventTitle}".${notes ? ` Notes: ${notes.trim().slice(0, 100)}` : ""}`,
+          type:       "CLAWBACK_CHANGES_REQUESTED",
+          readStatus: false,
+        },
+      }).catch(() => {});
+
+      // Notify sales exec
+      if (execId !== cb.createdById) {
+        await prisma.notification.create({
+          data: {
+            tenantId:   req.user!.tenantId,
+            userId:     execId,
+            title:      "Clawback Under Review",
+            message:    `The clawback for "${eventTitle}" requires changes before it can proceed.${notes ? ` Notes: ${notes.trim().slice(0, 100)}` : ""}`,
+            type:       "CLAWBACK_CHANGES_REQUESTED",
+            readStatus: false,
+          },
+        }).catch(() => {});
+      }
 
       res.json(clawbackToResponse(updated)); return;
     }

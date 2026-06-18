@@ -52,6 +52,9 @@ interface Clawback {
   approvedByName: string | null;
   createdAt: string;
   recoveries: Recovery[];
+  approvalSteps: ApprovalStep[];
+  approvalCurrentStep: number | null;
+  walletPendingTxId: string | null;
 }
 
 interface Recovery {
@@ -60,6 +63,17 @@ interface Recovery {
   amount: number;
   description: string | null;
   createdAt: string;
+}
+
+interface ApprovalStep {
+  id: string;
+  stepOrder: number;
+  stepName: string;
+  approverRole: string;
+  status: string;
+  comments: string | null;
+  approvedById: string | null;
+  approvedAt: string | null;
 }
 
 interface CommissionEventOption {
@@ -106,13 +120,25 @@ const RECOVERY_LABELS: Record<string, string> = {
 };
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  DRAFT:            { label: "Draft",            cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" },
-  PENDING_APPROVAL: { label: "Pending Approval", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
-  APPROVED:         { label: "Approved",         cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  DECLINED:         { label: "Declined",         cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
-  WAIVED:           { label: "Waived",           cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" },
-  DISPUTED:         { label: "Disputed",         cls: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
-  EXECUTED:         { label: "Executed",         cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
+  DRAFT:             { label: "Draft",             cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" },
+  PENDING_APPROVAL:  { label: "Pending Approval",  cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+  APPROVED:          { label: "Approved",          cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  DECLINED:          { label: "Declined",          cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  CANCELLED:         { label: "Cancelled",         cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
+  WAIVED:            { label: "Waived",            cls: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" },
+  DISPUTED:          { label: "Disputed",          cls: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
+  EXECUTED:          { label: "Executed",          cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
+  CHANGES_REQUESTED: { label: "Changes Requested", cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300" },
+};
+
+const STEP_STATUS_CONFIG: Record<string, { label: string; icon: string; cls: string }> = {
+  PENDING:           { label: "Pending",           icon: "●", cls: "text-muted-foreground" },
+  APPROVED:          { label: "Approved",          icon: "✓", cls: "text-green-600 dark:text-green-400" },
+  REJECTED:          { label: "Rejected",          icon: "✕", cls: "text-red-600 dark:text-red-400" },
+  WAIVED:            { label: "Waived",            icon: "~", cls: "text-purple-600 dark:text-purple-400" },
+  DISPUTED:          { label: "Disputed",          icon: "!", cls: "text-orange-600 dark:text-orange-400" },
+  CHANGES_REQUESTED: { label: "Changes Requested", icon: "↩", cls: "text-yellow-600 dark:text-yellow-500" },
+  SKIPPED:           { label: "Skipped",           icon: "»", cls: "text-muted-foreground" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -587,12 +613,17 @@ function DetailModal({
   const [disputeNote, setDisputeNote] = useState("");
   const [waiveReason, setWaiveReason] = useState("");
   const [declineNote, setDeclineNote] = useState("");
+  const [changesNote, setChangesNote] = useState("");
   const [showDisputeInput, setShowDisputeInput] = useState(false);
   const [showWaiveInput, setShowWaiveInput] = useState(false);
   const [showDeclineInput, setShowDeclineInput] = useState(false);
+  const [showChangesInput, setShowChangesInput] = useState(false);
 
   useEffect(() => {
-    if (clawback) { setDisputeNote(""); setWaiveReason(""); setDeclineNote(""); setShowDisputeInput(false); setShowWaiveInput(false); setShowDeclineInput(false); }
+    if (clawback) {
+      setDisputeNote(""); setWaiveReason(""); setDeclineNote(""); setChangesNote("");
+      setShowDisputeInput(false); setShowWaiveInput(false); setShowDeclineInput(false); setShowChangesInput(false);
+    }
   }, [clawback?.id]);
 
   if (!clawback) return null;
@@ -610,11 +641,12 @@ function DetailModal({
         throw new Error(err.error ?? "Action failed");
       }
       const msgs: Record<string, string> = {
-        SUBMIT:  "Submitted for approval.",
-        APPROVE: "Clawback approved.",
-        DECLINE: "Clawback declined.",
-        WAIVE:   "Clawback waived.",
-        DISPUTE: "Dispute recorded.",
+        SUBMIT:          "Submitted for approval.",
+        APPROVE:         "Step approved — clawback advancing.",
+        DECLINE:         "Clawback rejected and cancelled.",
+        WAIVE:           "Clawback waived.",
+        DISPUTE:         "Dispute recorded. Recovery is frozen.",
+        REQUEST_CHANGES: "Changes requested.",
       };
       toast({ title: msgs[action] ?? "Done" });
       onUpdated(); onClose();
@@ -736,8 +768,49 @@ function DetailModal({
             </div>
           )}
 
+          {/* Approval Steps Timeline */}
+          {clawback.approvalSteps.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Approval Workflow</p>
+              <div className="rounded-lg border border-border bg-muted/20 divide-y divide-border/50">
+                {clawback.approvalSteps.map((step, i) => {
+                  const scfg = STEP_STATUS_CONFIG[step.status] ?? { label: step.status, icon: "●", cls: "text-muted-foreground" };
+                  const isActive = step.stepOrder === clawback.approvalCurrentStep;
+                  return (
+                    <div key={step.id} className={`flex items-start gap-3 px-3 py-2.5 text-sm ${isActive ? "bg-amber-50/60 dark:bg-amber-900/10" : ""}`}>
+                      <div className="flex flex-col items-center gap-0.5 shrink-0 mt-0.5">
+                        <span className={`text-base font-bold leading-none ${scfg.cls}`}>{scfg.icon}</span>
+                        {i < clawback.approvalSteps.length - 1 && <div className="w-px h-3 bg-border mt-0.5" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`font-medium truncate ${isActive ? "text-amber-700 dark:text-amber-400" : "text-foreground"}`}>
+                            {step.stepOrder}. {step.stepName}
+                          </span>
+                          <span className={`text-xs shrink-0 ${scfg.cls}`}>{scfg.label}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{step.approverRole.replace(/_/g, " ")}</p>
+                        {step.comments && <p className="text-xs text-muted-foreground mt-0.5 italic">"{step.comments}"</p>}
+                        {step.approvedAt && <p className="text-[10px] text-muted-foreground">{new Date(step.approvedAt).toLocaleDateString()}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Potential clawback wallet notice */}
+          {clawback.walletPendingTxId && (
+            <div className="flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>This clawback is showing as a <strong>Potential Clawback</strong> in the sales executive's wallet until resolved.</span>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="space-y-2 pt-1">
+            {/* Submit (DRAFT) */}
             {canManage && clawback.status === "DRAFT" && (
               <Button className="w-full gap-1.5" onClick={() => doAction("SUBMIT")} disabled={busy}>
                 {actionLoading === "SUBMIT" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -745,57 +818,113 @@ function DetailModal({
               </Button>
             )}
 
-            {canManage && clawback.status === "PENDING_APPROVAL" && (
-              <div className="flex gap-2">
-                <Button className="flex-1 gap-1.5 bg-green-600 hover:bg-green-700 text-white" onClick={() => doAction("APPROVE")} disabled={busy}>
-                  {actionLoading === "APPROVE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Approve
-                </Button>
-                <Button variant="outline" className="flex-1 gap-1.5 border-red-400 text-red-700 hover:bg-red-50" onClick={() => setShowDeclineInput(!showDeclineInput)} disabled={busy}>
-                  <XCircle className="h-4 w-4" /> Decline
-                </Button>
-                <Button variant="outline" className="flex-1 gap-1.5 border-purple-400 text-purple-700 hover:bg-purple-50" onClick={() => setShowWaiveInput(!showWaiveInput)} disabled={busy}>
-                  <Scale className="h-4 w-4" /> Waive
-                </Button>
-              </div>
-            )}
-
-            {showDeclineInput && (
-              <div className="space-y-1.5">
-                <Textarea placeholder="Reason for declining…" value={declineNote} onChange={(e) => setDeclineNote(e.target.value)} rows={2} />
-                <Button variant="outline" className="w-full border-red-400 text-red-700 hover:bg-red-50" onClick={() => doAction("DECLINE", { notes: declineNote })} disabled={busy || !declineNote.trim()}>
-                  Confirm Decline
-                </Button>
-              </div>
-            )}
-
-            {showWaiveInput && (
-              <div className="space-y-1.5">
-                <Textarea placeholder="Reason for waiving…" value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} rows={2} />
-                <Button variant="outline" className="w-full border-purple-400 text-purple-700 hover:bg-purple-50" onClick={() => doAction("WAIVE", { waiveReason })} disabled={busy || !waiveReason.trim()}>
-                  Confirm Waive
-                </Button>
-              </div>
-            )}
-
-            {clawback.status === "APPROVED" && (
-              <div className="space-y-1.5">
-                {!showDisputeInput ? (
-                  <Button variant="outline" className="w-full gap-1.5 border-orange-400 text-orange-700 hover:bg-orange-50" onClick={() => setShowDisputeInput(true)} disabled={busy}>
-                    <MessageSquare className="h-4 w-4" /> Dispute This Clawback
+            {/* Primary approval actions (PENDING_APPROVAL or CHANGES_REQUESTED) */}
+            {canManage && ["PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(clawback.status) && (
+              <>
+                <div className="flex gap-2 flex-wrap">
+                  <Button className="flex-1 min-w-[100px] gap-1.5 bg-green-600 hover:bg-green-700 text-white" onClick={() => doAction("APPROVE")} disabled={busy}>
+                    {actionLoading === "APPROVE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Approve Step
                   </Button>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Textarea placeholder="Explain why you're disputing this clawback…" value={disputeNote} onChange={(e) => setDisputeNote(e.target.value)} rows={2} />
-                    <div className="flex gap-2">
-                      <Button className="flex-1 border-orange-400 bg-orange-600 hover:bg-orange-700 text-white gap-1.5" onClick={() => doAction("DISPUTE", { disputeNote })} disabled={busy || !disputeNote.trim()}>
-                        {actionLoading === "DISPUTE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
-                        Submit Dispute
-                      </Button>
-                      <Button variant="outline" onClick={() => setShowDisputeInput(false)} disabled={busy}>Cancel</Button>
-                    </div>
-                  </div>
-                )}
+                  <Button variant="outline" className="flex-1 min-w-[90px] gap-1.5 border-yellow-400 text-yellow-700 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:bg-yellow-900/20"
+                    onClick={() => { setShowChangesInput(!showChangesInput); setShowDeclineInput(false); setShowWaiveInput(false); setShowDisputeInput(false); }} disabled={busy}>
+                    <RotateCcw className="h-4 w-4" /> Request Changes
+                  </Button>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button variant="outline" className="flex-1 min-w-[90px] gap-1.5 border-red-400 text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                    onClick={() => { setShowDeclineInput(!showDeclineInput); setShowChangesInput(false); setShowWaiveInput(false); setShowDisputeInput(false); }} disabled={busy}>
+                    <XCircle className="h-4 w-4" /> Reject
+                  </Button>
+                  <Button variant="outline" className="flex-1 min-w-[90px] gap-1.5 border-purple-400 text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20"
+                    onClick={() => { setShowWaiveInput(!showWaiveInput); setShowDeclineInput(false); setShowChangesInput(false); setShowDisputeInput(false); }} disabled={busy}>
+                    <Scale className="h-4 w-4" /> Waive
+                  </Button>
+                  <Button variant="outline" className="flex-1 min-w-[90px] gap-1.5 border-orange-400 text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                    onClick={() => { setShowDisputeInput(!showDisputeInput); setShowDeclineInput(false); setShowChangesInput(false); setShowWaiveInput(false); }} disabled={busy}>
+                    <MessageSquare className="h-4 w-4" /> Dispute
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Dispute available on APPROVED too */}
+            {clawback.status === "APPROVED" && (
+              <Button variant="outline" className="w-full gap-1.5 border-orange-400 text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                onClick={() => setShowDisputeInput(!showDisputeInput)} disabled={busy}>
+                <MessageSquare className="h-4 w-4" /> Dispute This Clawback
+              </Button>
+            )}
+
+            {/* Waive available on APPROVED too */}
+            {canManage && clawback.status === "APPROVED" && (
+              <Button variant="outline" className="w-full gap-1.5 border-purple-400 text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20"
+                onClick={() => setShowWaiveInput(!showWaiveInput)} disabled={busy}>
+                <Scale className="h-4 w-4" /> Waive Clawback
+              </Button>
+            )}
+
+            {/* Request Changes input */}
+            {showChangesInput && (
+              <div className="space-y-1.5 rounded-md border border-yellow-200 dark:border-yellow-700/40 bg-yellow-50/50 dark:bg-yellow-900/10 p-2.5">
+                <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">Describe what needs to change</p>
+                <Textarea placeholder="What changes are required?" value={changesNote} onChange={(e) => setChangesNote(e.target.value)} rows={2} className="text-sm" />
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 border-yellow-400 text-yellow-700 hover:bg-yellow-100 dark:text-yellow-400"
+                    onClick={() => doAction("REQUEST_CHANGES", { notes: changesNote })} disabled={busy || !changesNote.trim()}>
+                    {actionLoading === "REQUEST_CHANGES" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    Send Back for Changes
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowChangesInput(false)} disabled={busy}>Cancel</Button>
+                </div>
+              </div>
+            )}
+
+            {/* Decline/Reject input */}
+            {showDeclineInput && (
+              <div className="space-y-1.5 rounded-md border border-red-200 dark:border-red-700/40 bg-red-50/50 dark:bg-red-900/10 p-2.5">
+                <p className="text-xs font-medium text-red-700 dark:text-red-400">Reason for rejection (required)</p>
+                <Textarea placeholder="Reason for rejecting this clawback…" value={declineNote} onChange={(e) => setDeclineNote(e.target.value)} rows={2} className="text-sm" />
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 border-red-400 text-red-700 hover:bg-red-100 dark:text-red-400"
+                    onClick={() => doAction("DECLINE", { notes: declineNote })} disabled={busy || !declineNote.trim()}>
+                    {actionLoading === "DECLINE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                    Confirm Rejection
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowDeclineInput(false)} disabled={busy}>Cancel</Button>
+                </div>
+              </div>
+            )}
+
+            {/* Waive input */}
+            {showWaiveInput && (
+              <div className="space-y-1.5 rounded-md border border-purple-200 dark:border-purple-700/40 bg-purple-50/50 dark:bg-purple-900/10 p-2.5">
+                <p className="text-xs font-medium text-purple-700 dark:text-purple-400">Waive reason (required)</p>
+                <Textarea placeholder="Why is this clawback being waived?" value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} rows={2} className="text-sm" />
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 border-purple-400 text-purple-700 hover:bg-purple-100 dark:text-purple-400"
+                    onClick={() => doAction("WAIVE", { waiveReason })} disabled={busy || !waiveReason.trim()}>
+                    {actionLoading === "WAIVE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}
+                    Confirm Waive
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowWaiveInput(false)} disabled={busy}>Cancel</Button>
+                </div>
+              </div>
+            )}
+
+            {/* Dispute input */}
+            {showDisputeInput && (
+              <div className="space-y-1.5 rounded-md border border-orange-200 dark:border-orange-700/40 bg-orange-50/50 dark:bg-orange-900/10 p-2.5">
+                <p className="text-xs font-medium text-orange-700 dark:text-orange-400">Dispute note (required)</p>
+                <Textarea placeholder="Explain why you're disputing this clawback…" value={disputeNote} onChange={(e) => setDisputeNote(e.target.value)} rows={2} className="text-sm" />
+                <div className="flex gap-2">
+                  <Button className="flex-1 bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
+                    onClick={() => doAction("DISPUTE", { disputeNote })} disabled={busy || !disputeNote.trim()}>
+                    {actionLoading === "DISPUTE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                    Submit Dispute
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowDisputeInput(false)} disabled={busy}>Cancel</Button>
+                </div>
               </div>
             )}
           </div>

@@ -96,6 +96,7 @@ enum TransactionType {
   COMMISSION_SPLIT_CREDIT
   CLAWBACK_DEDUCTION
   FUTURE_OFFSET_APPLIED
+  CLAWBACK_PENDING
 }
 
 enum ClawbackType {
@@ -126,6 +127,18 @@ enum ClawbackStatus {
   WAIVED
   DISPUTED
   EXECUTED
+  CHANGES_REQUESTED
+  CANCELLED
+}
+
+enum ClawbackStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WAIVED
+  DISPUTED
+  CHANGES_REQUESTED
+  SKIPPED
 }
 
 enum RecoveryMethod {
@@ -209,6 +222,9 @@ enum NotificationType {
   CLAWBACK_EXECUTED
   CLAWBACK_WAIVED
   CLAWBACK_DISPUTED
+  CLAWBACK_CHANGES_REQUESTED
+  CLAWBACK_STEP_APPROVED
+  CLAWBACK_CANCELLED
   SYSTEM
 }
 
@@ -265,6 +281,8 @@ model Tenant {
   recoveryTransactions     CommissionRecoveryTransaction[]
   commissionComponents     CommissionComponent[]
   clawbackPolicies         ClawbackPolicy[]
+  clawbackApprovalSteps    ClawbackApprovalStep[]
+  clawbackApprovalConfigs  ClawbackApprovalConfig[]
 }
 
 model User {
@@ -304,6 +322,7 @@ model User {
   adjustmentsCreated          CommissionAdjustment[]    @relation("AdjustmentCreatedBy")
   adjustmentsApproved         CommissionAdjustment[]    @relation("AdjustmentApprovedBy")
   adjustmentsAsExecutive      CommissionAdjustment[]    @relation("AdjustmentSalesExecutive")
+  clawbackStepsApproved       ClawbackApprovalStep[]    @relation("ClawbackStepApprovedBy")
 
   @@unique([tenantId, email])
 }
@@ -847,15 +866,18 @@ model CommissionClawback {
   executedAt               DateTime?
   createdById              String
   approvedById             String?
+  approvalCurrentStep      Int?
+  walletPendingTxId        String?
   createdAt                DateTime               @default(now())
   updatedAt                DateTime               @updatedAt
 
-  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  commissionEvent CommissionEvent     @relation(fields: [commissionEventId], references: [id])
-  salesExecutive  User                @relation("ClawbackSalesExec", fields: [salesExecutiveId], references: [id])
-  createdBy       User                @relation("ClawbackCreatedBy", fields: [createdById], references: [id])
-  approvedBy      User?               @relation("ClawbackApprovedBy", fields: [approvedById], references: [id])
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent      @relation(fields: [commissionEventId], references: [id])
+  salesExecutive  User                 @relation("ClawbackSalesExec", fields: [salesExecutiveId], references: [id])
+  createdBy       User                 @relation("ClawbackCreatedBy", fields: [createdById], references: [id])
+  approvedBy      User?                @relation("ClawbackApprovedBy", fields: [approvedById], references: [id])
   recoveries      ClawbackRecovery[]
+  approvalSteps   ClawbackApprovalStep[]
 }
 
 model ClawbackRecovery {
@@ -872,6 +894,43 @@ model ClawbackRecovery {
   tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   clawback  CommissionClawback @relation(fields: [clawbackId], references: [id], onDelete: Cascade)
   createdBy User               @relation("RecoveryCreatedBy", fields: [createdById], references: [id])
+}
+
+// ─── Clawback Approval Workflow ───────────────────────────────────────────────
+
+model ClawbackApprovalStep {
+  id           String             @id @default(cuid())
+  tenantId     String
+  clawbackId   String
+  stepOrder    Int
+  stepName     String
+  approverRole UserRole
+  status       ClawbackStepStatus @default(PENDING)
+  comments     String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clawback   CommissionClawback @relation(fields: [clawbackId], references: [id], onDelete: Cascade)
+  approvedBy User?              @relation("ClawbackStepApprovedBy", fields: [approvedById], references: [id])
+}
+
+model ClawbackApprovalConfig {
+  id              String   @id @default(cuid())
+  tenantId        String
+  stepOrder       Int
+  stepName        String
+  approverRole    UserRole
+  thresholdAmount Decimal? @db.Decimal(15, 2)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, stepOrder])
 }
 
 // ─── Commission Adjustment / Recovery ────────────────────────────────────────
