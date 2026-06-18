@@ -1,10 +1,12 @@
 import Approvals from "./approvals";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 
 export default function FinalApprovals() {
+  const indCfg = useIndustryConfig();
   return (
     <Approvals
       title="Executive Approvals"
-      description="Deals requiring final executive sign-off before commission is credited"
+      description={`${indCfg.eventLabelPlural} requiring final executive sign-off before commission is credited`}
     />
   );
 }

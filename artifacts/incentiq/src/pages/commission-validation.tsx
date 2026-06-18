@@ -1,4 +1,5 @@
 import { useListDeals } from "@workspace/api-client-react";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,6 +8,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { ListChecks, AlertTriangle, CheckCircle2, DollarSign } from "lucide-react";
 
 export default function CommissionValidation() {
+  const indCfg = useIndustryConfig();
   const { data: dealsData, isLoading } = useListDeals({ status: "MANAGER_APPROVED", limit: 100 });
   const deals = dealsData?.data ?? [];
   const totalCommission = deals.reduce((s: number, d: any) => s + (d.commission ?? 0), 0);
@@ -38,8 +40,8 @@ export default function CommissionValidation() {
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>Deals Pending Finance Validation</CardTitle>
-          <CardDescription>Manager-approved deals that require finance verification of GP and commission</CardDescription>
+          <CardTitle>{indCfg.eventLabelPlural} Pending Finance Validation</CardTitle>
+          <CardDescription>Manager-approved {indCfg.eventLabelPlural.toLowerCase()} that require finance verification of GP and commission</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (

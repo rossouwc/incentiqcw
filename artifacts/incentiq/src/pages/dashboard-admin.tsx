@@ -2,6 +2,7 @@ import {
   useListUsers, useListDeals, useListApprovals, useListPayouts,
   useGetCommissionTrend, useGetCommissionByType, useGetDealsReport,
 } from "@workspace/api-client-react";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +35,7 @@ export default function AdminDashboard() {
   const { data: byType,      isLoading: loadingByType }   = useGetCommissionByType();
   const { data: report,      isLoading: loadingReport }   = useGetDealsReport();
 
+  const indCfg          = useIndustryConfig();
   const salesExecs      = (allUsers ?? []).filter(u => u.role === "SALES_EXECUTIVE");
   const totalDeals      = dealsPage?.total ?? 0;
   const approvalList    = pendingApprovals ?? [];
@@ -111,7 +113,7 @@ export default function AdminDashboard() {
         <StatCard
           title="Total Gross Profit"
           value={formatCurrency(report?.totalGrossProfit ?? 0)}
-          sub={`${report?.totalDeals ?? 0} deals total`}
+          sub={`${report?.totalDeals ?? 0} ${indCfg.eventLabelPlural.toLowerCase()} total`}
           icon={TrendingUp}
           accent="border-l-indigo-400"
           loading={loadingReport}

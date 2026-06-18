@@ -1,6 +1,7 @@
 import {
   useListDeals, useListApprovals, useGetCommissionTrend, useGetMyTasks, useListUsers,
 } from "@workspace/api-client-react";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +16,7 @@ import {
 } from "recharts";
 
 export default function ManagerDashboard() {
+  const indCfg = useIndustryConfig();
   const { data: dealsPage,        isLoading: loadingDeals     } = useListDeals();
   const { data: pendingApprovals, isLoading: loadingApprovals } = useListApprovals({ status: "PENDING" });
   const { data: trend,            isLoading: loadingTrend     } = useGetCommissionTrend();
@@ -55,7 +57,7 @@ export default function ManagerDashboard() {
           loading={loadingUsers}
         />
         <StatCard
-          title="Team Deals"
+          title={`Team ${indCfg.eventLabelPlural}`}
           value={dealsPage?.total ?? 0}
           sub="total submissions"
           icon={Briefcase}
@@ -177,8 +179,8 @@ export default function ManagerDashboard() {
       <Card className="shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Team Deals</CardTitle>
-            <CardDescription>Recent deals submitted by your sales team</CardDescription>
+            <CardTitle>Team {indCfg.eventLabelPlural}</CardTitle>
+            <CardDescription>Recent {indCfg.eventLabelPlural.toLowerCase()} submitted by your sales team</CardDescription>
           </div>
           <Button variant="ghost" size="sm" asChild>
             <a href="/team-deals" className="flex items-center gap-1.5 text-sm">View All <ArrowRight className="h-3.5 w-3.5" /></a>

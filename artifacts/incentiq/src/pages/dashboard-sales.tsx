@@ -2,6 +2,7 @@ import {
   useGetDashboardSummary, useGetCommissionTrend, useGetRecentActivity,
   useGetMyTasks, useListDeals,
 } from "@workspace/api-client-react";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +18,7 @@ import {
 } from "recharts";
 
 export default function SalesDashboard() {
+  const indCfg = useIndustryConfig();
   const { data: summary,      isLoading: loadingSummary }  = useGetDashboardSummary();
   const { data: trend,        isLoading: loadingTrend }    = useGetCommissionTrend();
   const { data: recentActivity, isLoading: loadingActivity } = useGetRecentActivity();
@@ -182,7 +184,7 @@ export default function SalesDashboard() {
       <Card className="shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>My Deals This Month</CardTitle>
+            <CardTitle>My {indCfg.eventLabelPlural} This Month</CardTitle>
             <CardDescription>Your most recent deal submissions</CardDescription>
           </div>
           <Button variant="ghost" size="sm" asChild>

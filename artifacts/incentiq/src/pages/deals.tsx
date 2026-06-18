@@ -604,22 +604,9 @@ export default function Deals() {
   const indCfg = fc ? getIndustryConfig(fc.industryCode) : null;
 
   // Plural label for the page heading
-  const entityPlural = indCfg?.eventLabelPlural ?? "Deals";
-  const entitySingular = fc?.dealEntityName ?? indCfg?.eventLabel ?? "Deal";
-
-  // ── New event names mapping ──
-  const NEW_LABEL_MAP: Record<string, string> = {
-    IT_CONSULTING:      "New Deal",
-    RECRUITMENT:        "New Placement",
-    INSURANCE:          "New Policy",
-    VEHICLE_DEALERSHIP: "New Vehicle Sale",
-    PROPERTY_SALES:     "New Property Sale",
-    RENTAL_MANAGEMENT:  "New Lease",
-    TELECOM:            "New Activation",
-    SAAS:               "New Subscription",
-    CUSTOM:             "New Commission Event",
-  };
-  const newLabel = fc ? (NEW_LABEL_MAP[fc.industryCode] ?? `New ${entitySingular}`) : "New Deal";
+  const entityPlural   = indCfg?.eventLabelPlural ?? "Deals";
+  const entitySingular = indCfg?.eventLabel ?? "Deal";
+  const newLabel       = indCfg?.newEventLabel ?? `New ${entitySingular}`;
 
   // ── Live commission breakdown from formula engine ──
   const calcResult = useMemo<CalcResult | null>(() => {
@@ -802,7 +789,7 @@ export default function Deals() {
           { label: `Total ${entityPlural}`, value: String(stats.total),             icon: Briefcase,  accent: "border-l-primary" },
           { label: "Drafts",                value: String(stats.draft),             icon: Clock,      accent: "border-l-slate-400" },
           { label: "In Approval",           value: String(stats.pending),           icon: TrendingUp, accent: "border-l-amber-400" },
-          { label: "My Commission",         value: formatCurrency(stats.totalComm), icon: DollarSign, accent: "border-l-emerald-500" },
+          { label: `My ${indCfg?.commissionLabel ?? "Commission"}`, value: formatCurrency(stats.totalComm), icon: DollarSign, accent: "border-l-emerald-500" },
         ].map((s) => (
           <Card key={s.label} className={`border-l-4 ${s.accent} shadow-sm`}>
             <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
@@ -825,7 +812,7 @@ export default function Deals() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder={`Search ${entityPlural.toLowerCase()} or customer…`}
+                placeholder={`Search ${entityPlural.toLowerCase()} or ${(indCfg?.customerLabel ?? "customer").toLowerCase()}…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -856,11 +843,11 @@ export default function Deals() {
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                   <tr>
-                    <th className="px-6 py-3 font-medium">{entitySingular}</th>
+                    <th className="px-6 py-3 font-medium">{indCfg?.titleLabel ?? entitySingular}</th>
                     <th className="px-6 py-3 font-medium">Type</th>
-                    <th className="px-6 py-3 font-medium text-right">{fc?.revenueLabel ?? "Revenue"}</th>
-                    {fc?.showGP && <th className="px-6 py-3 font-medium text-right">GP</th>}
-                    <th className="px-6 py-3 font-medium text-right">Commission</th>
+                    <th className="px-6 py-3 font-medium text-right">{indCfg?.revenueLabel ?? fc?.revenueLabel ?? "Revenue"}</th>
+                    {fc?.showGP && <th className="px-6 py-3 font-medium text-right">{indCfg?.gpLabel ?? "GP"}</th>}
+                    <th className="px-6 py-3 font-medium text-right">{indCfg?.commissionLabel ?? "Commission"}</th>
                     <th className="px-6 py-3 font-medium">Status</th>
                     <th className="px-6 py-3 font-medium">Date</th>
                     <th className="px-6 py-3 font-medium text-right">Actions</th>
@@ -1005,13 +992,13 @@ export default function Deals() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <Label htmlFor="event-title">
-                        {entitySingular} Title <span className="text-destructive">*</span>
+                        {indCfg?.titleLabel ?? entitySingular} <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="event-title"
                         value={eventTitle}
                         onChange={(e) => setEventTitle(e.target.value)}
-                        placeholder={`e.g. ${entitySingular} for Acme Corp`}
+                        placeholder={`e.g. ${indCfg?.titleLabel ?? entitySingular} for Acme Corp`}
                       />
                     </div>
                     <div className="space-y-1.5">

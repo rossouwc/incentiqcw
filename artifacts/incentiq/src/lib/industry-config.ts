@@ -17,7 +17,12 @@ export interface IndustryConfig {
   label: string;
   eventLabel: string;
   eventLabelPlural: string;
+  newEventLabel: string;
+  titleLabel: string;
+  customerLabel: string;
   entityLabel: string;
+  gpLabel: string;
+  commissionLabel: string;
   eventTypes: EventType[];
   revenueLabel: string;
   costLabel: string | null;
@@ -33,7 +38,12 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "IT Consulting",
     eventLabel: "Deal",
     eventLabelPlural: "Deals",
+    newEventLabel: "New Deal",
+    titleLabel: "Deal Name",
+    customerLabel: "Customer",
     entityLabel: "Customer",
+    gpLabel: "GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "NET_NEW",    label: "Net New" },
       { value: "RENEWAL",    label: "Renewal" },
@@ -52,7 +62,12 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "Recruitment",
     eventLabel: "Placement",
     eventLabelPlural: "Placements",
+    newEventLabel: "New Placement",
+    titleLabel: "Candidate",
+    customerLabel: "Client",
     entityLabel: "Client",
+    gpLabel: "GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "PERMANENT",  label: "Permanent" },
       { value: "CONTRACT",   label: "Contract" },
@@ -73,14 +88,19 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "Insurance",
     eventLabel: "Policy",
     eventLabelPlural: "Policies",
+    newEventLabel: "New Policy",
+    titleLabel: "Client",
+    customerLabel: "Product",
     entityLabel: "Insured / Client",
+    gpLabel: "GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "LIFE",       label: "Life" },
       { value: "SHORT_TERM", label: "Short-Term" },
       { value: "HEALTH",     label: "Health" },
       { value: "COMMERCIAL", label: "Commercial" },
     ],
-    revenueLabel: "Annual Premium",
+    revenueLabel: "Premium",
     costLabel: null,
     showGP: false,
     commissionMethodLabel: "Percentage of Annual Premium",
@@ -95,7 +115,12 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "Vehicle Dealership",
     eventLabel: "Vehicle Sale",
     eventLabelPlural: "Vehicle Sales",
+    newEventLabel: "New Vehicle Sale",
+    titleLabel: "Vehicle",
+    customerLabel: "Customer",
     entityLabel: "Buyer",
+    gpLabel: "Vehicle GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "NEW",  label: "New Vehicle" },
       { value: "USED", label: "Used Vehicle" },
@@ -116,7 +141,12 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "Property Sales",
     eventLabel: "Property Sale",
     eventLabelPlural: "Property Sales",
+    newEventLabel: "New Property Sale",
+    titleLabel: "Property",
+    customerLabel: "Buyer",
     entityLabel: "Buyer",
+    gpLabel: "GP",
+    commissionLabel: "Agent Commission",
     eventTypes: [
       { value: "RESIDENTIAL",  label: "Residential" },
       { value: "COMMERCIAL",   label: "Commercial" },
@@ -137,16 +167,21 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "Rental Management",
     eventLabel: "Lease",
     eventLabelPlural: "Leases",
+    newEventLabel: "New Lease",
+    titleLabel: "Property",
+    customerLabel: "Tenant",
     entityLabel: "Tenant",
+    gpLabel: "GP",
+    commissionLabel: "Placement Fee",
     eventTypes: [
       { value: "RESIDENTIAL", label: "Residential" },
       { value: "COMMERCIAL",  label: "Commercial" },
       { value: "INDUSTRIAL",  label: "Industrial" },
     ],
-    revenueLabel: "Monthly Rent",
+    revenueLabel: "Monthly Rental",
     costLabel: null,
     showGP: false,
-    commissionMethodLabel: "Percentage of Monthly Rent",
+    commissionMethodLabel: "Percentage of Monthly Rental",
     triggerLabel: "Commission earned on lease signing",
     extraFields: [
       { key: "propertyAddress", label: "Property Address", type: "text", required: true, placeholder: "e.g. Unit 5, Park Mall" },
@@ -157,7 +192,12 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "Telecom",
     eventLabel: "Activation",
     eventLabelPlural: "Activations",
+    newEventLabel: "New Activation",
+    titleLabel: "Product",
+    customerLabel: "Customer",
     entityLabel: "Customer",
+    gpLabel: "GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "MOBILE",   label: "Mobile" },
       { value: "FIBRE",    label: "Fibre" },
@@ -179,16 +219,21 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     label: "SaaS",
     eventLabel: "Subscription",
     eventLabelPlural: "Subscriptions",
+    newEventLabel: "New Subscription",
+    titleLabel: "Product",
+    customerLabel: "Customer",
     entityLabel: "Company",
+    gpLabel: "GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "NEW_BUSINESS", label: "New Business" },
       { value: "EXPANSION",    label: "Expansion" },
       { value: "RENEWAL",      label: "Renewal" },
     ],
-    revenueLabel: "Annual Contract Value (ACV)",
+    revenueLabel: "ARR",
     costLabel: null,
     showGP: false,
-    commissionMethodLabel: "Percentage of ACV",
+    commissionMethodLabel: "Percentage of ARR",
     triggerLabel: "Commission earned on subscription start",
     extraFields: [
       { key: "plan", label: "Plan / Tier",               type: "text",     required: false, placeholder: "e.g. Enterprise" },
@@ -198,9 +243,14 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
   {
     id: "CUSTOM",
     label: "Custom",
-    eventLabel: "Event",
-    eventLabelPlural: "Events",
+    eventLabel: "Commission Event",
+    eventLabelPlural: "Commission Events",
+    newEventLabel: "New Commission Event",
+    titleLabel: "Commission Event",
+    customerLabel: "Client",
     entityLabel: "Client",
+    gpLabel: "GP",
+    commissionLabel: "Commission",
     eventTypes: [
       { value: "TYPE_A", label: "Type A" },
       { value: "TYPE_B", label: "Type B" },

@@ -18,6 +18,7 @@ import {
   ChevronDown, CheckSquare, DollarSign, RotateCcw, Wallet, ArrowRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -318,7 +319,9 @@ interface Props {
   description?: string;
 }
 
-export default function Approvals({ title = "Pending Approvals", description = "Deals awaiting your review and approval" }: Props) {
+export default function Approvals({ title = "Pending Approvals", description }: Props) {
+  const indCfg = useIndustryConfig();
+  const resolvedDescription = description ?? `${indCfg.eventLabelPlural} awaiting your review and approval`;
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: getListApprovalsQueryKey({ status: "PENDING" }) });
 
@@ -376,7 +379,7 @@ export default function Approvals({ title = "Pending Approvals", description = "
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div>
         <h1 className="text-3xl font-bold text-foreground">{title}</h1>
-        <p className="text-muted-foreground">{description}</p>
+        <p className="text-muted-foreground">{resolvedDescription}</p>
       </div>
 
       {/* Stats */}
@@ -483,7 +486,7 @@ export default function Approvals({ title = "Pending Approvals", description = "
       {/* Standard approvals table */}
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>Deals Pending Your Approval</CardTitle>
+          <CardTitle>{indCfg.eventLabelPlural} Pending Your Approval</CardTitle>
           <CardDescription>Click "Review" to approve, reject, or request changes with comments</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
