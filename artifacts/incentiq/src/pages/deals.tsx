@@ -23,7 +23,7 @@ import {
   Plus, Search, Trash2, SendHorizontal, Briefcase, Clock,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
   Zap, ZapOff, CheckSquare, Paperclip, ExternalLink, FileText, Link2, Upload, X,
-  UserCircle, Users, Building2, Pencil, GitPullRequestArrow,
+  UserCircle, Users, Building2, Pencil, GitPullRequestArrow, RotateCcw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -1674,6 +1674,16 @@ export default function Deals() {
                                 title="Request an amendment from the approver"
                               >
                                 <GitPullRequestArrow className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {ev.approvalStatus === "CHANGES_REQUESTED" && (
+                              <Button
+                                size="sm" variant="outline"
+                                className="h-8 gap-1 text-xs border-orange-400 text-orange-600 hover:bg-orange-50 dark:border-orange-600 dark:text-orange-400 dark:hover:bg-orange-950/30"
+                                onClick={() => handleSubmitExisting(ev)}
+                                title="Resubmit for approval after making changes"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" /> Resubmit
                               </Button>
                             )}
                             {ev.approvalStatus === "DRAFT" && (
