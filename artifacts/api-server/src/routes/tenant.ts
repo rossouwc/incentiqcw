@@ -116,4 +116,83 @@ router.patch("/payroll-config", requireAuth, requireRole(...ADMIN_ROLES), async 
   }
 });
 
+// POST /api/tenant/reset-commission-data — ADMIN+ only
+// Wipes all commission events, deals, wallets, transactions, payout requests,
+// and notifications for this tenant.  Requires body { confirm: "RESET" }.
+router.post("/reset-commission-data", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
+  const { confirm } = req.body as { confirm?: string };
+  if (confirm !== "RESET") {
+    res.status(400).json({ error: 'Body must contain { "confirm": "RESET" }' });
+    return;
+  }
+  const tenantId = req.user!.tenantId;
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Commission events (approvals + triggers cascade via FK)
+      await tx.commissionEventApproval.deleteMany({ where: { tenantId } });
+      await tx.commissionEventTrigger.deleteMany({ where: { tenantId } });
+      await tx.commissionEvent.deleteMany({ where: { tenantId } });
+
+      // Legacy deals
+      await tx.approvalWorkflow.deleteMany({ where: { tenantId } });
+      await tx.deal.deleteMany({ where: { tenantId } });
+
+      // Wallet & transactions
+      await tx.walletTransaction.deleteMany({ where: { tenantId } });
+      await tx.wallet.deleteMany({ where: { tenantId } });
+
+      // Payout requests
+      await tx.payoutRequest.deleteMany({ where: { tenantId } });
+
+      // Notifications
+      await tx.notification.deleteMany({ where: { tenantId } });
+
+      // Audit log entry for the reset itself
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          userId: req.user!.userId,
+          action: "RESET_COMMISSION_DATA",
+          entityType: "Tenant",
+          entityId: tenantId,
+          newValue: JSON.stringify({ performedBy: req.user!.userId, at: new Date().toISOString() }),
+        },
+      });
+    });
+
+    logger.warn({ tenantId, userId: req.user!.userId }, "Tenant commission data reset");
+    res.json({ message: "All commission data has been reset." });
+  } catch (err) {
+    logger.error({ err }, "ResetCommissionData error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// DELETE /api/tenant — SUPER_ADMIN only
+// Permanently deletes the entire tenant account and all associated data.
+// Requires body { confirm: "<exact company name>" }.
+router.delete("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: Request, res: Response) => {
+  const { confirm } = req.body as { confirm?: string };
+  const tenantId = req.user!.tenantId;
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+
+    if (!confirm || confirm.trim() !== tenant.companyName.trim()) {
+      res.status(400).json({ error: `Confirmation text must match the company name: "${tenant.companyName}"` });
+      return;
+    }
+
+    // Cascade delete: Prisma's onDelete: Cascade on Tenant relations handles
+    // most child records. We delete the tenant; the DB cascades the rest.
+    await prisma.tenant.delete({ where: { id: tenantId } });
+
+    logger.warn({ tenantId, companyName: tenant.companyName, userId: req.user!.userId }, "Tenant account deleted");
+    res.json({ message: "Company account has been permanently deleted." });
+  } catch (err) {
+    logger.error({ err }, "DeleteTenant error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export { router as tenantRouter };

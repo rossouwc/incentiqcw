@@ -6,18 +6,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2, Factory } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2, Factory, AlertTriangle, Trash2, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { INDUSTRY_OPTIONS, getIndustryConfig } from "@/lib/industry-config";
 
 function authHeaders() {
   const token = localStorage.getItem("incentiq_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
 
 export default function CompanySettings() {
   const { data: tenant, isLoading } = useGetTenant();
   const { toast } = useToast();
+  const { logout } = useAuth();
 
   const [payrollDay, setPayrollDay] = useState<number>(25);
   const [cutoffDay, setCutoffDay] = useState<number>(20);
@@ -25,6 +30,18 @@ export default function CompanySettings() {
   const [savingPayroll, setSavingPayroll] = useState(false);
   const [industry, setIndustry] = useState<string>("");
   const [savingIndustry, setSavingIndustry] = useState(false);
+
+  // Reset dialog state
+  const [showReset, setShowReset] = useState(false);
+  const [resetInput, setResetInput] = useState("");
+  const [resetting, setResetting] = useState(false);
+
+  // Delete dialog state
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteInput, setDeleteInput] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const companyName = (tenant as any)?.companyName ?? "";
 
   useEffect(() => {
     fetch("/api/tenant/payroll-config", { headers: authHeaders() as any })
@@ -49,7 +66,7 @@ export default function CompanySettings() {
     try {
       const res = await fetch("/api/tenant", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...(authHeaders() as any) },
+        headers: authHeaders() as any,
         body: JSON.stringify({ industry }),
       });
       if (!res.ok) throw new Error("Failed");
@@ -71,7 +88,7 @@ export default function CompanySettings() {
     try {
       const res = await fetch("/api/tenant/payroll-config", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...(authHeaders() as any) },
+        headers: authHeaders() as any,
         body: JSON.stringify({ payrollDay, commissionCutoffDay: cutoffDay }),
       });
       if (!res.ok) throw new Error("Failed");
@@ -82,6 +99,51 @@ export default function CompanySettings() {
       setSavingPayroll(false);
     }
   };
+
+  const handleReset = async () => {
+    if (resetInput !== "RESET") return;
+    setResetting(true);
+    try {
+      const res = await fetch("/api/tenant/reset-commission-data", {
+        method: "POST",
+        headers: authHeaders() as any,
+        body: JSON.stringify({ confirm: "RESET" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Failed");
+      setShowReset(false);
+      setResetInput("");
+      toast({
+        title: "Commission data reset",
+        description: "All commission events, wallets and payout data have been cleared.",
+      });
+    } catch (err: any) {
+      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleteInput.trim() !== companyName.trim()) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/tenant", {
+        method: "DELETE",
+        headers: authHeaders() as any,
+        body: JSON.stringify({ confirm: deleteInput }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Failed");
+      toast({ title: "Account deleted", description: "Your company account has been permanently deleted." });
+      setTimeout(() => logout(), 1500);
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+      setDeleting(false);
+    }
+  };
+
+  const ordinal = (n: number) => ["st", "nd", "rd"][n - 1] ?? "th";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -105,7 +167,7 @@ export default function CompanySettings() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Company Name</Label>
-                      <Input defaultValue={(tenant as any)?.name ?? ""} placeholder="Your company name" />
+                      <Input defaultValue={companyName} placeholder="Your company name" />
                     </div>
                     <div className="space-y-2">
                       <Label>Company Slug</Label>
@@ -131,7 +193,7 @@ export default function CompanySettings() {
                       <Label>Phone</Label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input className="pl-9" defaultValue={(tenant as any)?.phone ?? ""} placeholder="+27 11 000 0000" />
+                        <Input className="pl-9" defaultValue={(tenant as any)?.contactPhone ?? ""} placeholder="+27 11 000 0000" />
                       </div>
                     </div>
                   </div>
@@ -250,27 +312,23 @@ export default function CompanySettings() {
                     <div className="space-y-2">
                       <Label>Payroll Date (day of month)</Label>
                       <Input
-                        type="number"
-                        min={1}
-                        max={28}
+                        type="number" min={1} max={28}
                         value={payrollDay}
                         onChange={e => setPayrollDay(Number(e.target.value))}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Payroll runs on the <span className="font-medium text-foreground">{payrollDay}{["st","nd","rd"][payrollDay-1] ?? "th"}</span> of each month. Commission statuses are automatically moved to <span className="font-medium text-foreground">Paid</span> on this date.
+                        Payroll runs on the <span className="font-medium text-foreground">{payrollDay}{ordinal(payrollDay)}</span> of each month.
                       </p>
                     </div>
                     <div className="space-y-2">
                       <Label>Commission Cut-off Date (day of month)</Label>
                       <Input
-                        type="number"
-                        min={1}
-                        max={28}
+                        type="number" min={1} max={28}
                         value={cutoffDay}
                         onChange={e => setCutoffDay(Number(e.target.value))}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Deals approved <span className="font-medium text-foreground">after the {cutoffDay}{["st","nd","rd"][cutoffDay-1] ?? "th"}</span> are included in the <span className="font-medium text-foreground">next month's</span> payroll. Deals approved on or before this date are included in the current month.
+                        Deals approved after the <span className="font-medium text-foreground">{cutoffDay}{ordinal(cutoffDay)}</span> roll into next month's payroll.
                       </p>
                     </div>
                   </div>
@@ -278,9 +336,9 @@ export default function CompanySettings() {
                   <div className="rounded-lg bg-muted/50 border border-border p-4 text-sm space-y-1.5">
                     <p className="font-medium text-foreground">How this works</p>
                     <ul className="text-muted-foreground space-y-1 list-disc list-inside text-xs">
-                      <li>All deals fully approved on or before the <strong>{cutoffDay}{["st","nd","rd"][cutoffDay-1] ?? "th"}</strong> are included in <strong>this month's</strong> payroll run.</li>
-                      <li>Any deal approved after the <strong>{cutoffDay}{["st","nd","rd"][cutoffDay-1] ?? "th"}</strong> rolls over to <strong>next month's</strong> payroll.</li>
-                      <li>On the <strong>{payrollDay}{["st","nd","rd"][payrollDay-1] ?? "th"}</strong> of each month, all <em>Payroll Approved</em> commissions are automatically marked as <strong>Paid</strong> — no manual action required.</li>
+                      <li>All deals fully approved on or before the <strong>{cutoffDay}{ordinal(cutoffDay)}</strong> are included in <strong>this month's</strong> payroll run.</li>
+                      <li>Any deal approved after the <strong>{cutoffDay}{ordinal(cutoffDay)}</strong> rolls over to <strong>next month's</strong> payroll.</li>
+                      <li>On the <strong>{payrollDay}{ordinal(payrollDay)}</strong> of each month, all <em>Payroll Approved</em> commissions are automatically marked as <strong>Paid</strong>.</li>
                     </ul>
                   </div>
 
@@ -331,22 +389,137 @@ export default function CompanySettings() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm border-destructive/30">
+          {/* Danger Zone */}
+          <Card className="shadow-sm border-destructive/40">
             <CardHeader>
-              <CardTitle className="text-destructive">Danger Zone</CardTitle>
+              <CardTitle className="text-destructive flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Danger Zone
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">These actions are irreversible. Proceed with caution.</p>
-              <Button variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/10">
+
+              <Button
+                variant="outline"
+                className="w-full border-destructive text-destructive hover:bg-destructive/10 gap-2"
+                onClick={() => { setResetInput(""); setShowReset(true); }}
+              >
+                <RotateCcw className="h-4 w-4" />
                 Reset All Commission Data
               </Button>
-              <Button variant="outline" className="w-full border-destructive text-destructive hover:bg-destructive/10">
+
+              <Button
+                variant="outline"
+                className="w-full border-destructive text-destructive hover:bg-destructive/10 gap-2"
+                onClick={() => { setDeleteInput(""); setShowDelete(true); }}
+              >
+                <Trash2 className="h-4 w-4" />
                 Delete Company Account
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* ── Reset Commission Data Dialog ────────────────────────────────────── */}
+      <Dialog open={showReset} onOpenChange={(open) => { if (!resetting) setShowReset(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Reset All Commission Data
+            </DialogTitle>
+            <DialogDescription className="space-y-2 pt-1">
+              <span className="block">
+                This will permanently delete <strong>all commission events, wallets, wallet transactions, payout requests, and notifications</strong> for your company.
+              </span>
+              <span className="block text-destructive font-medium">
+                This cannot be undone.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <Label htmlFor="reset-confirm">
+              Type <span className="font-mono font-bold text-foreground">RESET</span> to confirm
+            </Label>
+            <Input
+              id="reset-confirm"
+              value={resetInput}
+              onChange={e => setResetInput(e.target.value)}
+              placeholder="RESET"
+              className="font-mono"
+              autoComplete="off"
+            />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowReset(false)} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleReset}
+              disabled={resetInput !== "RESET" || resetting}
+              className="gap-2"
+            >
+              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              Reset All Data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Company Account Dialog ───────────────────────────────────── */}
+      <Dialog open={showDelete} onOpenChange={(open) => { if (!deleting) setShowDelete(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Delete Company Account
+            </DialogTitle>
+            <DialogDescription className="space-y-2 pt-1">
+              <span className="block">
+                This will permanently delete <strong>your entire company account</strong> — all users, all commission data, all settings, and all history. There is no recovery.
+              </span>
+              <span className="block text-destructive font-medium">
+                You will be signed out immediately after deletion.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <Label htmlFor="delete-confirm">
+              Type your company name{" "}
+              <span className="font-mono font-bold text-foreground">"{companyName}"</span>{" "}
+              to confirm
+            </Label>
+            <Input
+              id="delete-confirm"
+              value={deleteInput}
+              onChange={e => setDeleteInput(e.target.value)}
+              placeholder={companyName}
+              autoComplete="off"
+            />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDelete(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteInput.trim() !== companyName.trim() || !companyName || deleting}
+              className="gap-2"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete Account Permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
