@@ -569,6 +569,7 @@ model CommissionEventApproval {
   approverUserId    String?
   status            ApprovalStatus @default(PENDING)
   comments          String?
+  payoutAmount      Decimal?       @db.Decimal(15, 2)
   approvedAt        DateTime?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt

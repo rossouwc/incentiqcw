@@ -5,112 +5,111 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const dealInclude = {
-  deal: {
-    select: {
-      dealName: true,
-      customerName: true,
-      calculatedCommission: true,
-      salesExecutiveId: true,
-      salesExecutive: { select: { firstName: true, lastName: true } },
-    },
-  },
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const approverInclude = {
-  approver: { select: { firstName: true, lastName: true } },
-};
+function extractCustomerName(eventDataJson: unknown): string {
+  if (!eventDataJson || typeof eventDataJson !== "object") return "";
+  const d = eventDataJson as Record<string, unknown>;
+  const KEYS = ["customerName", "clientName", "candidateName", "buyerName", "accountName", "tenantName", "recruiterClient", "partnerName"];
+  for (const k of KEYS) {
+    if (typeof d[k] === "string" && d[k]) return d[k] as string;
+  }
+  return "";
+}
 
-function awToResponse(aw: any) {
+function ceaToResponse(cea: any) {
+  const event = cea.commissionEvent ?? {};
+  const exec = event.salesExecutive ?? {};
   return {
-    id: aw.id,
-    tenantId: aw.tenantId,
-    dealId: aw.dealId,
-    dealName: aw.deal?.dealName ?? "",
-    customerName: aw.deal?.customerName ?? "",
-    calculatedCommission: aw.deal?.calculatedCommission ?? 0,
-    salesExecutiveName: aw.deal?.salesExecutive
-      ? `${aw.deal.salesExecutive.firstName} ${aw.deal.salesExecutive.lastName}`
-      : "",
-    approvalLevel: aw.approvalLevel,
-    stepName: aw.stepName ?? null,
-    approverRole: aw.approverRole,
-    approverUserId: aw.approverUserId ?? null,
-    approverName: aw.approver
-      ? `${aw.approver.firstName} ${aw.approver.lastName}`
-      : null,
-    status: aw.status,
-    comments: aw.comments ?? null,
-    payoutAmount: aw.payoutAmount ? Number(aw.payoutAmount) : null,
-    approvedAt: aw.approvedAt?.toISOString() ?? null,
-    createdAt: aw.createdAt.toISOString(),
+    id:                   cea.id,
+    tenantId:             cea.tenantId,
+    dealId:               cea.commissionEventId,          // frontend uses dealId as the event ID
+    dealName:             event.eventTitle ?? "",
+    customerName:         extractCustomerName(event.eventDataJson),
+    calculatedCommission: Number(event.calculatedCommissionAmount ?? 0),
+    salesExecutiveName:   exec.firstName ? `${exec.firstName} ${exec.lastName}` : "",
+    approvalLevel:        cea.approvalStep,
+    stepName:             cea.stepName ?? null,
+    approverRole:         cea.approverRole,
+    approverUserId:       cea.approverUserId ?? null,
+    approverName:         cea.approver ? `${cea.approver.firstName} ${cea.approver.lastName}` : null,
+    status:               cea.status,
+    comments:             cea.comments ?? null,
+    payoutAmount:         cea.payoutAmount ? Number(cea.payoutAmount) : null,
+    approvedAt:           cea.approvedAt?.toISOString() ?? null,
+    createdAt:            cea.createdAt.toISOString(),
   };
 }
 
+const ceaInclude = {
+  commissionEvent: {
+    select: {
+      eventTitle:                true,
+      eventDataJson:             true,
+      calculatedCommissionAmount: true,
+      salesExecutiveId:          true,
+      salesExecutive: { select: { firstName: true, lastName: true } },
+    },
+  },
+  approver: { select: { firstName: true, lastName: true } },
+};
+
 async function deductPendingBalance(
-  tenantId: string,
-  salesExecutiveId: string,
-  commission: number,
-  dealId: string,
-  dealName: string
+  tenantId: string, salesExecutiveId: string, commission: number, eventId: string, eventTitle: string
 ) {
   const wallet = await prisma.wallet.findUnique({ where: { userId: salesExecutiveId } });
   if (wallet && wallet.pendingBalance > 0) {
-    const deduction = Math.min(wallet.pendingBalance, commission);
+    const deduction = Math.min(Number(wallet.pendingBalance), commission);
     await prisma.wallet.update({
       where: { id: wallet.id },
-      data: { pendingBalance: Math.max(0, wallet.pendingBalance - deduction) },
+      data: { pendingBalance: Math.max(0, Number(wallet.pendingBalance) - deduction) },
     });
     await prisma.walletTransaction.create({
       data: {
         tenantId,
-        walletId: wallet.id,
+        walletId:        wallet.id,
         transactionType: "PENDING_COMMISSION_REMOVED",
-        amount: deduction,
-        referenceType: "DEAL",
-        referenceId: dealId,
-        description: `Commission reversal: ${dealName}`,
+        amount:          deduction,
+        referenceType:   "DEAL",
+        referenceId:     eventId,
+        description:     `Commission reversal: ${eventTitle}`,
       },
     });
   }
 }
 
 async function creditWalletForSalesExec(
-  tenantId: string,
-  salesExecId: string,
-  commission: number,
-  dealId: string,
-  dealName: string
+  tenantId: string, salesExecId: string, commission: number, eventId: string, eventTitle: string
 ) {
   const wallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
   if (!wallet) return;
   await prisma.wallet.update({
     where: { id: wallet.id },
     data: {
-      availableBalance: wallet.availableBalance + commission,
-      pendingBalance: Math.max(0, wallet.pendingBalance - commission),
+      availableBalance: Number(wallet.availableBalance) + commission,
+      pendingBalance:   Math.max(0, Number(wallet.pendingBalance) - commission),
     },
   });
   await prisma.walletTransaction.create({
     data: {
       tenantId,
-      walletId: wallet.id,
+      walletId:        wallet.id,
       transactionType: "COMMISSION_APPROVED",
-      amount: commission,
-      referenceType: "DEAL",
-      referenceId: dealId,
-      description: `Commission approved: ${dealName}`,
+      amount:          commission,
+      referenceType:   "DEAL",
+      referenceId:     eventId,
+      description:     `Commission approved: ${eventTitle}`,
     },
   });
 }
 
-// GET /api/approvals — list approvals relevant to the current user
+// ── GET /api/approvals ────────────────────────────────────────────────────────
+
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   const { status, dealId } = req.query as { status?: string; dealId?: string };
   try {
     const where: any = { tenantId: req.user!.tenantId };
 
-    // Filter by who should see these — either specifically assigned or by role
     if (!["SUPER_ADMIN", "ADMIN"].includes(req.user!.role)) {
       where.OR = [
         { approverUserId: req.user!.userId },
@@ -118,39 +117,40 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
       ];
     }
 
-    if (status) where.status = status;
-    else where.status = "PENDING";
+    where.status = status ?? "PENDING";
+    if (dealId) where.commissionEventId = dealId;
 
-    if (dealId) where.dealId = dealId;
-
-    const approvals = await prisma.approvalWorkflow.findMany({
+    const approvals = await prisma.commissionEventApproval.findMany({
       where,
-      include: { ...dealInclude, ...approverInclude },
+      include: ceaInclude,
       orderBy: { createdAt: "desc" },
     });
-    res.json(approvals.map(awToResponse));
+    res.json(approvals.map(ceaToResponse));
   } catch (err) {
     logger.error({ err }, "ListApprovals error");
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// GET /api/approvals/deal/:dealId — full approval chain for a deal
+// ── GET /api/approvals/deal/:dealId ──────────────────────────────────────────
+// dealId here is actually the commissionEventId (frontend naming)
+
 router.get("/deal/:dealId", requireAuth, async (req: Request, res: Response) => {
   try {
-    const approvals = await prisma.approvalWorkflow.findMany({
-      where: { dealId: req.params.dealId as string, tenantId: req.user!.tenantId },
-      include: { ...dealInclude, ...approverInclude },
-      orderBy: { approvalLevel: "asc" },
+    const approvals = await prisma.commissionEventApproval.findMany({
+      where: { commissionEventId: req.params.dealId as string, tenantId: req.user!.tenantId },
+      include: ceaInclude,
+      orderBy: { approvalStep: "asc" },
     });
-    res.json(approvals.map(awToResponse));
+    res.json(approvals.map(ceaToResponse));
   } catch (err) {
     logger.error({ err }, "GetDealApprovals error");
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// POST /api/approvals/:id/action — APPROVE | REJECT | REQUEST_CHANGES
+// ── POST /api/approvals/:id/action ────────────────────────────────────────────
+
 router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
   const { action, comments, payoutAmount } = req.body;
   if (!action || !["APPROVE", "REJECT", "REQUEST_CHANGES"].includes(action)) {
@@ -163,29 +163,28 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    const aw: any = await prisma.approvalWorkflow.findUnique({
-      where: { id: req.params.id as string },
-      include: { deal: true },
+    const cea: any = await prisma.commissionEventApproval.findUnique({
+      where:   { id: req.params.id as string },
+      include: { commissionEvent: true },
     });
-    if (!aw) { res.status(404).json({ error: "Approval not found" }); return; }
-    if (aw.tenantId !== req.user!.tenantId) { res.status(403).json({ error: "Forbidden" }); return; }
-    if (aw.status !== "PENDING") {
+    if (!cea) { res.status(404).json({ error: "Approval not found" }); return; }
+    if (cea.tenantId !== req.user!.tenantId) { res.status(403).json({ error: "Forbidden" }); return; }
+    if (cea.status !== "PENDING") {
       res.status(400).json({ error: "This approval step has already been actioned" });
       return;
     }
 
-    // Verify current user is authorised to action this step
     const canAction =
       ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role) ||
-      aw.approverUserId === req.user!.userId ||
-      (!aw.approverUserId && aw.approverRole === req.user!.role);
+      cea.approverUserId === req.user!.userId ||
+      (!cea.approverUserId && cea.approverRole === req.user!.role);
     if (!canAction) {
       res.status(403).json({ error: "You are not authorised to action this approval step" });
       return;
     }
 
-    // Sales Executive Confirmation step — payout amount is required on approval
-    if (action === "APPROVE" && aw.approverRole === "SALES_EXECUTIVE") {
+    // SALES_EXECUTIVE confirmation step — payout amount required on approval
+    if (action === "APPROVE" && cea.approverRole === "SALES_EXECUTIVE") {
       const amt = Number(payoutAmount);
       if (!payoutAmount || isNaN(amt) || amt <= 0) {
         res.status(400).json({ error: "payoutAmount is required when a Sales Executive Confirmation step is approved" });
@@ -198,46 +197,46 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
       : "CHANGES_REQUESTED";
 
     const updateData: any = {
-      status: newStatus,
+      status:        newStatus,
       approverUserId: req.user!.userId,
-      comments: comments ?? null,
-      approvedAt: action === "APPROVE" ? new Date() : null,
+      comments:      comments ?? null,
+      approvedAt:    action === "APPROVE" ? new Date() : null,
     };
-    if (action === "APPROVE" && aw.approverRole === "SALES_EXECUTIVE" && payoutAmount) {
+    if (action === "APPROVE" && cea.approverRole === "SALES_EXECUTIVE" && payoutAmount) {
       updateData.payoutAmount = Number(payoutAmount);
     }
 
-    const updated: any = await prisma.approvalWorkflow.update({
-      where: { id: req.params.id as string },
-      data: updateData,
-      include: { ...dealInclude, ...approverInclude },
+    const updated: any = await prisma.commissionEventApproval.update({
+      where:   { id: req.params.id as string },
+      data:    updateData,
+      include: ceaInclude,
     });
 
-    const deal = aw.deal;
-    const commission = deal.calculatedCommission as number;
-    const salesExecId = deal.salesExecutiveId as string;
+    const event       = cea.commissionEvent;
+    const commission  = Number(event.calculatedCommissionAmount);
+    const salesExecId = event.salesExecutiveId as string;
+    const eventId     = event.id as string;
+    const eventTitle  = event.eventTitle as string;
 
     if (action === "APPROVE") {
-      // Sales Executive Confirmation step — create payout request
-      if (aw.approverRole === "SALES_EXECUTIVE") {
-        const amt = Number(payoutAmount);
-        const tax = amt * 0.25;
-        const net = amt - tax;
+      // SALES_EXECUTIVE confirmation — create payout request
+      if (cea.approverRole === "SALES_EXECUTIVE") {
+        const amt    = Number(payoutAmount);
+        const tax    = amt * 0.25;
+        const net    = amt - tax;
         const tenant = await prisma.tenant.findUnique({ where: { id: req.user!.tenantId } });
         const cutoffDay = tenant?.commissionCutoffDay ?? 20;
         const now = new Date();
         const isAfterCutoff = now.getDate() > cutoffDay;
-        const payoutDate = isAfterCutoff
-          ? new Date(now.getFullYear(), now.getMonth() + 1, 1)
-          : now;
+        const payoutDate  = isAfterCutoff ? new Date(now.getFullYear(), now.getMonth() + 1, 1) : now;
         const payoutMonth = `${payoutDate.getFullYear()}-${String(payoutDate.getMonth() + 1).padStart(2, "0")}`;
         await prisma.payoutRequest.create({
           data: {
             tenantId: req.user!.tenantId,
-            userId: salesExecId,
-            requestedAmount: amt,
-            estimatedTax: tax,
-            estimatedNetPayout: net,
+            userId:   salesExecId,
+            requestedAmount:     amt,
+            estimatedTax:        tax,
+            estimatedNetPayout:  net,
             payoutMonth,
             status: "PENDING",
           },
@@ -245,64 +244,67 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         await prisma.notification.create({
           data: {
             tenantId: req.user!.tenantId,
-            userId: salesExecId,
-            title: "Payout Request Created",
-            message: `Your payout request of R${amt.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${deal.dealName} has been sent to Payroll for processing.`,
-            type: "PAYOUT_REQUESTED",
+            userId:   salesExecId,
+            title:    "Payout Request Created",
+            message:  `Your payout request of R${amt.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${eventTitle} has been sent to Payroll for processing.`,
+            type:     "PAYOUT_REQUESTED",
             readStatus: false,
           },
         });
       }
 
-      const nextStep: any = await prisma.approvalWorkflow.findFirst({
-        where: { dealId: aw.dealId, approvalLevel: aw.approvalLevel + 1 },
+      // Find next step
+      const nextStep: any = await prisma.commissionEventApproval.findFirst({
+        where: { commissionEventId: eventId, approvalStep: cea.approvalStep + 1 },
       });
 
       if (nextStep) {
-        // Determine deal interim status based on the role of the step just approved
-        const interimStatus: any =
-          aw.approverRole === "MANAGER" ? "MANAGER_APPROVED"
-          : aw.approverRole === "FINANCE" ? "FINANCE_APPROVED"
-          : aw.approverRole === "EXECUTIVE" ? "EXECUTIVE_APPROVED"
-          : aw.approverRole === "SALES_EXECUTIVE" ? "PENDING_PAYROLL"
+        // Determine interim CommissionEvent status
+        const interimStatus: string =
+          cea.approverRole === "MANAGER"         ? "MANAGER_APPROVED"
+          : cea.approverRole === "FINANCE"       ? "FINANCE_APPROVED"
+          : cea.approverRole === "EXECUTIVE"     ? "EXECUTIVE_APPROVED"
+          : cea.approverRole === "SALES_EXECUTIVE" ? "PENDING_PAYROLL"
           : "PENDING_APPROVAL";
 
-        await prisma.deal.update({ where: { id: aw.dealId }, data: { status: interimStatus } });
+        await prisma.commissionEvent.update({
+          where: { id: eventId },
+          data:  { approvalStatus: interimStatus },
+        });
 
-        // Special handling when the NEXT step is a Sales Executive Confirmation
+        // SALES_EXECUTIVE next step — credit wallet and assign step to this exec
         if (nextStep.approverRole === "SALES_EXECUTIVE") {
-          // Credit the commission to the sales exec's wallet now so they can see it
-          await creditWalletForSalesExec(
-            req.user!.tenantId, salesExecId, commission, aw.dealId, deal.dealName
-          );
-
-          // Assign the step specifically to this deal's sales executive
-          await prisma.approvalWorkflow.update({
+          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
+          await prisma.commissionEventApproval.update({
             where: { id: nextStep.id },
-            data: { approverUserId: salesExecId },
+            data:  { approverUserId: salesExecId, status: "PENDING" },
           });
-
-          // Notify the sales exec with context to review and confirm payout
           await prisma.notification.create({
             data: {
               tenantId: req.user!.tenantId,
-              userId: salesExecId,
-              title: "Commission Credited — Action Required",
-              message: `R${commission.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for ${deal.dealName} has been credited to your wallet. Please go to Approvals to confirm how much you want paid out this salary cycle.`,
-              type: "WALLET_CREDITED",
+              userId:   salesExecId,
+              title:    "Commission Credited — Action Required",
+              message:  `R${commission.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for ${eventTitle} has been credited to your wallet. Please go to Approvals to confirm your payout amount.`,
+              type:     "WALLET_CREDITED",
               readStatus: false,
             },
           });
         } else {
-          // Notify next approver(s) normally
+          // Activate next step
+          await prisma.commissionEventApproval.update({
+            where: { id: nextStep.id },
+            data:  { status: "PENDING" },
+          });
+
+          // Notify next approver(s)
           if (nextStep.approverUserId) {
             await prisma.notification.create({
               data: {
                 tenantId: req.user!.tenantId,
-                userId: nextStep.approverUserId,
-                title: "Deal Approval Required",
-                message: `${deal.dealName} has been approved at level ${aw.approvalLevel} and requires your review`,
-                type: "DEAL_SUBMITTED",
+                userId:   nextStep.approverUserId,
+                title:    "Deal Approval Required",
+                message:  `${eventTitle} has been approved at step ${cea.approvalStep} and requires your review`,
+                type:     "DEAL_SUBMITTED",
                 readStatus: false,
               },
             });
@@ -314,35 +316,35 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
               await prisma.notification.createMany({
                 data: roleUsers.map((u: any) => ({
                   tenantId: req.user!.tenantId,
-                  userId: u.id,
-                  title: "Deal Approval Required",
-                  message: `${deal.dealName} is ready for ${nextStep.approverRole} review`,
-                  type: "DEAL_SUBMITTED" as const,
+                  userId:   u.id,
+                  title:    "Deal Approval Required",
+                  message:  `${eventTitle} is ready for ${nextStep.approverRole} review`,
+                  type:     "DEAL_SUBMITTED" as const,
                   readStatus: false,
                 })),
               });
             }
+          }
 
-            // Also notify sales exec of progress (unless they ARE the next step)
-            if (nextStep.approverRole !== "SALES_EXECUTIVE") {
-              await prisma.notification.create({
-                data: {
-                  tenantId: req.user!.tenantId,
-                  userId: salesExecId,
-                  title: "Deal Progressed",
-                  message: `Your deal ${deal.dealName} was approved at level ${aw.approvalLevel} — moving to next stage`,
-                  type: "DEAL_APPROVED",
-                  readStatus: false,
-                },
-              });
-            }
+          // Notify sales exec of progress
+          if (nextStep.approverRole !== "SALES_EXECUTIVE") {
+            await prisma.notification.create({
+              data: {
+                tenantId: req.user!.tenantId,
+                userId:   salesExecId,
+                title:    "Deal Progressed",
+                message:  `Your deal ${eventTitle} was approved at step ${cea.approvalStep} — moving to next stage`,
+                type:     "DEAL_APPROVED",
+                readStatus: false,
+              },
+            });
           }
         }
 
         // Notify payroll when it becomes their turn
         if (nextStep.approverRole === "PAYROLL") {
           const salesExec: any = await prisma.user.findUnique({ where: { id: salesExecId }, select: { firstName: true, lastName: true } });
-          const confirmedAmount = aw.approverRole === "SALES_EXECUTIVE" ? Number(payoutAmount) : null;
+          const confirmedAmount = cea.approverRole === "SALES_EXECUTIVE" ? Number(payoutAmount) : null;
           const payrollUsers = await prisma.user.findMany({
             where: { tenantId: req.user!.tenantId, role: "PAYROLL", status: "ACTIVE" },
           });
@@ -350,11 +352,11 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
             await prisma.notification.createMany({
               data: payrollUsers.map((u: any) => ({
                 tenantId: req.user!.tenantId,
-                userId: u.id,
-                title: "Payout Ready for Processing",
-                message: confirmedAmount
-                  ? `${salesExec?.firstName ?? "Sales exec"} ${salesExec?.lastName ?? ""} confirmed a payout of R${confirmedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${deal.dealName}. Please review and process.`
-                  : `${deal.dealName} is ready for Payroll processing.`,
+                userId:   u.id,
+                title:    "Payout Ready for Processing",
+                message:  confirmedAmount
+                  ? `${salesExec?.firstName ?? "Sales exec"} ${salesExec?.lastName ?? ""} confirmed a payout of R${confirmedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${eventTitle}. Please review and process.`
+                  : `${eventTitle} is ready for Payroll processing.`,
                 type: "PAYOUT_REQUESTED" as const,
                 readStatus: false,
               })),
@@ -362,85 +364,65 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           }
         }
       } else {
-        // Final approval step — check if wallet was already credited (by a SALES_EXECUTIVE step)
+        // Final step approved — mark event as APPROVED
         const alreadyCredited = await prisma.walletTransaction.findFirst({
-          where: { referenceId: aw.dealId, transactionType: "COMMISSION_APPROVED" },
+          where: { referenceId: eventId, transactionType: "COMMISSION_APPROVED" },
         });
 
-        await prisma.deal.update({ where: { id: aw.dealId }, data: { status: "APPROVED" } });
+        await prisma.commissionEvent.update({
+          where: { id: eventId },
+          data:  { approvalStatus: "APPROVED", approvedAt: new Date(), walletStatus: "CREDITED" },
+        });
 
         if (!alreadyCredited) {
-          // No SALES_EXECUTIVE step existed in this chain — credit wallet now
-          const wallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
-          if (wallet) {
-            await prisma.wallet.update({
-              where: { id: wallet.id },
-              data: {
-                availableBalance: wallet.availableBalance + commission,
-                pendingBalance: Math.max(0, wallet.pendingBalance - commission),
-              },
-            });
-            await prisma.walletTransaction.create({
-              data: {
-                tenantId: req.user!.tenantId,
-                walletId: wallet.id,
-                transactionType: "COMMISSION_APPROVED",
-                amount: commission,
-                referenceType: "DEAL",
-                referenceId: aw.dealId,
-                description: `Commission approved: ${deal.dealName}`,
-              },
-            });
-          }
-
+          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
           await prisma.notification.create({
             data: {
               tenantId: req.user!.tenantId,
-              userId: salesExecId,
-              title: "Commission Approved & Credited",
-              message: `R${commission.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} has been credited to your wallet for ${deal.dealName}`,
-              type: "WALLET_CREDITED",
+              userId:   salesExecId,
+              title:    "Commission Approved & Credited",
+              message:  `R${commission.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} has been credited to your wallet for ${eventTitle}`,
+              type:     "WALLET_CREDITED",
               readStatus: false,
             },
           });
         } else {
-          // Wallet was already credited at the SALES_EXECUTIVE step — just notify approval
           await prisma.notification.create({
             data: {
               tenantId: req.user!.tenantId,
-              userId: salesExecId,
-              title: "Deal Fully Approved",
-              message: `${deal.dealName} has completed all approval stages and is fully approved.`,
-              type: "DEAL_APPROVED",
+              userId:   salesExecId,
+              title:    "Deal Fully Approved",
+              message:  `${eventTitle} has completed all approval stages and is fully approved.`,
+              type:     "DEAL_APPROVED",
               readStatus: false,
             },
           });
         }
       }
     } else if (action === "REJECT") {
-      await prisma.deal.update({ where: { id: aw.dealId }, data: { status: "REJECTED" } });
-      await deductPendingBalance(req.user!.tenantId, salesExecId, commission, aw.dealId, deal.dealName);
+      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "REJECTED" } });
+      await deductPendingBalance(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
 
-      // If a payout was already credited (SALES_EXECUTIVE step previously done), reverse it
+      // Reverse any commission already credited
       const credited = await prisma.walletTransaction.findFirst({
-        where: { referenceId: aw.dealId, transactionType: "COMMISSION_APPROVED" },
+        where: { referenceId: eventId, transactionType: "COMMISSION_APPROVED" },
       });
       if (credited) {
         const wallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
         if (wallet) {
           await prisma.wallet.update({
             where: { id: wallet.id },
-            data: { availableBalance: Math.max(0, wallet.availableBalance - commission) },
+            data:  { availableBalance: Math.max(0, Number(wallet.availableBalance) - commission) },
           });
           await prisma.walletTransaction.create({
             data: {
               tenantId: req.user!.tenantId,
-              walletId: wallet.id,
+              walletId:        wallet.id,
               transactionType: "PENDING_COMMISSION_REMOVED",
-              amount: commission,
-              referenceType: "DEAL",
-              referenceId: aw.dealId,
-              description: `Commission reversed after rejection: ${deal.dealName}`,
+              amount:          commission,
+              referenceType:   "DEAL",
+              referenceId:     eventId,
+              description:     `Commission reversed after rejection: ${eventTitle}`,
             },
           });
         }
@@ -449,24 +431,24 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
       await prisma.notification.create({
         data: {
           tenantId: req.user!.tenantId,
-          userId: salesExecId,
-          title: "Deal Rejected",
-          message: `Your deal ${deal.dealName} was rejected${comments ? `: ${comments}` : ""}`,
-          type: "DEAL_REJECTED",
+          userId:   salesExecId,
+          title:    "Deal Rejected",
+          message:  `Your deal ${eventTitle} was rejected${comments ? `: ${comments}` : ""}`,
+          type:     "DEAL_REJECTED",
           readStatus: false,
         },
       });
     } else {
-      // REQUEST_CHANGES
-      await prisma.deal.update({ where: { id: aw.dealId }, data: { status: "CHANGES_REQUESTED" } });
-      await deductPendingBalance(req.user!.tenantId, salesExecId, commission, aw.dealId, deal.dealName);
+      // REQUEST_CHANGES — send back for revision
+      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "CHANGES_REQUESTED" } });
+      await deductPendingBalance(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
       await prisma.notification.create({
         data: {
           tenantId: req.user!.tenantId,
-          userId: salesExecId,
-          title: "Changes Requested on Deal",
-          message: `${deal.dealName} has been sent back for changes${comments ? `: ${comments}` : ""}`,
-          type: "DEAL_CHANGES_REQUESTED",
+          userId:   salesExecId,
+          title:    "Changes Requested on Deal",
+          message:  `${eventTitle} has been sent back for changes${comments ? `: ${comments}` : ""}`,
+          type:     "DEAL_CHANGES_REQUESTED",
           readStatus: false,
         },
       });
@@ -474,17 +456,17 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
 
     await prisma.auditLog.create({
       data: {
-        tenantId: req.user!.tenantId,
-        userId: req.user!.userId,
+        tenantId:   req.user!.tenantId,
+        userId:     req.user!.userId,
         action,
-        entityType: "ApprovalWorkflow",
-        entityId: aw.id,
-        oldValue: JSON.stringify({ status: aw.status }),
-        newValue: JSON.stringify({ status: newStatus, comments, payoutAmount: payoutAmount ?? null }),
+        entityType: "CommissionEventApproval",
+        entityId:   cea.id,
+        oldValue:   JSON.stringify({ status: cea.status }),
+        newValue:   JSON.stringify({ status: newStatus, comments, payoutAmount: payoutAmount ?? null }),
       },
     });
 
-    res.json(awToResponse(updated));
+    res.json(ceaToResponse(updated));
   } catch (err) {
     logger.error({ err }, "ActionApproval error");
     res.status(500).json({ error: "Server error" });
