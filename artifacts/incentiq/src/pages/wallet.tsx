@@ -536,11 +536,14 @@ function getUpcomingMonths(count: number, startFromNext = false): { label: strin
   return months;
 }
 
-function PayoutDialog({ open, onClose, availableBalance, onSuccess }: {
+function PayoutDialog({ open, onClose, availableBalance, onSuccess, cutoffDay = 0 }: {
   open: boolean;
   onClose: () => void;
   availableBalance: number;
   onSuccess: () => void;
+  /** commissionCutoffDay from tenant payroll config — passed by parent so it is
+   *  already resolved before the dialog opens (no async race). */
+  cutoffDay?: number;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -548,23 +551,15 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess }: {
   const { data: taxProfile } = useGetTaxProfile();
   const estimatePAYE = useEstimatePAYE();
 
-  // Fetch payroll config so we can respect the commission cut-off day.
-  const { data: payrollCfg } = useQuery<{ payrollDay: number; commissionCutoffDay: number }>({
-    queryKey: ["payroll-config"],
-    queryFn: () => fetch("/api/tenant/payroll-config", { headers: getAuthHeaders() }).then(r => r.json()),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  // If today is past the cut-off day, the current month's payroll run is already
-  // locked — the earliest selectable payout month is next month.
-  const pastCutoff = (() => {
-    const cutoff = payrollCfg?.commissionCutoffDay ?? 0;
-    return cutoff > 0 && new Date().getDate() > cutoff;
-  })();
+  // If today is past the cut-off the current month's payroll run is locked —
+  // earliest selectable month is next month.  cutoffDay=0 means "no config yet"
+  // which should not happen because OwnWalletView fetches it before rendering.
+  const pastCutoff = cutoffDay > 0 && new Date().getDate() > cutoffDay;
 
   const [payoutType, setPayoutType] = useState<PayoutType>("FULL");
   const [amount, setAmount] = useState("");
-  const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1)[0].value);
+  // Initialise directly from pastCutoff — no async wait, no post-mount effect.
+  const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1, pastCutoff)[0].value);
   const [deferToMonth, setDeferToMonth] = useState(() => getUpcomingMonths(1, true)[0].value);
   const [comments, setComments] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -574,12 +569,14 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess }: {
     effectiveRateOnCommission: number;
   } | null>(null);
 
-  // Once we know whether we're past cut-off, sync the default payoutMonth.
+  // Re-sync the selected month whenever the dialog re-opens so that a stale
+  // "June" state is corrected if the user opens/closes across cut-off midnight.
   useEffect(() => {
-    if (payrollCfg) {
+    if (open) {
       setPayoutMonth(getUpcomingMonths(1, pastCutoff)[0].value);
     }
-  }, [pastCutoff, payrollCfg]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pastCutoff]);
 
   const profile = taxProfile as any;
   // Months available for "this payroll run": skip current month if past cut-off.
@@ -925,6 +922,15 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
   const { clawbacks, loading: cbLoading, recoveryBalance, potentialClawbacks } = useClawbacksForWallet();
   const [showPayoutDialog, setShowPayoutDialog] = useState(false);
 
+  // Fetch payroll config at page level so cutoffDay is known before the dialog
+  // opens — avoids the async race where the dialog mounts before the query resolves.
+  const { data: payrollCfg } = useQuery<{ payrollDay: number; commissionCutoffDay: number }>({
+    queryKey: ["payroll-config"],
+    queryFn: () => fetch("/api/tenant/payroll-config", { headers: getAuthHeaders() }).then(r => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+  const cutoffDay = payrollCfg?.commissionCutoffDay ?? 0;
+
   const w = wallet as Wallet | undefined;
   const transactions: Transaction[] = Array.isArray((txPage as any)?.data) ? (txPage as any).data : [];
   const deals: WalletDeal[] = Array.isArray(dealsData) ? dealsData as any : [];
@@ -989,6 +995,7 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
           onClose={() => setShowPayoutDialog(false)}
           availableBalance={w?.availableBalance ?? 0}
           onSuccess={() => { refetch(); }}
+          cutoffDay={cutoffDay}
         />
       )}
     </>
