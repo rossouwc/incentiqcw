@@ -1622,8 +1622,8 @@ export default function Deals() {
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             )}
-                            {/* Request Amendment — deal has passed L1 but is still in-approval */}
-                            {["PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"].includes(ev.approvalStatus) &&
+                            {/* Request Amendment — deal has passed L1 (first approver already approved) */}
+                            {["MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"].includes(ev.approvalStatus) &&
                              ev.editStatus === "NONE" && (
                               <Button
                                 size="icon" variant="ghost"
