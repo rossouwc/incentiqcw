@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, User, Lock, ShieldCheck, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, User, Lock, ShieldCheck } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -16,15 +16,6 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-const DEMO_ACCOUNTS = [
-  { label: "Super Admin",  email: "superadmin@commissionwallet.co.za", color: "text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100" },
-  { label: "Admin",        email: "admin@demo.co.za",                  color: "text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100" },
-  { label: "Manager",      email: "manager@demo.co.za",                color: "text-blue-700 border-blue-200 bg-blue-50 hover:bg-blue-100" },
-  { label: "Finance",      email: "finance@demo.co.za",                color: "text-cyan-700 border-cyan-200 bg-cyan-50 hover:bg-cyan-100" },
-  { label: "Sales Exec",   email: "sales@demo.co.za",                  color: "text-green-700 border-green-200 bg-green-50 hover:bg-green-100" },
-  { label: "Executive",    email: "executive@demo.co.za",              color: "text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100" },
-  { label: "Payroll",      email: "payroll@demo.co.za",                color: "text-orange-700 border-orange-200 bg-orange-50 hover:bg-orange-100" },
-];
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -33,7 +24,6 @@ export default function Login() {
   const loginMutation = useLogin();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [showDemo, setShowDemo] = useState(false);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -57,12 +47,6 @@ export default function Login() {
     });
   };
 
-  const fillDemo = (email: string) => {
-    form.setValue("email", email);
-    form.setValue("password", "Password123!");
-    form.clearErrors();
-    setShowDemo(false);
-  };
 
   return (
     <div className="min-h-screen flex bg-white">
@@ -224,36 +208,6 @@ export default function Login() {
             </form>
           </Form>
 
-          {/* Demo accounts */}
-          <div className="mt-8 border border-gray-100 rounded-xl overflow-hidden shadow-sm">
-            <button
-              type="button"
-              onClick={() => setShowDemo(!showDemo)}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <span className="font-medium">Demo accounts — click to fill</span>
-              <ChevronDown className={`h-4 w-4 transition-transform ${showDemo ? "rotate-180" : ""}`} />
-            </button>
-            {showDemo && (
-              <div className="px-4 pb-4 bg-gray-50 border-t border-gray-100">
-                <p className="text-xs text-gray-400 py-3">
-                  Password: <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 font-mono">Password123!</code>
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {DEMO_ACCOUNTS.map((acc) => (
-                    <button
-                      key={acc.email}
-                      type="button"
-                      onClick={() => fillDemo(acc.email)}
-                      className={`text-xs px-3 py-1.5 rounded-md border font-medium transition-colors ${acc.color}`}
-                    >
-                      {acc.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
