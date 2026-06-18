@@ -57,7 +57,18 @@ import {
   MessageSquare,
   Info,
   AlertCircle,
+  ShieldAlert,
+  Scale,
+  RotateCcw,
+  AlertTriangle,
+  FileText,
+  Loader2,
 } from "lucide-react";
+
+function getAuthHeaders(): HeadersInit {
+  const t = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
 
 // ─── Transaction type display helpers ─────────────────────────────────────────
 
@@ -70,24 +81,36 @@ interface TxMeta {
 }
 
 const TX_META: Record<string, TxMeta> = {
-  PENDING_COMMISSION_ADDED:   { label: "Pending Commission Added",   icon: PlusCircle,     colorClass: "text-amber-600",  bgClass: "bg-amber-50",   isCredit: true  },
-  PENDING_COMMISSION_REMOVED: { label: "Pending Commission Removed", icon: XCircle,        colorClass: "text-red-600",    bgClass: "bg-red-50",     isCredit: false },
-  COMMISSION_APPROVED:        { label: "Commission Approved",        icon: CheckCircle2,   colorClass: "text-green-600",  bgClass: "bg-green-50",   isCredit: true  },
-  PAYOUT_REQUESTED:           { label: "Payout Requested",           icon: Receipt,        colorClass: "text-blue-600",   bgClass: "bg-blue-50",    isCredit: false },
-  PAYOUT_APPROVED:            { label: "Payout Approved",            icon: CheckCircle2,   colorClass: "text-cyan-600",   bgClass: "bg-cyan-50",    isCredit: false },
-  PAYOUT_PAID:                { label: "Payout Paid",                icon: ArrowUpRight,   colorClass: "text-indigo-600", bgClass: "bg-indigo-50",  isCredit: false },
-  PAYOUT_DEFERRED:            { label: "Payout Deferred",            icon: Pause,          colorClass: "text-orange-600", bgClass: "bg-orange-50",  isCredit: false },
-  MANUAL_ADJUSTMENT:          { label: "Manual Adjustment",          icon: Sliders,        colorClass: "text-gray-600",   bgClass: "bg-gray-100",   isCredit: true  },
-  CLAWBACK_PENDING:           { label: "Potential Clawback",        icon: AlertCircle,    colorClass: "text-amber-600",  bgClass: "bg-amber-50",   isCredit: false },
-  CLAWBACK_DEDUCTION:         { label: "Clawback Deduction",         icon: TrendingDown,   colorClass: "text-red-600",    bgClass: "bg-red-50",     isCredit: false },
-  FUTURE_OFFSET_APPLIED:      { label: "Future Commission Offset",   icon: ArrowRightLeft, colorClass: "text-red-600",    bgClass: "bg-red-50",     isCredit: false },
-  COMMISSION_SPLIT_DEDUCTION: { label: "Commission Split Deduction", icon: ArrowUpRight,   colorClass: "text-orange-600", bgClass: "bg-orange-50",  isCredit: false },
-  COMMISSION_SPLIT_CREDIT:    { label: "Commission Split Credit",    icon: ArrowDownLeft,  colorClass: "text-teal-600",   bgClass: "bg-teal-50",    isCredit: true  },
-  TRIGGER_RELEASED:           { label: "Trigger Released",           icon: CheckCircle2,   colorClass: "text-emerald-600",bgClass: "bg-emerald-50", isCredit: true  },
-  CREDIT:                     { label: "Credit",                     icon: ArrowDownLeft,  colorClass: "text-green-600",  bgClass: "bg-green-50",   isCredit: true  },
-  DEBIT:                      { label: "Debit",                      icon: ArrowUpRight,   colorClass: "text-red-600",    bgClass: "bg-red-50",     isCredit: false },
-  PAYOUT:                     { label: "Payout",                     icon: ArrowUpRight,   colorClass: "text-indigo-600", bgClass: "bg-indigo-50",  isCredit: false },
-  ADJUSTMENT:                 { label: "Adjustment",                 icon: ArrowRightLeft, colorClass: "text-gray-600",   bgClass: "bg-gray-100",   isCredit: true  },
+  // Commission events
+  PENDING_COMMISSION_ADDED:   { label: "Pending Commission Added",      icon: PlusCircle,     colorClass: "text-amber-600",  bgClass: "bg-amber-50",    isCredit: true  },
+  PENDING_COMMISSION_REMOVED: { label: "Pending Commission Removed",    icon: XCircle,        colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
+  COMMISSION_APPROVED:        { label: "Commission Approved",           icon: CheckCircle2,   colorClass: "text-green-600",  bgClass: "bg-green-50",    isCredit: true  },
+  TRIGGER_RELEASED:           { label: "Commission Released",           icon: CheckCircle2,   colorClass: "text-emerald-600",bgClass: "bg-emerald-50",  isCredit: true  },
+  WALLET_CREDITED:            { label: "Wallet Credited",               icon: ArrowDownLeft,  colorClass: "text-green-600",  bgClass: "bg-green-50",    isCredit: true  },
+  // Payouts
+  PAYOUT_REQUESTED:           { label: "Payout Requested",              icon: Receipt,        colorClass: "text-blue-600",   bgClass: "bg-blue-50",     isCredit: false },
+  PAYOUT_APPROVED:            { label: "Payout Approved",               icon: CheckCircle2,   colorClass: "text-cyan-600",   bgClass: "bg-cyan-50",     isCredit: false },
+  PAYOUT_PAID:                { label: "Payout Paid",                   icon: ArrowUpRight,   colorClass: "text-indigo-600", bgClass: "bg-indigo-50",   isCredit: false },
+  PAYOUT_DEFERRED:            { label: "Payout Deferred",               icon: Pause,          colorClass: "text-orange-600", bgClass: "bg-orange-50",   isCredit: false },
+  PAYOUT:                     { label: "Payout",                        icon: ArrowUpRight,   colorClass: "text-indigo-600", bgClass: "bg-indigo-50",   isCredit: false },
+  PAYROLL:                    { label: "Payroll Payout",                icon: DollarSign,     colorClass: "text-emerald-600",bgClass: "bg-emerald-50",  isCredit: false },
+  PAYROLL_APPROVED:           { label: "Payroll Approved",              icon: CheckCircle2,   colorClass: "text-emerald-600",bgClass: "bg-emerald-50",  isCredit: false },
+  // Clawback & recovery
+  CLAWBACK_PENDING:           { label: "Potential Clawback",            icon: AlertTriangle,  colorClass: "text-amber-600",  bgClass: "bg-amber-50",    isCredit: false },
+  CLAWBACK_DEDUCTION:         { label: "Wallet Recovery Deduction",     icon: ShieldAlert,    colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
+  FUTURE_OFFSET_APPLIED:      { label: "Future Commission Offset",      icon: RotateCcw,      colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
+  CLAWBACK_CREATED:           { label: "Clawback Created",              icon: AlertCircle,    colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
+  CLAWBACK_APPROVED:          { label: "Clawback Approved",             icon: CheckCircle2,   colorClass: "text-amber-600",  bgClass: "bg-amber-50",    isCredit: false },
+  CLAWBACK_WAIVED:            { label: "Clawback Waived",               icon: Scale,          colorClass: "text-purple-600", bgClass: "bg-purple-50",   isCredit: false },
+  CLAWBACK_DISPUTED:          { label: "Clawback Disputed",             icon: MessageSquare,  colorClass: "text-orange-600", bgClass: "bg-orange-50",   isCredit: false },
+  PAYROLL_DEDUCTION:          { label: "Payroll Recovery",              icon: DollarSign,     colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
+  // Splits / misc
+  COMMISSION_SPLIT_DEDUCTION: { label: "Commission Split Deduction",    icon: ArrowUpRight,   colorClass: "text-orange-600", bgClass: "bg-orange-50",   isCredit: false },
+  COMMISSION_SPLIT_CREDIT:    { label: "Commission Split Credit",       icon: ArrowDownLeft,  colorClass: "text-teal-600",   bgClass: "bg-teal-50",     isCredit: true  },
+  MANUAL_ADJUSTMENT:          { label: "Manual Adjustment",             icon: Sliders,        colorClass: "text-gray-600",   bgClass: "bg-gray-100",    isCredit: true  },
+  CREDIT:                     { label: "Credit",                        icon: ArrowDownLeft,  colorClass: "text-green-600",  bgClass: "bg-green-50",    isCredit: true  },
+  DEBIT:                      { label: "Debit",                         icon: ArrowUpRight,   colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
+  ADJUSTMENT:                 { label: "Adjustment",                    icon: ArrowRightLeft, colorClass: "text-gray-600",   bgClass: "bg-gray-100",    isCredit: true  },
 };
 
 function getTxMeta(type: string): TxMeta {
@@ -99,66 +122,88 @@ const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
 // ─── Balance Cards ─────────────────────────────────────────────────────────────
 
-function BalanceCards({ wallet, loading }: { wallet: Wallet | undefined; loading: boolean }) {
-  const w = wallet as any;
-  const pendingApprovalAmount: number = w?.pendingApprovalAmount ?? 0;
-  const payrollApprovedAmount: number = w?.payrollApprovedAmount ?? 0;
-
+function BalanceCards({
+  wallet,
+  loading,
+  recoveryBalance = 0,
+  potentialClawbacks = 0,
+  recoveryLoading = false,
+}: {
+  wallet: Wallet | undefined;
+  loading: boolean;
+  recoveryBalance?: number;
+  potentialClawbacks?: number;
+  recoveryLoading?: boolean;
+}) {
   const cards = [
     {
       label: "Available Balance",
       value: wallet?.availableBalance ?? 0,
-      description: "Approved commission — ready to request",
+      description: "Approved — ready to request payout",
       colorClass: "border-l-green-500",
       valueClass: "text-green-600",
       icon: WalletIcon,
+      extraLoading: false,
     },
     {
-      label: "Payroll Approved",
-      value: payrollApprovedAmount,
-      description: "Approved — awaiting pay date",
-      colorClass: "border-l-emerald-400",
-      valueClass: "text-emerald-600",
-      icon: CheckCircle2,
+      label: "Pending Commission",
+      value: wallet?.pendingBalance ?? 0,
+      description: "Awaiting approval in the workflow",
+      colorClass: "border-l-amber-400",
+      valueClass: "text-amber-600",
+      icon: Clock,
+      extraLoading: false,
     },
     {
-      label: "Deferred Balance",
+      label: "Deferred Commission",
       value: wallet?.deferredBalance ?? 0,
-      description: "Held pending conditions",
+      description: "Held — deferred to a future month",
       colorClass: "border-l-orange-400",
       valueClass: "text-orange-600",
       icon: Pause,
+      extraLoading: false,
     },
     {
-      label: "Total Paid Out",
+      label: "Paid Commission",
       value: wallet?.paidOutBalance ?? 0,
       description: "All-time lifetime payouts",
       colorClass: "border-l-purple-400",
       valueClass: "text-foreground",
       icon: TrendingUp,
+      extraLoading: false,
     },
     {
-      label: "Paid Out YTD",
-      value: wallet?.paidYtd ?? 0,
-      description: `${new Date().getFullYear()} year-to-date`,
-      colorClass: "border-l-primary",
-      valueClass: "text-primary",
-      icon: CreditCard,
+      label: "Recovery Balance",
+      value: recoveryBalance,
+      description: "Outstanding clawback still owed",
+      colorClass: "border-l-red-500",
+      valueClass: recoveryBalance > 0 ? "text-red-600" : "text-foreground",
+      icon: ShieldAlert,
+      extraLoading: recoveryLoading,
+    },
+    {
+      label: "Potential Clawbacks",
+      value: potentialClawbacks,
+      description: "Pending approval — may affect wallet",
+      colorClass: "border-l-amber-600",
+      valueClass: potentialClawbacks > 0 ? "text-amber-600" : "text-foreground",
+      icon: AlertTriangle,
+      extraLoading: recoveryLoading,
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       {cards.map((c) => {
         const Icon = c.icon;
         return (
           <Card key={c.label} className={`border-l-4 ${c.colorClass} shadow-sm`}>
             <CardHeader className="pb-1 pt-4 px-4 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{c.label}</CardTitle>
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide leading-tight">{c.label}</CardTitle>
               <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              {loading ? (
+              {loading || c.extraLoading ? (
                 <Skeleton className="h-8 w-24 mt-1" />
               ) : (
                 <>
@@ -184,23 +229,35 @@ function TransactionTable({ transactions, loading }: { transactions: Transaction
   const filtered = filter === "ALL" ? transactions : transactions.filter(t => t.transactionType === filter);
 
   const typeOptions = [
-    { value: "ALL", label: "All Types" },
-    { value: "PENDING_COMMISSION_ADDED",   label: "Pending Added" },
-    { value: "PENDING_COMMISSION_REMOVED", label: "Pending Removed" },
+    { value: "ALL",                        label: "All Types" },
+    // Commission
+    { value: "PENDING_COMMISSION_ADDED",   label: "Pending Commission Added" },
+    { value: "PENDING_COMMISSION_REMOVED", label: "Pending Commission Removed" },
     { value: "COMMISSION_APPROVED",        label: "Commission Approved" },
+    { value: "TRIGGER_RELEASED",           label: "Commission Released" },
+    { value: "WALLET_CREDITED",            label: "Wallet Credited" },
+    // Payouts
     { value: "PAYOUT_REQUESTED",           label: "Payout Requested" },
     { value: "PAYOUT_APPROVED",            label: "Payout Approved" },
-    { value: "PAYOUT_PAID",                label: "Payout Paid" },
+    { value: "PAYOUT_PAID",               label: "Payout Paid" },
     { value: "PAYOUT_DEFERRED",            label: "Payout Deferred" },
-    { value: "MANUAL_ADJUSTMENT",          label: "Manual Adjustment" },
-    { value: "CLAWBACK_DEDUCTION",         label: "Clawback Deduction" },
-    { value: "FUTURE_OFFSET_APPLIED",      label: "Future Offset Applied" },
+    { value: "PAYROLL",                    label: "Payroll Payout" },
+    { value: "PAYROLL_APPROVED",           label: "Payroll Approved" },
+    // Clawback & recovery
+    { value: "CLAWBACK_PENDING",           label: "Potential Clawback" },
+    { value: "CLAWBACK_DEDUCTION",         label: "Wallet Recovery Deduction" },
+    { value: "FUTURE_OFFSET_APPLIED",      label: "Future Commission Offset" },
+    { value: "CLAWBACK_CREATED",           label: "Clawback Created" },
+    { value: "CLAWBACK_APPROVED",          label: "Clawback Approved" },
+    { value: "CLAWBACK_WAIVED",            label: "Clawback Waived" },
+    { value: "CLAWBACK_DISPUTED",          label: "Clawback Disputed" },
+    { value: "PAYROLL_DEDUCTION",          label: "Payroll Recovery" },
+    // Splits & misc
     { value: "COMMISSION_SPLIT_DEDUCTION", label: "Split Deduction" },
     { value: "COMMISSION_SPLIT_CREDIT",    label: "Split Credit" },
-    { value: "TRIGGER_RELEASED",           label: "Trigger Released" },
+    { value: "MANUAL_ADJUSTMENT",          label: "Manual Adjustment" },
     { value: "CREDIT",                     label: "Credit" },
     { value: "DEBIT",                      label: "Debit" },
-    { value: "PAYOUT",                     label: "Payout (legacy)" },
   ];
 
   return (
@@ -326,6 +383,129 @@ function DealsTable({ deals, loading }: { deals: WalletDeal[]; loading: boolean 
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Recovery Section ──────────────────────────────────────────────────────────
+
+const CLAWBACK_STATUS_BADGE: Record<string, string> = {
+  DRAFT:             "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  PENDING_APPROVAL:  "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  APPROVED:          "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  CANCELLED:         "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+  WAIVED:            "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  DISPUTED:          "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  EXECUTED:          "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  CHANGES_REQUESTED: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+};
+
+const RECOVERY_STATUS_BADGE: Record<string, string> = {
+  PENDING:              "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  RECOVERY_IN_PROGRESS: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  PARTIALLY_RECOVERED:  "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  FULLY_RECOVERED:      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+};
+
+function RecoverySection({ clawbacks, loading }: { clawbacks: any[]; loading: boolean }) {
+  const active = clawbacks.filter(c =>
+    !["DRAFT", "CANCELLED", "WAIVED", "FULLY_RECOVERED"].includes(c.status) ||
+    c.outstandingAmount > 0
+  );
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-500" />
+            Recovery Overview
+          </CardTitle>
+          <CardDescription>Clawbacks affecting your commission wallet</CardDescription>
+        </div>
+        {active.length > 0 && (
+          <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md px-3 py-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {active.length} active clawback{active.length !== 1 ? "s" : ""} require attention
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="p-6 space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+        ) : clawbacks.length === 0 ? (
+          <div className="px-6 py-14 text-center text-muted-foreground">
+            <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No clawbacks on record — your commission is clean.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Ref</th>
+                  <th className="px-4 py-3 font-medium">Original Event</th>
+                  <th className="px-4 py-3 font-medium">Reason</th>
+                  <th className="px-4 py-3 font-medium text-right">Original Commission</th>
+                  <th className="px-4 py-3 font-medium text-right">Earned Commission</th>
+                  <th className="px-4 py-3 font-medium text-right">Recoverable</th>
+                  <th className="px-4 py-3 font-medium text-right">Recovered</th>
+                  <th className="px-4 py-3 font-medium text-right">Outstanding</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clawbacks.map((cb) => {
+                  const earnedCommission = cb.originalCommissionAmount - cb.clawbackAmount;
+                  const statusCls = CLAWBACK_STATUS_BADGE[cb.status] ?? "bg-muted text-muted-foreground";
+                  const recoveryCls = RECOVERY_STATUS_BADGE[cb.recoveryStatus] ?? "bg-muted text-muted-foreground";
+                  const recoveryLabel: Record<string, string> = {
+                    PENDING: "Pending", RECOVERY_IN_PROGRESS: "In Progress",
+                    PARTIALLY_RECOVERED: "Partial", FULLY_RECOVERED: "Recovered",
+                  };
+                  return (
+                    <tr key={cb.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs text-muted-foreground">{cb.id.slice(0, 8)}</span>
+                      </td>
+                      <td className="px-4 py-3 max-w-[160px]">
+                        <p className="font-medium truncate text-foreground">{cb.eventTitle}</p>
+                      </td>
+                      <td className="px-4 py-3 max-w-[140px]">
+                        <p className="text-muted-foreground truncate" title={cb.reason}>{cb.reason}</p>
+                        <p className="text-[10px] text-muted-foreground/60">{cb.reasonCategory?.replace(/_/g, " ")}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(cb.originalCommissionAmount)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-foreground">{formatCurrency(earnedCommission)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{formatCurrency(cb.clawbackAmount)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-emerald-600">{formatCurrency(cb.recoveredAmount)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        <span className={cb.outstandingAmount > 0 ? "font-semibold text-red-600 dark:text-red-400" : "text-emerald-600"}>
+                          {formatCurrency(cb.outstandingAmount)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusCls}`}>
+                            {cb.status?.replace(/_/g, " ")}
+                          </span>
+                          {cb.status === "EXECUTED" && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${recoveryCls}`}>
+                              {recoveryLabel[cb.recoveryStatus] ?? cb.recoveryStatus}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatDate(cb.createdAt)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -688,10 +868,36 @@ function TeamWalletSelector({
 
 // ─── Own Wallet View ──────────────────────────────────────────────────────────
 
+function useClawbacksForWallet(execId?: string) {
+  const [clawbacks, setClawbacks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const url = execId ? `/api/clawbacks?execId=${execId}` : "/api/clawbacks";
+    fetch(url, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(d => setClawbacks(Array.isArray(d) ? d : []))
+      .catch(() => setClawbacks([]))
+      .finally(() => setLoading(false));
+  }, [execId]);
+
+  const recoveryBalance = clawbacks
+    .filter(c => c.status === "EXECUTED")
+    .reduce((s, c) => s + (c.outstandingAmount ?? 0), 0);
+
+  const potentialClawbacks = clawbacks
+    .filter(c => c.status === "PENDING_APPROVAL")
+    .reduce((s, c) => s + (c.clawbackAmount ?? 0), 0);
+
+  return { clawbacks, loading, recoveryBalance, potentialClawbacks };
+}
+
 function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
   const { data: wallet, isLoading: walletLoading, refetch } = useGetWallet();
   const { data: txPage, isLoading: txLoading } = useListTransactions();
   const { data: dealsData, isLoading: dealsLoading } = useListWalletDeals();
+  const { clawbacks, loading: cbLoading, recoveryBalance, potentialClawbacks } = useClawbacksForWallet();
   const [showPayoutDialog, setShowPayoutDialog] = useState(false);
 
   const w = wallet as Wallet | undefined;
@@ -700,7 +906,13 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
 
   return (
     <>
-      <BalanceCards wallet={w} loading={walletLoading} />
+      <BalanceCards
+        wallet={w}
+        loading={walletLoading}
+        recoveryBalance={recoveryBalance}
+        potentialClawbacks={potentialClawbacks}
+        recoveryLoading={cbLoading}
+      />
       {w && !walletLoading && (
         <p className="text-xs text-muted-foreground text-right -mt-2">Last updated: {formatDateTime(w.updatedAt)}</p>
       )}
@@ -726,12 +938,24 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
             <Briefcase className="h-3.5 w-3.5" />
             Linked Deals
           </TabsTrigger>
+          <TabsTrigger value="recovery" className="gap-2">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            Recovery
+            {(recoveryBalance > 0 || potentialClawbacks > 0) && (
+              <span className="ml-1 h-4 min-w-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center px-1">
+                {clawbacks.filter(c => ["PENDING_APPROVAL","EXECUTED"].includes(c.status) && (c.outstandingAmount > 0 || c.status === "PENDING_APPROVAL")).length}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="transactions" className="mt-4">
           <TransactionTable transactions={transactions} loading={txLoading} />
         </TabsContent>
         <TabsContent value="deals" className="mt-4">
           <DealsTable deals={deals} loading={dealsLoading} />
+        </TabsContent>
+        <TabsContent value="recovery" className="mt-4">
+          <RecoverySection clawbacks={clawbacks} loading={cbLoading} />
         </TabsContent>
       </Tabs>
       {isSalesExec && (
@@ -751,13 +975,20 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
 function OtherWalletView({ userId }: { userId: string }) {
   const { data: wallet, isLoading: walletLoading } = useGetUserWallet(userId);
   const { data: txPage, isLoading: txLoading } = useListWalletUserTransactions(userId);
+  const { clawbacks, loading: cbLoading, recoveryBalance, potentialClawbacks } = useClawbacksForWallet(userId);
 
   const w = wallet as Wallet | undefined;
   const transactions: Transaction[] = Array.isArray((txPage as any)?.data) ? (txPage as any).data : [];
 
   return (
     <>
-      <BalanceCards wallet={w} loading={walletLoading} />
+      <BalanceCards
+        wallet={w}
+        loading={walletLoading}
+        recoveryBalance={recoveryBalance}
+        potentialClawbacks={potentialClawbacks}
+        recoveryLoading={cbLoading}
+      />
       {w && !walletLoading && (
         <p className="text-xs text-muted-foreground text-right -mt-2">Last updated: {formatDateTime(w.updatedAt)}</p>
       )}
@@ -767,9 +998,21 @@ function OtherWalletView({ userId }: { userId: string }) {
             <Receipt className="h-3.5 w-3.5" />
             Transaction History
           </TabsTrigger>
+          <TabsTrigger value="recovery" className="gap-2">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            Recovery
+            {(recoveryBalance > 0 || potentialClawbacks > 0) && (
+              <span className="ml-1 h-4 min-w-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center px-1">
+                {clawbacks.filter(c => ["PENDING_APPROVAL","EXECUTED"].includes(c.status) && (c.outstandingAmount > 0 || c.status === "PENDING_APPROVAL")).length}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="transactions" className="mt-4">
           <TransactionTable transactions={transactions} loading={txLoading} />
+        </TabsContent>
+        <TabsContent value="recovery" className="mt-4">
+          <RecoverySection clawbacks={clawbacks} loading={cbLoading} />
         </TabsContent>
       </Tabs>
     </>
