@@ -38,6 +38,8 @@ tags:
     description: PAYE tax bracket management
   - name: tax
     description: PAYE tax estimation
+  - name: onboarding
+    description: Company onboarding wizard
 
 paths:
   /healthz:
@@ -113,6 +115,39 @@ paths:
       responses:
         "200":
           description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ─── ONBOARDING ────────────────────────────────────
+  /onboarding/status:
+    get:
+      operationId: getOnboardingStatus
+      tags: [onboarding]
+      summary: Get onboarding status and prefill data
+      responses:
+        "200":
+          description: Onboarding status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardingStatus"
+
+  /onboarding/complete:
+    post:
+      operationId: completeOnboarding
+      tags: [onboarding]
+      summary: Complete the onboarding wizard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnboardingCompleteInput"
+      responses:
+        "200":
+          description: Onboarding completed
           content:
             application/json:
               schema:
@@ -2247,6 +2282,78 @@ components:
         estimatedNetPayout:           { type: number }
         effectiveRateOnCommission:    { type: number }
         primaryRebateApplied:         { type: number }
+
+    # ─── ONBOARDING ───────────────────────────────────────
+    OnboardingTerminology:
+      type: object
+      properties:
+        commissionEventName: { type: ["string", "null"] }
+        customerLabel:       { type: ["string", "null"] }
+        transactionLabel:    { type: ["string", "null"] }
+        salesPersonLabel:    { type: ["string", "null"] }
+
+    OnboardingRuleItem:
+      type: object
+      required: [ruleName, dealType, commissionPercentage]
+      properties:
+        id:                   { type: string }
+        ruleName:             { type: string }
+        dealType:             { type: string }
+        commissionPercentage: { type: number }
+
+    OnboardingStepItem:
+      type: object
+      required: [stepName, approverRole]
+      properties:
+        id:           { type: string }
+        stepOrder:    { type: integer }
+        stepName:     { type: string }
+        approverRole: { type: string }
+
+    OnboardingInviteItem:
+      type: object
+      required: [email, firstName, lastName, role]
+      properties:
+        email:     { type: string }
+        firstName: { type: string }
+        lastName:  { type: string }
+        role:      { type: string }
+
+    OnboardingStatus:
+      type: object
+      required: [onboardingStatus, industry]
+      properties:
+        onboardingStatus: { type: string }
+        industry:         { type: string }
+        terminology:
+          $ref: "#/components/schemas/OnboardingTerminology"
+        commissionRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnboardingRuleItem"
+        approvalSteps:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnboardingStepItem"
+
+    OnboardingCompleteInput:
+      type: object
+      properties:
+        industry: { type: string }
+        terminology:
+          $ref: "#/components/schemas/OnboardingTerminology"
+        commissionRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnboardingRuleItem"
+        approvalSteps:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnboardingStepItem"
+        invites:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnboardingInviteItem"
 
     # ─── AUDIT LOG ────────────────────────────────────────
     AuditLog:

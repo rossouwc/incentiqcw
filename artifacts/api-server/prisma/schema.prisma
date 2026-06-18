@@ -128,6 +128,7 @@ model Tenant {
   subscriptionPlan   SubscriptionPlan @default(STARTER)
   payrollDay           Int?             @default(25)
   commissionCutoffDay  Int?             @default(20)
+  onboardingStatus     String           @default("PENDING")
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
@@ -457,6 +458,7 @@ model TenantIndustryConfig {
   dealEntityName      String?
   commissionEventName String?
   triggerEventName    String?
+  salesPersonName     String?
   isCustomised        Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

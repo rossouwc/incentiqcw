@@ -1,6 +1,7 @@
 import { Sidebar } from "./Sidebar";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect, useLocation } from "wouter";
+import { useGetOnboardingStatus } from "@workspace/api-client-react";
 import { Bell, Search, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -57,6 +58,21 @@ function TopHeader() {
   );
 }
 
+function OnboardingStatusCheck({ children }: { children: React.ReactNode }) {
+  const { data: status, isLoading } = useGetOnboardingStatus();
+  if (isLoading) return null;
+  if (status?.onboardingStatus === "PENDING") return <Redirect to="/onboarding" />;
+  return <>{children}</>;
+}
+
+function OnboardingGate({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const [location] = useLocation();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  if (!isAdmin || location === "/onboarding") return <>{children}</>;
+  return <OnboardingStatusCheck>{children}</OnboardingStatusCheck>;
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
@@ -76,16 +92,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <TopHeader />
-        <main className="flex-1 overflow-auto">
-          <div className="p-6 max-w-7xl mx-auto">
-            {children}
-          </div>
-        </main>
+    <OnboardingGate>
+      <div className="flex h-screen w-full bg-background overflow-hidden">
+        <Sidebar />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <TopHeader />
+          <main className="flex-1 overflow-auto">
+            <div className="p-6 max-w-7xl mx-auto">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </OnboardingGate>
   );
 }

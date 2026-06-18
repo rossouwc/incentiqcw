@@ -297,7 +297,7 @@ export default function Register() {
         localStorage.setItem("incentiq_token", res.token);
         queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
         toast({ title: "Account created!", description: `Welcome to Incentiq, ${adminData.firstName}!` });
-        setLocation("/dashboard");
+        setLocation("/onboarding");
       },
       onError: (err: any) => {
         toast({

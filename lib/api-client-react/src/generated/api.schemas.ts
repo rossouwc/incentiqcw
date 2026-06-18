@@ -819,6 +819,54 @@ export interface TaxEstimateResult {
   primaryRebateApplied: number;
 }
 
+export interface OnboardingTerminology {
+  /** @nullable */
+  commissionEventName?: string | null;
+  /** @nullable */
+  customerLabel?: string | null;
+  /** @nullable */
+  transactionLabel?: string | null;
+  /** @nullable */
+  salesPersonLabel?: string | null;
+}
+
+export interface OnboardingRuleItem {
+  id?: string;
+  ruleName: string;
+  dealType: string;
+  commissionPercentage: number;
+}
+
+export interface OnboardingStepItem {
+  id?: string;
+  stepOrder?: number;
+  stepName: string;
+  approverRole: string;
+}
+
+export interface OnboardingInviteItem {
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
+export interface OnboardingStatus {
+  onboardingStatus: string;
+  industry: string;
+  terminology?: OnboardingTerminology;
+  commissionRules?: OnboardingRuleItem[];
+  approvalSteps?: OnboardingStepItem[];
+}
+
+export interface OnboardingCompleteInput {
+  industry?: string;
+  terminology?: OnboardingTerminology;
+  commissionRules?: OnboardingRuleItem[];
+  approvalSteps?: OnboardingStepItem[];
+  invites?: OnboardingInviteItem[];
+}
+
 export interface AuditLog {
   id: string;
   tenantId: string;

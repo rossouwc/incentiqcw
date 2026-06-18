@@ -41,6 +41,7 @@ import FinalApprovals from "@/pages/final-approvals";
 
 import ApprovedPayouts from "@/pages/approved-payouts";
 import PayoutHistory from "@/pages/payout-history";
+import OnboardingWizard from "@/pages/onboarding";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +59,7 @@ function Router() {
       {/* Public */}
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/onboarding" component={OnboardingWizard} />
       <Route path="/"><Redirect to="/dashboard" /></Route>
 
       {/* Shared / role-aware */}

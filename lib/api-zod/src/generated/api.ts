@@ -77,6 +77,69 @@ export const LogoutResponse = zod.object({
 
 
 /**
+ * @summary Get onboarding status and prefill data
+ */
+export const GetOnboardingStatusResponse = zod.object({
+  "onboardingStatus": zod.string(),
+  "industry": zod.string(),
+  "terminology": zod.object({
+  "commissionEventName": zod.string().nullish(),
+  "customerLabel": zod.string().nullish(),
+  "transactionLabel": zod.string().nullish(),
+  "salesPersonLabel": zod.string().nullish()
+}).optional(),
+  "commissionRules": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "ruleName": zod.string(),
+  "dealType": zod.string(),
+  "commissionPercentage": zod.number()
+})).optional(),
+  "approvalSteps": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "stepOrder": zod.number().optional(),
+  "stepName": zod.string(),
+  "approverRole": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Complete the onboarding wizard
+ */
+export const CompleteOnboardingBody = zod.object({
+  "industry": zod.string().optional(),
+  "terminology": zod.object({
+  "commissionEventName": zod.string().nullish(),
+  "customerLabel": zod.string().nullish(),
+  "transactionLabel": zod.string().nullish(),
+  "salesPersonLabel": zod.string().nullish()
+}).optional(),
+  "commissionRules": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "ruleName": zod.string(),
+  "dealType": zod.string(),
+  "commissionPercentage": zod.number()
+})).optional(),
+  "approvalSteps": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "stepOrder": zod.number().optional(),
+  "stepName": zod.string(),
+  "approverRole": zod.string()
+})).optional(),
+  "invites": zod.array(zod.object({
+  "email": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "role": zod.string()
+})).optional()
+})
+
+export const CompleteOnboardingResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
  * @summary Get current tenant info
  */
 export const GetTenantResponse = zod.object({
