@@ -81,6 +81,7 @@ interface CommEvent {
   commissionBaseAmount: number;
   commissionPercentage: number;
   calculatedCommissionAmount: number;
+  splitDeductionAmount: number | null;
   triggerStatus: string;
   approvalStatus: string;
   walletStatus: string;
@@ -1234,7 +1235,7 @@ export default function Deals() {
     const total    = events.length;
     const draft    = events.filter((e) => e.approvalStatus === "DRAFT").length;
     const pending  = events.filter((e) => e.approvalStatus === "PENDING_APPROVAL").length;
-    const totalComm = events.reduce((s, e) => s + e.calculatedCommissionAmount, 0);
+    const totalComm = events.reduce((s, e) => s + (e.calculatedCommissionAmount - (e.splitDeductionAmount ?? 0)), 0);
     return { total, draft, pending, totalComm };
   }, [events]);
 
@@ -1578,8 +1579,13 @@ export default function Deals() {
                           </td>
                         )}
                         <td className="px-6 py-4 text-right">
-                          <span className="font-semibold text-primary">{formatCurrency(ev.calculatedCommissionAmount)}</span>
+                          <span className="font-semibold text-primary">
+                            {formatCurrency(ev.calculatedCommissionAmount - (ev.splitDeductionAmount ?? 0))}
+                          </span>
                           <div className="text-xs text-muted-foreground">{ev.commissionPercentage}%</div>
+                          {(ev.splitDeductionAmount ?? 0) > 0 && (
+                            <div className="text-xs text-amber-500">−{formatCurrency(ev.splitDeductionAmount!)} split</div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col gap-1">
