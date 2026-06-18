@@ -4,7 +4,7 @@ import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { getIndustryConfig } from "../industry-config";
 import { calculateCommission } from "../lib/commission-formula";
-import { getDefaultWorkflow, parseWorkflowSteps } from "../lib/industry-workflows";
+import { getDefaultWorkflow } from "../lib/industry-workflows";
 import { getIndustryTriggers } from "../lib/industry-triggers";
 import { ApprovalStatus, TriggerStatus } from "@prisma/client";
 
@@ -320,26 +320,26 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
     }
 
     // ── Resolve workflow steps ────────────────────────────────────────────────
-    // Priority: industry-specific tenant workflow → generic tenant workflow → code defaults
+    // Always use the live ApprovalConfig records the admin has configured.
+    // Fall back to code defaults only when no active steps exist at all.
 
     const industryCode: string =
       (existing.industryTemplate as any)?.code ?? "CUSTOM";
 
-    // 1. Tenant workflow for this specific industry
-    let tenantWorkflow = await prisma.tenantApprovalWorkflow.findFirst({
-      where: { tenantId: req.user!.tenantId, isActive: true, industryCode },
+    const liveConfigs = await prisma.approvalConfig.findMany({
+      where:   { tenantId: req.user!.tenantId, isActive: true },
+      orderBy: { stepOrder: "asc" },
     });
 
-    // 2. Generic tenant workflow (no industry code)
-    if (!tenantWorkflow) {
-      tenantWorkflow = await prisma.tenantApprovalWorkflow.findFirst({
-        where: { tenantId: req.user!.tenantId, isActive: true, industryCode: null },
-      });
-    }
-
-    const resolvedSteps =
-      (tenantWorkflow ? parseWorkflowSteps(tenantWorkflow.approvalStepsJson) : null)
-      ?? getDefaultWorkflow(industryCode);
+    type ResolvedStep = { step: number; stepName: string; approverRole: string; approverUserId: string | null };
+    const resolvedSteps: ResolvedStep[] = liveConfigs.length > 0
+      ? liveConfigs.map((c) => ({
+          step:          c.stepOrder,
+          stepName:      c.stepName,
+          approverRole:  c.approverRole as string,
+          approverUserId: c.approverUserId ?? null,
+        }))
+      : getDefaultWorkflow(industryCode).map((s) => ({ ...s, approverUserId: null }));
 
     // Build CommissionEventApproval records — first step PENDING, rest WAITING
     const stepRecords = resolvedSteps.map((s, idx) => ({
@@ -348,7 +348,7 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       approvalStep:      s.step,
       stepName:          s.stepName,
       approverRole:      s.approverRole as any,
-      approverUserId:    null as string | null,
+      approverUserId:    s.approverUserId,
       status:            (idx === 0 ? ApprovalStatus.PENDING : ApprovalStatus.WAITING),
     }));
 
