@@ -251,7 +251,7 @@ interface Breakdown {
   commissionPercentage: number;
 }
 
-function CommissionBreakdown({ bd }: { bd: Breakdown }) {
+function CommissionBreakdown({ bd, splitDeductionAmount }: { bd: Breakdown; splitDeductionAmount?: number | null }) {
   const [open, setOpen] = useState(false);
   const gp = bd.grossProfitAmount;
   const gpMargin = bd.revenueAmount > 0 ? ((gp / bd.revenueAmount) * 100).toFixed(1) : null;
@@ -301,12 +301,28 @@ function CommissionBreakdown({ bd }: { bd: Breakdown }) {
               <span className="text-muted-foreground">Commission Rate</span>
               <span className="font-medium tabular-nums">{bd.commissionPercentage}%</span>
             </div>
-            <div className="flex justify-between px-3 py-2.5 bg-primary/5 border-t-2 border-primary/20">
-              <span className="font-semibold text-foreground">Calculated Commission</span>
-              <span className="font-bold text-primary tabular-nums">
+            <div className={`flex justify-between px-3 py-2.5 ${splitDeductionAmount ? "bg-muted/30" : "bg-primary/5 border-t-2 border-primary/20"}`}>
+              <span className="font-semibold text-foreground">
+                {splitDeductionAmount ? "Your Commission (Gross)" : "Calculated Commission"}
+              </span>
+              <span className={`font-bold tabular-nums ${splitDeductionAmount ? "text-foreground" : "text-primary"}`}>
                 {formatCurrency((bd.commissionBaseAmount > 0 ? bd.commissionBaseAmount : bd.revenueAmount) * bd.commissionPercentage / 100)}
               </span>
             </div>
+            {splitDeductionAmount != null && splitDeductionAmount > 0 && (
+              <>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-amber-600 dark:text-amber-400">Internal Talent Team Deduction</span>
+                  <span className="tabular-nums text-amber-600 dark:text-amber-400">− {formatCurrency(splitDeductionAmount)}</span>
+                </div>
+                <div className="flex justify-between px-3 py-2.5 bg-primary/5 border-t-2 border-primary/20">
+                  <span className="font-semibold text-foreground">Your Net Commission</span>
+                  <span className="font-bold text-primary tabular-nums">
+                    {formatCurrency((bd.commissionBaseAmount > 0 ? bd.commissionBaseAmount : bd.revenueAmount) * bd.commissionPercentage / 100 - splitDeductionAmount)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </CollapsibleContent>
@@ -546,7 +562,12 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
               </div>
               <div>
                 <span className="text-muted-foreground text-xs">Commission</span>
-                <p className="font-semibold text-primary text-lg">{formatCurrency(approval.calculatedCommission)}</p>
+                <p className="font-semibold text-primary text-lg">
+                  {formatCurrency(approval.calculatedCommission - ((approval as any).splitDeductionAmount ?? 0))}
+                </p>
+                {((approval as any).splitDeductionAmount ?? 0) > 0 && (
+                  <p className="text-xs text-amber-500">−{formatCurrency((approval as any).splitDeductionAmount)} split deducted</p>
+                )}
               </div>
             </div>
 
@@ -576,7 +597,7 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
 
           {/* Commission breakdown */}
           {breakdown && (
-            <CommissionBreakdown bd={breakdown} />
+            <CommissionBreakdown bd={breakdown} splitDeductionAmount={(approval as any).splitDeductionAmount} />
           )}
 
           {/* Key dates */}
@@ -855,7 +876,7 @@ export default function Approvals({ title = "Pending Approvals", description }: 
     });
   }
 
-  const totalCommission = list.reduce((s, a) => s + (a.calculatedCommission ?? 0), 0);
+  const totalCommission = list.reduce((s, a) => s + ((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0)), 0);
   const salesExecConfirmations = applyFilters(list.filter((a) => a.approverRole === "SALES_EXECUTIVE"));
   const standardApprovals = applyFilters(list.filter((a) => a.approverRole !== "SALES_EXECUTIVE"));
 
@@ -1036,7 +1057,7 @@ export default function Approvals({ title = "Pending Approvals", description }: 
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">{a.customerName}</td>
                       <td className="px-6 py-4 text-right font-semibold text-teal-600 dark:text-teal-400 text-base">
-                        {formatCurrency(a.calculatedCommission)}
+                        {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
                       </td>
                       <td className="px-6 py-4">
                         <Badge className="bg-teal-100 text-teal-700 border-teal-300 text-xs">
@@ -1106,7 +1127,7 @@ export default function Approvals({ title = "Pending Approvals", description }: 
                         <div className="text-xs text-muted-foreground">{a.approverRole}</div>
                       </td>
                       <td className="px-6 py-4 text-right font-semibold text-primary">
-                        {formatCurrency(a.calculatedCommission)}
+                        {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground text-xs">{formatDate(a.createdAt)}</td>
                       <td className="px-6 py-4"><StatusBadge status={a.status} /></td>
