@@ -94,6 +94,45 @@ enum TransactionType {
   MANUAL_ADJUSTMENT
   COMMISSION_SPLIT_DEDUCTION
   COMMISSION_SPLIT_CREDIT
+  CLAWBACK_DEDUCTION
+  FUTURE_OFFSET_APPLIED
+}
+
+enum ClawbackType {
+  FULL
+  PARTIAL
+  PRO_RATA
+  FIXED_AMOUNT
+  COMPONENT
+  MANUAL_ADJUSTMENT
+}
+
+enum ClawbackReasonCategory {
+  CANCELLATION
+  TERMINATION
+  NON_PAYMENT
+  REVERSAL
+  RETURN
+  LAPSE
+  NO_LONGER_QUALIFIES
+  OTHER
+}
+
+enum ClawbackStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  DECLINED
+  WAIVED
+  DISPUTED
+  EXECUTED
+}
+
+enum RecoveryMethod {
+  WALLET_DEDUCTION
+  FUTURE_OFFSET
+  MANUAL
+  WAIVED
 }
 
 enum DealSourceType {
@@ -126,6 +165,11 @@ enum NotificationType {
   AMENDMENT_REQUESTED
   AMENDMENT_ACCEPTED
   AMENDMENT_DECLINED
+  CLAWBACK_CREATED
+  CLAWBACK_APPROVED
+  CLAWBACK_EXECUTED
+  CLAWBACK_WAIVED
+  CLAWBACK_DISPUTED
   SYSTEM
 }
 
@@ -176,6 +220,8 @@ model Tenant {
   externalProviders        ExternalProvider[]
   commissionSplitConfig    CommissionSplitConfig?
   changeRequests           ChangeRequest[]
+  commissionClawbacks      CommissionClawback[]
+  clawbackRecoveries       ClawbackRecovery[]
 }
 
 model User {
@@ -208,6 +254,10 @@ model User {
   internalReferralEvents      CommissionEvent[]          @relation("CommissionEventInternalReferrer")
   changeRequestsSubmitted     ChangeRequest[]           @relation("ChangeRequestedBy")
   changeRequestsReviewed      ChangeRequest[]           @relation("ChangeRequestReviewedBy")
+  clawbacksAsExecutive        CommissionClawback[]      @relation("ClawbackSalesExec")
+  clawbacksCreated            CommissionClawback[]      @relation("ClawbackCreatedBy")
+  clawbacksApproved           CommissionClawback[]      @relation("ClawbackApprovedBy")
+  clawbackRecoveriesCreated   ClawbackRecovery[]        @relation("RecoveryCreatedBy")
 
   @@unique([tenantId, email])
 }
@@ -597,6 +647,7 @@ model CommissionEvent {
   triggers           CommissionEventTrigger[]
   documents          CommissionDocument[]
   changeRequests     ChangeRequest[]
+  clawbacks          CommissionClawback[]
 }
 
 model ChangeRequest {
@@ -707,4 +758,56 @@ model CommissionSplitConfig {
   updatedAt       DateTime           @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ─── Commission Clawback / Reversal / Recovery ────────────────────────────────
+
+model CommissionClawback {
+  id                       String                 @id @default(cuid())
+  tenantId                 String
+  commissionEventId        String
+  salesExecutiveId         String
+  clawbackType             ClawbackType
+  reasonCategory           ClawbackReasonCategory
+  reason                   String
+  originalCommissionAmount Decimal                @db.Decimal(15, 2)
+  clawbackAmount           Decimal                @db.Decimal(15, 2)
+  recoveredAmount          Decimal                @default(0) @db.Decimal(15, 2)
+  outstandingAmount        Decimal                @default(0) @db.Decimal(15, 2)
+  proRataFactor            Decimal?               @db.Decimal(6, 4)
+  componentDescription     String?
+  status                   ClawbackStatus         @default(DRAFT)
+  notes                    String?
+  waiveReason              String?
+  disputeNote              String?
+  disputedAt               DateTime?
+  approvedAt               DateTime?
+  executedAt               DateTime?
+  createdById              String
+  approvedById             String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent     @relation(fields: [commissionEventId], references: [id])
+  salesExecutive  User                @relation("ClawbackSalesExec", fields: [salesExecutiveId], references: [id])
+  createdBy       User                @relation("ClawbackCreatedBy", fields: [createdById], references: [id])
+  approvedBy      User?               @relation("ClawbackApprovedBy", fields: [approvedById], references: [id])
+  recoveries      ClawbackRecovery[]
+}
+
+model ClawbackRecovery {
+  id             String         @id @default(cuid())
+  tenantId       String
+  clawbackId     String
+  recoveryMethod RecoveryMethod
+  amount         Decimal        @db.Decimal(15, 2)
+  description    String?
+  referenceId    String?
+  createdById    String
+  createdAt      DateTime       @default(now())
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clawback  CommissionClawback @relation(fields: [clawbackId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("RecoveryCreatedBy", fields: [createdById], references: [id])
 }

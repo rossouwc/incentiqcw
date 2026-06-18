@@ -43,6 +43,7 @@ import ApprovedPayouts from "@/pages/approved-payouts";
 import PayoutHistory from "@/pages/payout-history";
 import OnboardingWizard from "@/pages/onboarding";
 import IndustryConfig from "@/pages/industry-config";
+import Clawbacks from "@/pages/clawbacks";
 
 const queryClient = new QueryClient();
 
@@ -107,6 +108,9 @@ function Router() {
       {/* Payroll */}
       <Route path="/approved-payouts"><P component={ApprovedPayouts} /></Route>
       <Route path="/payout-history"><P component={PayoutHistory} /></Route>
+
+      {/* Clawbacks — role-aware, accessible to all authenticated users */}
+      <Route path="/clawbacks"><P component={Clawbacks} /></Route>
 
       <Route component={NotFound} />
     </Switch>
