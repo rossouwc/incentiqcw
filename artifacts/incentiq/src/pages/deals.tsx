@@ -33,6 +33,12 @@ function getAuthHeaders(): HeadersInit {
   return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
 
+// ── Field keys treated as "customer name" for autocomplete ────────────────────
+const CUSTOMER_FIELD_KEYS = new Set([
+  "customerName", "clientName", "candidateName", "buyerName",
+  "accountName", "tenantName", "recruiterClient", "partnerName",
+]);
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface FieldDef {
@@ -114,6 +120,17 @@ function useCommissionEvents() {
   return { data, loading, refetch: fetchData };
 }
 
+function useCustomers() {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/customers", { headers: getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : [])
+      .then((rows: { name: string }[]) => setNames(rows.map((r) => r.name).sort()))
+      .catch(() => setNames([]));
+  }, []);
+  return names;
+}
+
 // ── Trigger status display ─────────────────────────────────────────────────────
 
 const TRIGGER_STATUS_CFG: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
@@ -153,19 +170,101 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ── Customer name autocomplete ────────────────────────────────────────────────
+
+function CustomerAutocomplete({
+  id, label, value, onChange, customers, required, placeholder,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  customers: string[];
+  required?: boolean;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef    = useRef<HTMLDivElement>(null);
+
+  const matches = useMemo(() => {
+    if (!value.trim()) return customers.slice(0, 8);
+    const q = value.toLowerCase();
+    return customers.filter((c) => c.toLowerCase().includes(q)).slice(0, 8);
+  }, [value, customers]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  return (
+    <div className="space-y-1.5" ref={containerRef}>
+      <Label htmlFor={id}>
+        {label}
+        {required && <span className="text-destructive ml-0.5">*</span>}
+      </Label>
+      <div className="relative">
+        <Input
+          id={id}
+          value={value}
+          autoComplete="off"
+          placeholder={placeholder ?? `Enter or select ${label.toLowerCase()}`}
+          onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {open && matches.length > 0 && (
+          <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-52 overflow-y-auto">
+            {matches.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors ${value === name ? "bg-accent/50 font-medium" : ""}`}
+                onMouseDown={(e) => { e.preventDefault(); onChange(name); setOpen(false); }}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Dynamic field renderer ────────────────────────────────────────────────────
 
 function DynamicField({
-  def, value, onChange,
+  def, value, onChange, customers,
 }: {
   def: FieldDef;
   value: string;
   onChange: (v: string) => void;
+  customers?: string[];
 }) {
   const id      = `f-${def.fieldKey}`;
   const options = Array.isArray(def.optionsJson) ? (def.optionsJson as string[]) : [];
   const req     = def.isRequired;
   const reqMark = req ? <span className="text-destructive ml-0.5">*</span> : null;
+
+  // ── Customer autocomplete for known customer-name fields ──
+  if (CUSTOMER_FIELD_KEYS.has(def.fieldKey) && customers && customers.length > 0) {
+    return (
+      <CustomerAutocomplete
+        id={id}
+        label={def.fieldLabel}
+        value={value}
+        onChange={onChange}
+        customers={customers}
+        required={def.isRequired}
+        placeholder={`Enter ${def.fieldLabel.toLowerCase()}`}
+      />
+    );
+  }
 
   switch (def.fieldType) {
     case "textarea":
@@ -581,6 +680,7 @@ export default function Deals() {
   const { user: currentUser }      = useAuth();
   const { data: fc, loading: fcLoading } = useFieldConfig();
   const { data: events, loading, refetch } = useCommissionEvents();
+  const customers = useCustomers();
 
   // Dialog / modal state
   const [showForm, setShowForm]       = useState(false);
@@ -1032,6 +1132,7 @@ export default function Deals() {
                             def={f}
                             value={formValues[f.fieldKey] ?? ""}
                             onChange={(v) => setField(f.fieldKey, v)}
+                            customers={customers}
                           />
                         </div>
                       ))}

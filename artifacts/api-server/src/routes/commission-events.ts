@@ -262,6 +262,20 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       include: { salesExecutive: { select: { firstName: true, lastName: true } } },
     });
 
+    // Auto-save any customer-like field value for future autocomplete
+    const CUSTOMER_KEYS = ["customerName", "clientName", "candidateName", "buyerName", "accountName", "tenantName", "recruiterClient", "partnerName"];
+    for (const key of CUSTOMER_KEYS) {
+      const customerVal = typeof dataMap[key] === "string" ? (dataMap[key] as string).trim() : null;
+      if (customerVal) {
+        await prisma.customer.upsert({
+          where:  { tenantId_name: { tenantId: req.user!.tenantId, name: customerVal } },
+          create: { tenantId: req.user!.tenantId, name: customerVal },
+          update: {},
+        }).catch(() => {});
+        break;
+      }
+    }
+
     await prisma.auditLog.create({
       data: {
         tenantId:   req.user!.tenantId,
