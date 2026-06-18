@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useListPayouts,
   useCreatePayout,
@@ -140,6 +140,11 @@ function PayoutTrackingBody({ payout }: { payout: any }) {
   );
 }
 
+function getAuthHeaders(): HeadersInit {
+  const t = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  return t ? { Authorization: `Bearer ${t}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
+
 function getUpcomingMonths(count: number, startFromNext = false): { label: string; value: string }[] {
   const months: { label: string; value: string }[] = [];
   const now = new Date();
@@ -170,11 +175,18 @@ export default function Payouts() {
   const profile = taxProfile as any;
   const list: any[] = Array.isArray(payoutsData) ? payoutsData : (payoutsData as any)?.data ?? [];
 
+  const { data: payrollConfig } = useQuery({
+    queryKey: ["payroll-config"],
+    queryFn: () => fetch("/api/tenant/payroll-config", { headers: getAuthHeaders() }).then(r => r.json()),
+  });
+  const cutoffDay: number = (payrollConfig as any)?.commissionCutoffDay ?? 0;
+  const pastCutoff = cutoffDay > 0 && new Date().getDate() > cutoffDay;
+
   const [open, setOpen] = useState(false);
   const [trackingPayout, setTrackingPayout] = useState<any>(null);
   const [payoutType, setPayoutType] = useState<PayoutType>("FULL");
   const [amount, setAmount] = useState("");
-  const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1)[0].value);
+  const [payoutMonthOverride, setPayoutMonthOverride] = useState<string | null>(null);
   const [deferToMonth, setDeferToMonth] = useState(() => getUpcomingMonths(1, true)[0].value);
   const [comments, setComments] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -189,8 +201,11 @@ export default function Payouts() {
   const pendingBalance = (w?.pendingApprovalAmount ?? 0) + (w?.payrollApprovedAmount ?? 0);
   const paidOutBalance = wallet?.paidOutBalance ?? 0;
 
-  const currentMonths = getUpcomingMonths(12);
+  const currentMonths = getUpcomingMonths(12, pastCutoff);
   const futureMonths = getUpcomingMonths(12, true);
+  const payoutMonth = (payoutMonthOverride && currentMonths.some(m => m.value === payoutMonthOverride))
+    ? payoutMonthOverride
+    : currentMonths[0]?.value ?? "";
 
   const effectiveAmount = useMemo(() => {
     if (payoutType === "FULL") return availableBalance;
@@ -273,7 +288,7 @@ export default function Payouts() {
     setErrors({});
     setPayoutType("FULL");
     setPayeEstimate(null);
-    setPayoutMonth(getUpcomingMonths(1)[0].value);
+    setPayoutMonthOverride(null);
     setDeferToMonth(getUpcomingMonths(1, true)[0].value);
   };
 
@@ -386,7 +401,7 @@ export default function Payouts() {
                 ) : (
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5" /> Payout month</Label>
-                    <Select value={payoutMonth} onValueChange={setPayoutMonth}>
+                    <Select value={payoutMonth} onValueChange={setPayoutMonthOverride}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {currentMonths.map((m) => (

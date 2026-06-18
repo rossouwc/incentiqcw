@@ -584,15 +584,24 @@ function DetailModal({
   onClose,
   onUpdated,
   canManage,
+  role,
 }: {
   clawback: Clawback | null;
   onClose: () => void;
   onUpdated: () => void;
   canManage: boolean;
+  role: string;
 }) {
   const { toast } = useToast();
   const { clawbackTerm } = useIndustryConfig();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const activeStep = clawback?.approvalSteps.find(
+    (s) => s.stepOrder === clawback.approvalCurrentStep && s.status === "PENDING"
+  ) ?? null;
+  const userCanApproveStep =
+    ["ADMIN", "SUPER_ADMIN"].includes(role) ||
+    (activeStep != null && activeStep.approverRole === role);
   const [disputeNote, setDisputeNote] = useState("");
   const [waiveReason, setWaiveReason] = useState("");
   const [declineNote, setDeclineNote] = useState("");
@@ -841,8 +850,15 @@ function DetailModal({
             {/* Primary approval actions (PENDING_APPROVAL or CHANGES_REQUESTED) */}
             {canManage && ["PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(clawback.status) && (
               <>
+                {activeStep && (
+                  <p className="text-xs text-muted-foreground">
+                    Awaiting: <span className="font-medium text-foreground">{activeStep.stepName}</span>
+                    {" "}({activeStep.approverRole.replace(/_/g, " ")})
+                    {!userCanApproveStep && <span className="text-amber-500 ml-1">— not your step</span>}
+                  </p>
+                )}
                 <div className="flex gap-2 flex-wrap">
-                  <Button className="flex-1 min-w-[100px] gap-1.5 bg-green-600 hover:bg-green-700 text-white" onClick={() => doAction("APPROVE")} disabled={busy}>
+                  <Button className="flex-1 min-w-[100px] gap-1.5 bg-green-600 hover:bg-green-700 text-white" onClick={() => doAction("APPROVE")} disabled={busy || !userCanApproveStep}>
                     {actionLoading === "APPROVE" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                     Approve Step
                   </Button>
@@ -1192,7 +1208,7 @@ export default function Clawbacks() {
       {/* Modals */}
       <CreateClawbackModal open={showCreate} onClose={() => setShowCreate(false)} onCreated={fetchClawbacks} />
       <ExecuteModal clawback={executeTarget} onClose={() => setExecuteTarget(null)} onDone={fetchClawbacks} />
-      <DetailModal clawback={viewDetail} onClose={() => setViewDetail(null)} onUpdated={() => { fetchClawbacks(); setViewDetail(null); }} canManage={canManage} />
+      <DetailModal clawback={viewDetail} onClose={() => setViewDetail(null)} onUpdated={() => { fetchClawbacks(); setViewDetail(null); }} canManage={canManage} role={role} />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <AlertDialogContent>
