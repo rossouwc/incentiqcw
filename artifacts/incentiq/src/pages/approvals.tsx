@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListApprovals,
@@ -19,6 +19,7 @@ import {
   Search, X, User, ChevronDown, FileText, ExternalLink,
   Paperclip, TrendingUp, Calculator, CalendarDays,
   Users, Building2, UserCircle, Scissors,
+  AlertTriangle, GitPullRequestArrow, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
@@ -42,6 +43,195 @@ interface ActionDialogProps {
   onClose: () => void;
   onAction: (action: ActionType, comments: string, payoutAmount?: number) => Promise<void>;
   submitting: boolean;
+}
+
+// ── Change Request types ───────────────────────────────────────────────────────
+
+interface ChangeRequest {
+  id: string;
+  commissionEventId: string;
+  eventTitle: string;
+  requestedById: string;
+  requestedByName: string;
+  reviewedById: string | null;
+  reviewedByName: string | null;
+  reason: string;
+  reviewNote: string | null;
+  status: "PENDING" | "ACCEPTED" | "DECLINED";
+  createdAt: string;
+}
+
+function useChangeRequests() {
+  const [data, setData] = useState<ChangeRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch_ = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("incentiq_token");
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch("/api/change-requests", { headers });
+      if (res.ok) {
+        const json = await res.json();
+        setData(Array.isArray(json) ? json : []);
+      }
+    } catch { setData([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetch_(); }, [fetch_]);
+  return { data, loading, refetch: fetch_ };
+}
+
+// ── Amendment Request Queue Card ───────────────────────────────────────────────
+
+function AmendmentRequestsSection() {
+  const { data: requests, loading, refetch } = useChangeRequests();
+  const { toast } = useToast();
+  const [actioning, setActioning] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [pendingAction, setPendingAction] = useState<{ id: string; action: "ACCEPT" | "DECLINE" } | null>(null);
+
+  const pending = requests.filter((r) => r.status === "PENDING");
+  if (!loading && pending.length === 0) return null;
+
+  async function handleAction(id: string, action: "ACCEPT" | "DECLINE") {
+    setPendingAction({ id, action });
+  }
+
+  async function confirmAction() {
+    if (!pendingAction) return;
+    setActioning(pendingAction.id);
+    try {
+      const token = localStorage.getItem("incentiq_token");
+      const headers: HeadersInit = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": "application/json",
+      };
+      const res = await fetch(`/api/change-requests/${pendingAction.id}/action`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ action: pendingAction.action, reviewNote: reviewNote.trim() || null }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Action failed");
+      }
+      toast({
+        title: pendingAction.action === "ACCEPT" ? "Amendment accepted" : "Amendment declined",
+        description: pendingAction.action === "ACCEPT"
+          ? "The approval workflow has been reset. The sales exec can now update the deal."
+          : "The approval workflow continues as normal.",
+      });
+      setPendingAction(null);
+      setReviewNote("");
+      refetch();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  return (
+    <Card className="shadow-sm border-purple-300 dark:border-purple-700">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <GitPullRequestArrow className="h-5 w-5 text-purple-600" />
+          <div>
+            <CardTitle className="text-base">Amendment Requests</CardTitle>
+            <CardDescription className="text-xs mt-0.5">
+              A sales exec is requesting changes to a deal that is in your approval queue.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+          </div>
+        ) : (
+          pending.map((cr) => (
+            <div key={cr.id} className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-foreground">{cr.eventTitle}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Requested by <span className="font-medium text-foreground">{cr.requestedByName}</span> · {formatDate(cr.createdAt)}
+                  </p>
+                </div>
+                <Badge className="bg-purple-100 text-purple-700 border-purple-300 text-xs shrink-0">Amendment Pending</Badge>
+              </div>
+
+              <div className="rounded-md bg-muted/50 border border-border px-3 py-2 text-sm text-foreground">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Reason</span>
+                {cr.reason}
+              </div>
+
+              {/* Confirm dialog inline */}
+              {pendingAction?.id === cr.id ? (
+                <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Note for sales exec (optional)</Label>
+                    <Textarea
+                      value={reviewNote}
+                      onChange={(e) => setReviewNote(e.target.value)}
+                      placeholder={pendingAction.action === "ACCEPT"
+                        ? "Any notes before restarting the workflow…"
+                        : "Explain why the amendment was declined…"}
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className={`flex-1 gap-1.5 ${pendingAction.action === "ACCEPT" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"} text-white`}
+                      disabled={actioning === cr.id}
+                      onClick={confirmAction}
+                    >
+                      {actioning === cr.id ? <Clock className="h-3.5 w-3.5 animate-spin" /> :
+                        pendingAction.action === "ACCEPT" ? <ThumbsUp className="h-3.5 w-3.5" /> : <ThumbsDown className="h-3.5 w-3.5" />}
+                      Confirm {pendingAction.action === "ACCEPT" ? "Accept" : "Decline"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setPendingAction(null); setReviewNote(""); }}
+                      disabled={actioning === cr.id}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                    disabled={!!actioning}
+                    onClick={() => handleAction(cr.id, "ACCEPT")}
+                  >
+                    <ThumbsUp className="h-3.5 w-3.5" /> Accept & Reset Workflow
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 gap-1.5 border-red-400 text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                    disabled={!!actioning}
+                    onClick={() => handleAction(cr.id, "DECLINE")}
+                  >
+                    <ThumbsDown className="h-3.5 w-3.5" /> Decline
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ── Auth helper ────────────────────────────────────────────────────────────────
@@ -312,6 +502,32 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
         </DialogHeader>
 
         <div className="space-y-4 overflow-y-auto flex-1 pr-0.5">
+          {/* Lock banner — shown when the sales exec is currently editing this deal */}
+          {(approval as any).editStatus === "EDITING" && (
+            <div className="flex items-start gap-3 rounded-lg border border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/30 px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">Deal is being edited</p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
+                  The sales executive is currently updating this deal. Approval actions are disabled until they finish.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Change request banner — a pending amendment request exists */}
+          {(approval as any).editStatus === "CHANGE_REQUESTED" && (
+            <div className="flex items-start gap-3 rounded-lg border border-purple-300 bg-purple-50 dark:border-purple-700 dark:bg-purple-950/30 px-4 py-3">
+              <GitPullRequestArrow className="h-4 w-4 text-purple-600 dark:text-purple-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">Amendment requested</p>
+                <p className="text-xs text-purple-700 dark:text-purple-400 mt-0.5">
+                  The sales executive has submitted an amendment request. Check the Amendment Requests section on this page to accept or decline it.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Deal summary */}
           <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
@@ -405,17 +621,23 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
 
         {/* Actions — fixed at the bottom */}
         <div className="space-y-2 pt-2 shrink-0 border-t border-border mt-2">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white" disabled={submitting} onClick={() => handleAction("APPROVE")}>
-              <CheckCircle2 className="h-4 w-4" />Approve
-            </Button>
-            <Button variant="outline" className="flex-1 gap-2 border-orange-400 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950" disabled={submitting} onClick={() => handleAction("REQUEST_CHANGES")}>
-              <RotateCcw className="h-4 w-4" />Request Changes
-            </Button>
-            <Button variant="outline" className="flex-1 gap-2 border-red-400 text-red-700 hover:bg-red-50 dark:hover:bg-red-950" disabled={submitting} onClick={() => handleAction("REJECT")}>
-              <XCircle className="h-4 w-4" />Reject
-            </Button>
-          </div>
+          {(approval as any).editStatus === "EDITING" || (approval as any).editStatus === "CHANGE_REQUESTED" ? (
+            <div className="rounded-md bg-muted/60 border border-border px-4 py-3 text-center text-sm text-muted-foreground">
+              Approval actions are disabled while an edit or amendment is in progress.
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white" disabled={submitting} onClick={() => handleAction("APPROVE")}>
+                <CheckCircle2 className="h-4 w-4" />Approve
+              </Button>
+              <Button variant="outline" className="flex-1 gap-2 border-orange-400 text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950" disabled={submitting} onClick={() => handleAction("REQUEST_CHANGES")}>
+                <RotateCcw className="h-4 w-4" />Request Changes
+              </Button>
+              <Button variant="outline" className="flex-1 gap-2 border-red-400 text-red-700 hover:bg-red-50 dark:hover:bg-red-950" disabled={submitting} onClick={() => handleAction("REJECT")}>
+                <XCircle className="h-4 w-4" />Reject
+              </Button>
+            </div>
+          )}
           <Button variant="ghost" className="w-full text-muted-foreground" onClick={onClose} disabled={submitting}>Cancel</Button>
         </div>
       </DialogContent>
@@ -775,6 +997,9 @@ export default function Approvals({ title = "Pending Approvals", description }: 
           </span>
         )}
       </div>
+
+      {/* Amendment Requests section — only shown to approvers with pending requests */}
+      <AmendmentRequestsSection />
 
       {/* Sales Exec Confirmation section */}
       {salesExecConfirmations.length > 0 && (

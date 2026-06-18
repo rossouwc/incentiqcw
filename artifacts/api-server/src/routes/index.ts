@@ -23,6 +23,7 @@ import { onboardingRouter } from "./onboarding";
 import { industryConfigRouter } from "./industry-config";
 import { externalProvidersRouter } from "./external-providers";
 import { commissionSplitConfigRouter } from "./commission-split-config";
+import { changeRequestsRouter } from "./change-requests";
 
 const router: IRouter = Router();
 
@@ -51,5 +52,6 @@ router.use("/onboarding", onboardingRouter);
 router.use("/industry-config", industryConfigRouter);
 router.use("/external-providers", externalProvidersRouter);
 router.use("/commission-split-config", commissionSplitConfigRouter);
+router.use("/change-requests", changeRequestsRouter);
 
 export default router;

@@ -204,6 +204,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
         sourceType:          (e as any).sourceType ?? "SELF",
         splitReferrerName:   (e as any).splitReferrerName ?? null,
         splitDeductionAmount: (e as any).splitDeductionAmount ?? null,
+        editStatus:          (e as any).editStatus ?? "NONE",
       })),
     });
   } catch (err) {
@@ -246,6 +247,7 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       sourceType:           (event as any).sourceType ?? "SELF",
       splitReferrerName:    (event as any).splitReferrerName ?? null,
       splitDeductionAmount: (event as any).splitDeductionAmount ?? null,
+      editStatus:           (event as any).editStatus ?? "NONE",
       approvals: (event.approvals as any[]).map((a) => ({
         id:            a.id,
         approvalStep:  a.approvalStep,
@@ -344,6 +346,141 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     });
   } catch (err) {
     logger.error({ err }, "CreateCommissionEvent error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── POST /api/commission-events/:id/edit-start ───────────────────────────────
+// Sales exec starts editing a deal that is at Level-1-PENDING or in EDITING state.
+
+router.post("/:id/edit-start", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
+      include: { approvals: { orderBy: { approvalStep: "asc" } } },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+
+    // Allow if DRAFT, PENDING_APPROVAL with L1 still PENDING, or already EDITING (accepted amendment)
+    const approvals = event.approvals as any[];
+    const l1 = approvals.find((a) => a.approvalStep === 1);
+    const l1IsPending = l1?.status === "PENDING";
+
+    const canEdit =
+      event.approvalStatus === "DRAFT" ||
+      (event as any).editStatus === "EDITING" ||
+      (event.approvalStatus === "PENDING_APPROVAL" && l1IsPending);
+
+    if (!canEdit) {
+      res.status(400).json({ error: "This deal cannot be edited at this stage" }); return;
+    }
+    if ((event as any).editStatus === "EDITING") {
+      // Already in editing — just return success
+      res.json({ editStatus: "EDITING" }); return;
+    }
+
+    await prisma.commissionEvent.update({
+      where: { id: event.id },
+      data:  { editStatus: "EDITING" },
+    });
+    res.json({ editStatus: "EDITING" });
+  } catch (err) {
+    logger.error({ err }, "EditStart error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── POST /api/commission-events/:id/edit-save ─────────────────────────────────
+// Saves updated deal fields and recalculates commission. Clears editStatus.
+
+router.post("/:id/edit-save", requireAuth, async (req: Request, res: Response) => {
+  const { eventTitle, eventType, eventDataJson } = req.body;
+  if (!eventTitle || !eventType) {
+    res.status(400).json({ error: "eventTitle and eventType are required" }); return;
+  }
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+    if ((event as any).editStatus !== "EDITING") {
+      res.status(400).json({ error: "Deal is not in edit mode — call edit-start first" }); return;
+    }
+
+    const [tc, commissionPct] = await Promise.all([
+      loadTenantConfig(req.user!.tenantId),
+      lookupCommissionPct(req.user!.tenantId, req.user!.userId),
+    ]);
+    const dataMap: Record<string, any> = eventDataJson ?? {};
+    const calcResult = calculateCommission(tc.industryCode, dataMap, commissionPct);
+
+    // Adjust pending wallet balance for the delta
+    const oldCommission = Number(event.calculatedCommissionAmount);
+    const newCommission = calcResult.calculatedCommissionAmount;
+    const delta = newCommission - oldCommission;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.commissionEvent.update({
+        where: { id: event.id },
+        data: {
+          eventTitle,
+          eventType,
+          eventDataJson: dataMap,
+          revenueAmount:              calcResult.revenueAmount,
+          costAmount:                 calcResult.costAmount,
+          grossProfitAmount:          calcResult.grossProfitAmount,
+          commissionBaseAmount:       calcResult.commissionBaseAmount,
+          commissionPercentage:       calcResult.commissionPercentage,
+          calculatedCommissionAmount: calcResult.calculatedCommissionAmount,
+          editStatus: "NONE",
+        },
+      });
+
+      // Adjust pending balance on wallet if deal is in-approval
+      if (event.approvalStatus !== "DRAFT" && delta !== 0) {
+        const wallet = await tx.wallet.findUnique({ where: { userId: req.user!.userId } });
+        if (wallet) {
+          await tx.wallet.update({
+            where: { id: wallet.id },
+            data:  { pendingBalance: Math.max(0, Number(wallet.pendingBalance) + delta) },
+          });
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId:   req.user!.tenantId,
+          userId:     req.user!.userId,
+          action:     "UPDATE",
+          entityType: "CommissionEvent",
+          entityId:   event.id,
+          newValue:   JSON.stringify({ eventTitle, eventType, calculatedCommissionAmount: newCommission }),
+        },
+      });
+    });
+
+    res.json({ message: "Saved", calculatedCommissionAmount: newCommission });
+  } catch (err) {
+    logger.error({ err }, "EditSave error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── POST /api/commission-events/:id/edit-cancel ───────────────────────────────
+
+router.post("/:id/edit-cancel", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+    await prisma.commissionEvent.update({
+      where: { id: event.id },
+      data:  { editStatus: "NONE" },
+    });
+    res.json({ editStatus: "NONE" });
+  } catch (err) {
+    logger.error({ err }, "EditCancel error");
     res.status(500).json({ error: "Server error" });
   }
 });

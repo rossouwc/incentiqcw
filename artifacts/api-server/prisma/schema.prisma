@@ -123,7 +123,16 @@ enum NotificationType {
   PAYOUT_APPROVED
   PAYOUT_PAID
   WALLET_CREDITED
+  AMENDMENT_REQUESTED
+  AMENDMENT_ACCEPTED
+  AMENDMENT_DECLINED
   SYSTEM
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -166,6 +175,7 @@ model Tenant {
   commissionDocuments      CommissionDocument[]
   externalProviders        ExternalProvider[]
   commissionSplitConfig    CommissionSplitConfig?
+  changeRequests           ChangeRequest[]
 }
 
 model User {
@@ -196,6 +206,8 @@ model User {
   triggeredTriggers           CommissionEventTrigger[]  @relation("TriggeredBy")
   uploadedDocuments           CommissionDocument[]      @relation("UploadedDocuments")
   internalReferralEvents      CommissionEvent[]          @relation("CommissionEventInternalReferrer")
+  changeRequestsSubmitted     ChangeRequest[]           @relation("ChangeRequestedBy")
+  changeRequestsReviewed      ChangeRequest[]           @relation("ChangeRequestReviewedBy")
 
   @@unique([tenantId, email])
 }
@@ -567,6 +579,7 @@ model CommissionEvent {
   externalProviderId        String?
   splitReferrerName         String?
   splitDeductionAmount      Float?
+  editStatus                String          @default("NONE")
   triggerStatus             String          @default("NOT_TRIGGERED")
   approvalStatus            String          @default("DRAFT")
   walletStatus              String          @default("PENDING")
@@ -583,6 +596,25 @@ model CommissionEvent {
   approvals          CommissionEventApproval[]
   triggers           CommissionEventTrigger[]
   documents          CommissionDocument[]
+  changeRequests     ChangeRequest[]
+}
+
+model ChangeRequest {
+  id                String              @id @default(cuid())
+  tenantId          String
+  commissionEventId String
+  requestedById     String
+  reviewedById      String?
+  reason            String
+  reviewNote        String?
+  status            ChangeRequestStatus @default(PENDING)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
+  requestedBy     User            @relation("ChangeRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy      User?           @relation("ChangeRequestReviewedBy", fields: [reviewedById], references: [id])
 }
 
 model CommissionEventApproval {

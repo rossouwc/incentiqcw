@@ -18,11 +18,12 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   Plus, Search, Trash2, SendHorizontal, Briefcase, Clock,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
   Zap, ZapOff, CheckSquare, Paperclip, ExternalLink, FileText, Link2, Upload, X,
-  UserCircle, Users, Building2,
+  UserCircle, Users, Building2, Pencil, GitPullRequestArrow,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -83,6 +84,7 @@ interface CommEvent {
   triggerStatus: string;
   approvalStatus: string;
   walletStatus: string;
+  editStatus: string;
   submittedAt: string | null;
   createdAt: string;
   salesExecutiveName: string;
@@ -1041,6 +1043,91 @@ function DocumentsModal({
   );
 }
 
+// ── Amendment Request Dialog ──────────────────────────────────────────────────
+
+function AmendmentRequestDialog({
+  event,
+  onClose,
+  onSubmitted,
+}: {
+  event: CommEvent | null;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const { toast } = useToast();
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!event) setReason("");
+  }, [event]);
+
+  if (!event) return null;
+
+  async function handleSubmit() {
+    if (!reason.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/change-requests", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ commissionEventId: event!.id, reason: reason.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Request failed");
+      }
+      toast({ title: "Amendment requested", description: "The L1 approver has been notified." });
+      onSubmitted();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!event} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <GitPullRequestArrow className="h-4 w-4 text-purple-500" />
+            <DialogTitle>Request Amendment</DialogTitle>
+          </div>
+          <DialogDescription className="mt-1">
+            Explain why you need to change <strong>{event.eventTitle}</strong>. The L1 approver will review and either accept (restarting the workflow) or decline.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="amend-reason">Reason for amendment <span className="text-destructive">*</span></Label>
+            <Textarea
+              id="amend-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Revenue figure was incorrect, customer name needs updating…"
+              rows={4}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className="pt-2 gap-2">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting || !reason.trim()}
+            className="gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequestArrow className="h-4 w-4" />}
+            Submit Request
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Deals() {
@@ -1052,6 +1139,8 @@ export default function Deals() {
 
   // Dialog / modal state
   const [showForm, setShowForm]       = useState(false);
+  const [editTarget, setEditTarget]   = useState<CommEvent | null>(null);
+  const [amendTarget, setAmendTarget] = useState<CommEvent | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CommEvent | null>(null);
   const [viewApprovals, setViewApprovals] = useState<{ id: string; title: string } | null>(null);
   const [viewTriggers, setViewTriggers] = useState<{ id: string; title: string } | null>(null);
@@ -1230,6 +1319,69 @@ export default function Deals() {
     } catch {
       toast({ title: "Error submitting", variant: "destructive" });
     }
+  }
+
+  async function handleEditStart(ev: CommEvent) {
+    try {
+      const res = await fetch(`/api/commission-events/${ev.id}/edit-start`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: err.error ?? "Cannot edit this deal", variant: "destructive" });
+        return;
+      }
+      // Pre-populate the form with existing values
+      setEventTitle(ev.eventTitle);
+      setEventType(ev.eventType);
+      const d = (ev.eventDataJson ?? {}) as Record<string, string>;
+      setFormValues(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, String(v ?? "")])));
+      setSourceType((ev as any).sourceType ?? "SELF");
+      setInternalReferrerId((ev as any).internalReferrerId ?? "");
+      setExternalProviderId((ev as any).externalProviderId ?? "");
+      setSplitReferrerName((ev as any).splitReferrerName ?? "");
+      setEditTarget(ev);
+    } catch {
+      toast({ title: "Error starting edit", variant: "destructive" });
+    }
+  }
+
+  async function handleEditSave() {
+    if (!editTarget || !requiredFilled) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/commission-events/${editTarget.id}/edit-save`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          eventTitle: eventTitle.trim(),
+          eventType,
+          eventDataJson: formValues,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Save failed");
+      }
+      toast({ title: "Deal updated", description: "Changes saved successfully." });
+      setEditTarget(null);
+      refetch();
+    } catch (err: any) {
+      toast({ title: "Error saving", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleEditCancel() {
+    if (!editTarget) return;
+    await fetch(`/api/commission-events/${editTarget.id}/edit-cancel`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    }).catch(() => {});
+    setEditTarget(null);
+    refetch();
   }
 
   async function handleDelete() {
@@ -1448,6 +1600,41 @@ export default function Deals() {
                                 <Zap className="h-4 w-4" />
                               </Button>
                             )}
+                            {/* Edit button — shown for L1-pending deals (sales exec can still edit) */}
+                            {ev.approvalStatus === "PENDING_APPROVAL" &&
+                             ev.editStatus === "NONE" && (
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-8 w-8 text-blue-500 hover:text-blue-600"
+                                onClick={() => handleEditStart(ev)}
+                                title="Edit this deal while it awaits L1 approval"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {/* Resume edit — deal is already in EDITING mode (accepted amendment) */}
+                            {ev.editStatus === "EDITING" && (
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-8 w-8 text-yellow-500 hover:text-yellow-600"
+                                onClick={() => handleEditStart(ev)}
+                                title="Continue editing this deal"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {/* Request Amendment — deal has passed L1 but is still in-approval */}
+                            {["PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"].includes(ev.approvalStatus) &&
+                             ev.editStatus === "NONE" && (
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-8 w-8 text-purple-500 hover:text-purple-600"
+                                onClick={() => setAmendTarget(ev)}
+                                title="Request an amendment from the approver"
+                              >
+                                <GitPullRequestArrow className="h-4 w-4" />
+                              </Button>
+                            )}
                             {ev.approvalStatus === "DRAFT" && (
                               <>
                                 <Button
@@ -1479,6 +1666,99 @@ export default function Deals() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Edit deal dialog (reuses form, pre-populated) ── */}
+      <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) handleEditCancel(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+            <div className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-blue-500" />
+              <DialogTitle>Edit {indCfg?.eventLabel ?? "Deal"}</DialogTitle>
+            </div>
+            <DialogDescription className="mt-1">
+              Update the details below. Commission will be recalculated automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            {fcLoading || !fc ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Event Details</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-event-title">
+                        {indCfg?.titleLabel ?? "Title"} <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="edit-event-title"
+                        value={eventTitle}
+                        onChange={(e) => setEventTitle(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-event-type">Event Type <span className="text-destructive">*</span></Label>
+                      <Select value={eventType} onValueChange={setEventType}>
+                        <SelectTrigger id="edit-event-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {fc.eventTypes.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {fc.fieldDefinitions.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
+                      {fc.industryName} Details
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      {fc.fieldDefinitions.map((f) => (
+                        <div key={f.fieldKey} className={isWide(f) ? "col-span-2" : ""}>
+                          <DynamicField
+                            def={f}
+                            value={formValues[f.fieldKey] ?? ""}
+                            onChange={(v) => setField(f.fieldKey, v)}
+                            customers={customers}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {hasCalcValues && calcResult && <CalcBreakdown result={calcResult} />}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex gap-2 justify-between sm:justify-between">
+            <Button variant="outline" onClick={handleEditCancel} disabled={submitting}>Cancel</Button>
+            <Button
+              onClick={handleEditSave}
+              disabled={submitting || !requiredFilled}
+              className="gap-1.5"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Amendment Request dialog ── */}
+      <AmendmentRequestDialog
+        event={amendTarget}
+        onClose={() => setAmendTarget(null)}
+        onSubmitted={() => { setAmendTarget(null); refetch(); }}
+      />
 
       {/* ── New event dialog ── */}
       <Dialog open={showForm} onOpenChange={(o) => { if (!o) closeForm(); }}>
