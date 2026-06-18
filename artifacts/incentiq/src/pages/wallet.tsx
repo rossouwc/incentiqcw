@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
 import {
   useGetWallet,
@@ -548,6 +548,20 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess }: {
   const { data: taxProfile } = useGetTaxProfile();
   const estimatePAYE = useEstimatePAYE();
 
+  // Fetch payroll config so we can respect the commission cut-off day.
+  const { data: payrollCfg } = useQuery<{ payrollDay: number; commissionCutoffDay: number }>({
+    queryKey: ["payroll-config"],
+    queryFn: () => fetch("/api/tenant/payroll-config", { headers: getAuthHeaders() }).then(r => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // If today is past the cut-off day, the current month's payroll run is already
+  // locked — the earliest selectable payout month is next month.
+  const pastCutoff = (() => {
+    const cutoff = payrollCfg?.commissionCutoffDay ?? 0;
+    return cutoff > 0 && new Date().getDate() > cutoff;
+  })();
+
   const [payoutType, setPayoutType] = useState<PayoutType>("FULL");
   const [amount, setAmount] = useState("");
   const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1)[0].value);
@@ -560,8 +574,16 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess }: {
     effectiveRateOnCommission: number;
   } | null>(null);
 
+  // Once we know whether we're past cut-off, sync the default payoutMonth.
+  useEffect(() => {
+    if (payrollCfg) {
+      setPayoutMonth(getUpcomingMonths(1, pastCutoff)[0].value);
+    }
+  }, [pastCutoff, payrollCfg]);
+
   const profile = taxProfile as any;
-  const currentMonths = getUpcomingMonths(12);
+  // Months available for "this payroll run": skip current month if past cut-off.
+  const currentMonths = getUpcomingMonths(12, pastCutoff);
   const futureMonths = getUpcomingMonths(12, true);
 
   const effectiveAmount = useMemo(() => {
