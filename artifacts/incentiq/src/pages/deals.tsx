@@ -24,6 +24,7 @@ import {
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
   Zap, ZapOff, CheckSquare, Paperclip, ExternalLink, FileText, Link2, Upload, X,
   UserCircle, Users, Building2, Pencil, GitPullRequestArrow, RotateCcw,
+  Ban, TrendingDown, Info, ArrowRight, CalendarX2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -89,6 +90,12 @@ interface CommEvent {
   submittedAt: string | null;
   createdAt: string;
   salesExecutiveName: string;
+  cancellationStatus: string | null;
+  cancellationReason: string | null;
+  cancellationDate: string | null;
+  actualEndDate: string | null;
+  originalContractStartDate: string | null;
+  originalContractEndDate: string | null;
 }
 
 // ── Custom hooks ──────────────────────────────────────────────────────────────
@@ -1188,6 +1195,457 @@ function AmendmentRequestDialog({
   );
 }
 
+// ── Cancel / Terminate Event Modal ────────────────────────────────────────────
+
+const CANCELLATION_REASONS = [
+  { value: "CUSTOMER_CANCELLATION", label: "Customer Cancellation" },
+  { value: "NON_PAYMENT",           label: "Non-Payment" },
+  { value: "CONTRACT_TERMINATED",   label: "Contract Terminated Early" },
+  { value: "PRODUCT_RETURNED",      label: "Product Returned" },
+  { value: "POLICY_LAPSED",         label: "Policy Lapsed" },
+  { value: "CANDIDATE_LEFT",        label: "Candidate Left" },
+  { value: "VEHICLE_SALE_REVERSED", label: "Vehicle Sale Reversed" },
+  { value: "TRANSFER_FAILED",       label: "Transfer Failed" },
+  { value: "OTHER",                 label: "Other" },
+];
+
+const CANCELLATION_TYPES = [
+  { value: "CANCELLATION",  label: "Customer Cancellation" },
+  { value: "TERMINATION",   label: "Contract Termination" },
+  { value: "REVERSAL",      label: "Reversal / Unwinding" },
+  { value: "LAPSE",         label: "Policy / Agreement Lapse" },
+  { value: "NON_PAYMENT",   label: "Non-Payment / Default" },
+  { value: "FAILURE",       label: "Transaction Failure" },
+  { value: "OTHER",         label: "Other" },
+];
+
+const METHOD_LABELS: Record<string, string> = {
+  NONE:             "No Automatic Clawback",
+  FULL:             "Full Clawback",
+  PRO_RATA_BY_TERM: "Pro-Rata by Term",
+  SLIDING_SCALE:    "Sliding Scale",
+  COMPONENT_BASED:  "Component-Based",
+  FIXED_AMOUNT:     "Fixed Amount",
+  MANUAL:           "Manual",
+};
+
+function CancelEventModal({
+  event,
+  onClose,
+  onCancelled,
+}: {
+  event: CommEvent | null;
+  onClose: () => void;
+  onCancelled: () => void;
+}) {
+  const { toast } = useToast();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [step, setStep] = useState<"form" | "preview">("form");
+  const [cancellationType, setCancellationType] = useState("TERMINATION");
+  const [cancellationDate, setCancellationDate] = useState(today);
+  const [actualEndDate, setActualEndDate]       = useState(today);
+  const [cancellationReason, setCancellationReason] = useState("CONTRACT_TERMINATED");
+  const [supportingNotes, setSupportingNotes]   = useState("");
+  const [submitting, setSubmitting]             = useState(false);
+  const [calcResult, setCalcResult]             = useState<any>(null);
+  const [policyUsed, setPolicyUsed]             = useState<any>(null);
+  const [clawbackSubmitting, setClawbackSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!event) {
+      setStep("form");
+      setCancellationType("TERMINATION");
+      setCancellationDate(today);
+      setActualEndDate(today);
+      setCancellationReason("CONTRACT_TERMINATED");
+      setSupportingNotes("");
+      setCalcResult(null);
+      setPolicyUsed(null);
+    }
+  }, [event]);
+
+  if (!event) return null;
+
+  async function handleSubmitCancellation() {
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/commission-events/${event!.id}/cancel`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          cancellationType,
+          cancellationDate,
+          actualEndDate,
+          cancellationReason,
+          supportingNotes: supportingNotes.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Cancellation failed");
+      }
+      const data = await res.json();
+      setCalcResult(data.calculation);
+      setPolicyUsed(data.policy);
+      setStep("preview");
+      onCancelled();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSubmitClawback() {
+    if (!calcResult) return;
+    setClawbackSubmitting(true);
+    try {
+      const typeMap: Record<string, string> = {
+        PRO_RATA_BY_TERM: "PRO_RATA",
+        FULL:             "FULL",
+        SLIDING_SCALE:    "PARTIAL",
+        COMPONENT_BASED:  "COMPONENT",
+        FIXED_AMOUNT:     "FIXED_AMOUNT",
+        MANUAL:           "MANUAL_ADJUSTMENT",
+        NONE:             "MANUAL_ADJUSTMENT",
+      };
+      const reasonLabel = CANCELLATION_REASONS.find(r => r.value === cancellationReason)?.label ?? cancellationReason;
+      const res = await fetch("/api/clawbacks", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          commissionEventId:    event!.id,
+          clawbackType:         typeMap[calcResult.method] ?? "FULL",
+          reasonCategory:       cancellationReason,
+          reason:               `${reasonLabel}${supportingNotes ? ": " + supportingNotes : ""}`,
+          clawbackAmount:       calcResult.recoverableAmount,
+          proRataFactor:        calcResult.earnedRatio ?? null,
+          componentDescription: calcResult.componentBreakdown
+            ? calcResult.componentBreakdown.map((c: any) => `${c.label}: R${c.recoverableAmount.toFixed(2)}`).join("; ")
+            : null,
+          notes: supportingNotes || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to create clawback");
+      }
+      toast({ title: "Clawback submitted for approval", description: "Approvers have been notified." });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setClawbackSubmitting(false);
+    }
+  }
+
+  const fmt = (n: number) =>
+    `R\u00a0${n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return (
+    <Dialog open={!!event} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+
+        {/* ── Step 1: Cancellation Form ── */}
+        {step === "form" && (
+          <>
+            <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-2">
+                <CalendarX2 className="h-5 w-5 text-red-500" />
+                <DialogTitle>Cancel / Terminate Event</DialogTitle>
+              </div>
+              <DialogDescription className="mt-1">
+                <span className="font-medium text-foreground">{event.eventTitle}</span>
+                <span className="text-muted-foreground"> — Commission: {fmt(event.calculatedCommissionAmount)}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+              {/* Cancellation Type */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ct-type">Cancellation Type <span className="text-destructive">*</span></Label>
+                <Select value={cancellationType} onValueChange={setCancellationType}>
+                  <SelectTrigger id="ct-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CANCELLATION_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ct-canc-date">Cancellation Date <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="ct-canc-date" type="date"
+                    value={cancellationDate}
+                    onChange={(e) => setCancellationDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ct-end-date">
+                    Actual End Date <span className="text-destructive">*</span>
+                    <span className="ml-1 text-xs text-muted-foreground">(last active day)</span>
+                  </Label>
+                  <Input
+                    id="ct-end-date" type="date"
+                    value={actualEndDate}
+                    onChange={(e) => setActualEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Cancellation Reason */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ct-reason">Cancellation Reason <span className="text-destructive">*</span></Label>
+                <Select value={cancellationReason} onValueChange={setCancellationReason}>
+                  <SelectTrigger id="ct-reason"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CANCELLATION_REASONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Supporting Notes */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ct-notes">Supporting Notes</Label>
+                <Textarea
+                  id="ct-notes"
+                  value={supportingNotes}
+                  onChange={(e) => setSupportingNotes(e.target.value)}
+                  placeholder="Provide any additional context, reference numbers, or client communications…"
+                  rows={3}
+                />
+              </div>
+
+              {/* Document Upload Placeholder */}
+              <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 flex flex-col items-center gap-2">
+                <Paperclip className="h-5 w-5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Supporting document upload</p>
+                <Button size="sm" variant="outline" disabled className="gap-1.5 opacity-50">
+                  <Upload className="h-3.5 w-3.5" /> Attach Document
+                </Button>
+                <p className="text-xs text-muted-foreground">Document uploads coming soon</p>
+              </div>
+
+              {/* Contract date warning */}
+              {(!event.originalContractStartDate || !event.originalContractEndDate) && (
+                <div className="flex gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
+                  <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Contract start / end dates are not set on this event. The clawback calculation will use an estimated 1-year term. Review the result on the next step.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex gap-2 justify-between sm:justify-between">
+              <Button variant="outline" onClick={onClose} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmitCancellation}
+                disabled={submitting || !cancellationType || !cancellationDate || !actualEndDate || !cancellationReason}
+                className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+              >
+                {submitting
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <ArrowRight className="h-4 w-4" />}
+                {submitting ? "Processing…" : "Calculate Clawback →"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {/* ── Step 2: Clawback Preview ── */}
+        {step === "preview" && calcResult && (
+          <>
+            <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-2">
+                <TrendingDown className="h-5 w-5 text-red-500" />
+                <DialogTitle>Clawback Preview</DialogTitle>
+              </div>
+              <DialogDescription className="mt-1">
+                Review the calculated clawback for <span className="font-medium text-foreground">{event.eventTitle}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+              {/* Cancellation confirmed */}
+              <div className="flex gap-2 rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3">
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-green-700 dark:text-green-300 font-medium">
+                  Event cancelled successfully. Review the clawback below before submitting for approval.
+                </p>
+              </div>
+
+              {/* No clawback applicable */}
+              {calcResult.cappedByNoClawbackWindow && (
+                <div className="flex gap-2 rounded-md bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-3">
+                  <CheckCircle2 className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-purple-700 dark:text-purple-300 font-medium">No clawback eligible</p>
+                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                      The event was active for {calcResult.actualActiveDays} days, which meets or exceeds the {calcResult.noClawbackAfterDays}-day no-clawback threshold.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Policy applied */}
+              {policyUsed && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Policy Applied</p>
+                  <p className="text-sm font-medium">{policyUsed.policyName}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
+                      {METHOD_LABELS[calcResult.method] ?? calcResult.method}
+                    </span>
+                    {policyUsed.wasContractEndEstimated && (
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                        <Info className="h-3 w-3" /> Contract end date estimated
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Term breakdown */}
+              <div className="rounded-lg border border-border p-4 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contract Term</p>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  {[
+                    { label: "Total Days",  value: calcResult.originalTermDays,  sub: "contract term" },
+                    { label: "Active Days", value: calcResult.actualActiveDays,   sub: "days served"   },
+                    { label: "Remaining",   value: calcResult.remainingDays,      sub: "days unserved" },
+                  ].map((s) => (
+                    <div key={s.label} className="bg-muted/40 rounded-md p-2">
+                      <p className="text-xl font-bold text-foreground">{s.value}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase">{s.label}</p>
+                      <p className="text-[10px] text-muted-foreground">{s.sub}</p>
+                    </div>
+                  ))}
+                </div>
+                {calcResult.earnedRatio !== undefined && (
+                  <p className="text-xs text-center text-muted-foreground">
+                    {(calcResult.earnedRatio * 100).toFixed(2)}% of commission term earned
+                  </p>
+                )}
+                {calcResult.slidingScalePercent !== undefined && (
+                  <p className="text-xs text-center text-muted-foreground">
+                    Sliding scale bracket: <strong>{calcResult.slidingScalePercent}% clawback</strong> applies
+                  </p>
+                )}
+              </div>
+
+              {/* Commission amounts */}
+              <div className="rounded-lg border border-border p-4 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Commission Breakdown</p>
+                {[
+                  { label: "Original Commission",  value: calcResult.originalCommissionAmount, accent: "text-foreground" },
+                  { label: "Earned Commission",     value: calcResult.earnedCommissionAmount,   accent: "text-green-600 dark:text-green-400" },
+                  { label: "Recoverable Amount",    value: calcResult.recoverableAmount,         accent: "text-red-600 dark:text-red-400 font-bold", large: true },
+                  { label: "Already Recovered",     value: calcResult.recoveredAmount,           accent: "text-muted-foreground" },
+                  { label: "Outstanding Recovery",  value: calcResult.outstandingRecoveryAmount, accent: "text-red-600 dark:text-red-400" },
+                ].map((row) => (
+                  <div key={row.label} className={`flex justify-between items-center ${row.large ? "pt-2 border-t border-border" : ""}`}>
+                    <span className={`text-sm ${row.large ? "font-semibold" : "text-muted-foreground"}`}>{row.label}</span>
+                    <span className={`text-sm tabular-nums ${row.accent}`}>{fmt(row.value)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Component breakdown */}
+              {calcResult.componentBreakdown && calcResult.componentBreakdown.length > 0 && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <p className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 border-b border-border">
+                    Component Breakdown
+                  </p>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="px-4 py-2 text-left text-muted-foreground font-medium">Component</th>
+                        <th className="px-4 py-2 text-right text-muted-foreground font-medium">Paid</th>
+                        <th className="px-4 py-2 text-right text-muted-foreground font-medium">Recoverable</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {calcResult.componentBreakdown.map((c: any) => (
+                        <tr key={c.key} className="border-b border-border last:border-0">
+                          <td className="px-4 py-2">
+                            {c.label}
+                            {!c.clawbackEligible && (
+                              <span className="ml-1.5 text-[10px] text-muted-foreground">(not eligible)</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums">{fmt(c.paidAmount)}</td>
+                          <td className={`px-4 py-2 text-right tabular-nums font-medium ${c.recoverableAmount > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                            {fmt(c.recoverableAmount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Engine notes */}
+              {calcResult.notes && calcResult.notes.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Calculation Notes</p>
+                  {calcResult.notes.map((n: string, i: number) => (
+                    <div key={i} className="flex gap-2 text-xs text-muted-foreground">
+                      <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-500" />
+                      <span>{n}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Warnings */}
+              {calcResult.warnings && calcResult.warnings.length > 0 && (
+                <div className="space-y-1.5">
+                  {calcResult.warnings.map((w: string, i: number) => (
+                    <div key={i} className="flex gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-2">
+                      <Info className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                      <span className="text-xs text-amber-700 dark:text-amber-300">{w}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="px-6 py-4 border-t border-border shrink-0 flex gap-2 justify-between sm:justify-between">
+              <Button variant="outline" onClick={onClose}>
+                Close (no clawback)
+              </Button>
+              {calcResult.recoverableAmount > 0 && !calcResult.cappedByNoClawbackWindow && (
+                <Button
+                  onClick={handleSubmitClawback}
+                  disabled={clawbackSubmitting}
+                  className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {clawbackSubmitting
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <TrendingDown className="h-4 w-4" />}
+                  Submit Clawback for Approval ({fmt(calcResult.recoverableAmount)})
+                </Button>
+              )}
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Deals() {
@@ -1205,8 +1663,10 @@ export default function Deals() {
   const [viewApprovals, setViewApprovals] = useState<{ id: string; title: string } | null>(null);
   const [viewTriggers, setViewTriggers] = useState<{ id: string; title: string } | null>(null);
   const [viewDocuments, setViewDocuments] = useState<{ id: string; title: string } | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<CommEvent | null>(null);
 
   const canManageTriggers = ["MANAGER", "ADMIN", "SUPER_ADMIN"].includes(currentUser?.role ?? "");
+  const canCancelEvent    = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"].includes(currentUser?.role ?? "");
 
   // Form state
   const [eventTitle, setEventTitle] = useState("");
@@ -1690,6 +2150,25 @@ export default function Deals() {
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             )}
+                            {/* Cancel / Terminate — available to authorised roles on non-draft, non-cancelled events */}
+                            {canCancelEvent &&
+                             ev.approvalStatus !== "DRAFT" &&
+                             ev.cancellationStatus !== "CANCELLED" && (
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                onClick={() => setCancelTarget(ev)}
+                                title="Cancel / Terminate this event"
+                              >
+                                <Ban className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {/* Cancelled badge */}
+                            {ev.cancellationStatus === "CANCELLED" && (
+                              <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 font-medium">
+                                <Ban className="h-3 w-3" /> Cancelled
+                              </span>
+                            )}
                             {/* Request Amendment — deal has passed L1 (first approver already approved) */}
                             {["MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"].includes(ev.approvalStatus) &&
                              ev.editStatus === "NONE" && (
@@ -2121,6 +2600,13 @@ export default function Deals() {
           onClose={() => setViewDocuments(null)}
         />
       )}
+
+      {/* ── Cancel / Terminate modal ── */}
+      <CancelEventModal
+        event={cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onCancelled={() => { refetch(); }}
+      />
     </div>
   );
 }

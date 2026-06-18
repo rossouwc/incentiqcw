@@ -475,6 +475,81 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
               readStatus: false,
             },
           });
+
+          // ── Future-offset clawback hook ───────────────────────────────────────
+          // Apply any pending FUTURE_COMMISSION_OFFSET clawbacks for this exec.
+          try {
+            const pendingOffsets = await prisma.commissionClawback.findMany({
+              where: {
+                tenantId:          req.user!.tenantId,
+                salesExecutiveId:  salesExecId,
+                status:            "EXECUTED",
+                outstandingAmount: { gt: 0 },
+              },
+              include: {
+                recoveries:      { where: { recoveryMethod: "FUTURE_COMMISSION_OFFSET" } },
+                commissionEvent: { select: { eventTitle: true } },
+              },
+            });
+
+            for (const offset of pendingOffsets) {
+              if (offset.recoveries.length === 0) continue;
+              const outstanding = Number(offset.outstandingAmount);
+              if (outstanding <= 0) continue;
+
+              const execWallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
+              if (!execWallet) continue;
+
+              const offsetTitle = (offset as any).commissionEvent?.eventTitle ?? "prior event";
+              await prisma.$transaction([
+                prisma.wallet.update({
+                  where: { id: execWallet.id },
+                  data:  { availableBalance: Number(execWallet.availableBalance) - outstanding },
+                }),
+                prisma.walletTransaction.create({
+                  data: {
+                    tenantId:        req.user!.tenantId,
+                    walletId:        execWallet.id,
+                    transactionType: "FUTURE_OFFSET_APPLIED",
+                    amount:          outstanding,
+                    referenceType:   "CLAWBACK",
+                    referenceId:     offset.id,
+                    description:     `Future commission offset applied for "${offsetTitle}"`,
+                  },
+                }),
+                prisma.clawbackRecovery.create({
+                  data: {
+                    tenantId:       req.user!.tenantId,
+                    clawbackId:     offset.id,
+                    recoveryMethod: "FUTURE_COMMISSION_OFFSET",
+                    amount:         outstanding,
+                    description:    `Auto-applied offset on approval of commission event ${eventId}`,
+                    createdById:    req.user!.userId,
+                  },
+                }),
+                prisma.commissionClawback.update({
+                  where: { id: offset.id },
+                  data: {
+                    recoveredAmount:   Number(offset.recoveredAmount) + outstanding,
+                    outstandingAmount: 0,
+                  },
+                }),
+              ]);
+
+              await prisma.notification.create({
+                data: {
+                  tenantId:   req.user!.tenantId,
+                  userId:     salesExecId,
+                  title:      "Clawback Offset Applied",
+                  message:    `A clawback of ${outstanding.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${offsetTitle}" has been offset from your latest commission.`,
+                  type:       "CLAWBACK_EXECUTED",
+                  readStatus: false,
+                },
+              }).catch(() => {});
+            }
+          } catch (offsetErr) {
+            logger.error({ err: offsetErr }, "FutureOffsetHook error — commission credit was not rolled back");
+          }
         } else {
           await prisma.notification.create({
             data: {

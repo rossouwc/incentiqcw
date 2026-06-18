@@ -7,6 +7,8 @@ import { calculateCommission } from "../lib/commission-formula";
 import { getDefaultWorkflow } from "../lib/industry-workflows";
 import { getIndustryTriggers } from "../lib/industry-triggers";
 import { ApprovalStatus, TriggerStatus } from "@prisma/client";
+import { calculateClawback } from "../lib/clawback-engine";
+import type { ClawbackPolicyInput } from "../lib/clawback-engine";
 
 const router = Router();
 
@@ -205,6 +207,12 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
         splitReferrerName:   (e as any).splitReferrerName ?? null,
         splitDeductionAmount: (e as any).splitDeductionAmount ?? null,
         editStatus:          (e as any).editStatus ?? "NONE",
+        cancellationStatus:  (e as any).cancellationStatus ?? null,
+        cancellationReason:  (e as any).cancellationReason ?? null,
+        cancellationDate:    (e as any).cancellationDate?.toISOString() ?? null,
+        actualEndDate:       (e as any).actualEndDate?.toISOString() ?? null,
+        originalContractStartDate: (e as any).originalContractStartDate?.toISOString() ?? null,
+        originalContractEndDate:   (e as any).originalContractEndDate?.toISOString() ?? null,
       })),
     });
   } catch (err) {
@@ -910,6 +918,166 @@ router.delete("/:id/documents/:docId", requireAuth, async (req: Request, res: Re
     res.json({ message: "Deleted" });
   } catch (err) {
     logger.error({ err }, "DeleteDocument error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── POST /api/commission-events/:id/cancel ────────────────────────────────────
+// Cancel / terminate a commission event, run the clawback engine, return preview.
+
+router.post("/:id/cancel", requireAuth, async (req: Request, res: Response) => {
+  const allowedRoles = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"];
+  if (!allowedRoles.includes(req.user!.role)) {
+    res.status(403).json({ error: "Insufficient permissions to cancel events" }); return;
+  }
+
+  const { cancellationType, cancellationDate, actualEndDate, cancellationReason, supportingNotes } = req.body;
+
+  if (!cancellationType || !cancellationDate || !actualEndDate || !cancellationReason) {
+    res.status(400).json({ error: "cancellationType, cancellationDate, actualEndDate and cancellationReason are required" });
+    return;
+  }
+
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
+    });
+    if (!event) { res.status(404).json({ error: "Commission event not found" }); return; }
+    if ((event as any).cancellationStatus === "CANCELLED") {
+      res.status(400).json({ error: "This event has already been cancelled" }); return;
+    }
+    if (event.approvalStatus === "DRAFT") {
+      res.status(400).json({ error: "Draft events cannot be cancelled — delete them instead" }); return;
+    }
+
+    const parsedCancellationDate = new Date(cancellationDate);
+    const parsedActualEndDate    = new Date(actualEndDate);
+
+    if (isNaN(parsedCancellationDate.getTime()) || isNaN(parsedActualEndDate.getTime())) {
+      res.status(400).json({ error: "cancellationDate and actualEndDate must be valid ISO dates" }); return;
+    }
+
+    // ── Mark event as cancelled ──────────────────────────────────────────────
+    const updated = await prisma.commissionEvent.update({
+      where: { id: event.id },
+      data: {
+        cancellationStatus: "CANCELLED",
+        cancellationDate:   parsedCancellationDate,
+        actualEndDate:      parsedActualEndDate,
+        cancellationReason: cancellationReason,
+      } as any,
+    });
+
+    // ── Load applicable ClawbackPolicy ───────────────────────────────────────
+    const industryTemplateId = (event as any).industryTemplateId as string | null;
+    let policy: any = null;
+
+    if (industryTemplateId) {
+      // Prefer a policy that matches the event type (e.g. Recruitment PERMANENT vs CONTRACT)
+      const policies = await prisma.clawbackPolicy.findMany({
+        where: { industryTemplateId, isActive: true, isDefault: true },
+      });
+
+      if (policies.length === 1) {
+        policy = policies[0];
+      } else if (policies.length > 1) {
+        // Try to match on appliesToEventType
+        const matched = policies.find(
+          (p: any) => !p.appliesToEventType || p.appliesToEventType === event.eventType,
+        );
+        policy = matched ?? policies[0];
+      }
+
+      // Fallback: any active policy for this industry
+      if (!policy) {
+        policy = await prisma.clawbackPolicy.findFirst({
+          where: { industryTemplateId, isActive: true },
+        });
+      }
+    }
+
+    // ── Run Clawback Calculation Engine ──────────────────────────────────────
+    const paidAmount     = event.calculatedCommissionAmount;
+    const originalAmount = event.calculatedCommissionAmount;
+
+    // Contract start/end: use event fields, fall back to reasonable defaults
+    const contractStart: Date = (event as any).originalContractStartDate
+      ?? event.submittedAt
+      ?? event.createdAt;
+    const contractEnd: Date   = (event as any).originalContractEndDate
+      ?? new Date(contractStart.getTime() + 365 * 24 * 60 * 60 * 1000); // 1-year default if unknown
+
+    let policyInput: ClawbackPolicyInput = { clawbackMethod: "NONE" };
+    if (policy) {
+      let recoveryJson = (policy as any).recoveryMethodPriorityJson;
+      if (typeof recoveryJson === "string") {
+        try { recoveryJson = JSON.parse(recoveryJson); } catch { recoveryJson = null; }
+      }
+      policyInput = {
+        clawbackMethod:         (policy as any).clawbackMethod as ClawbackPolicyInput["clawbackMethod"],
+        noClawbackAfterDays:    (policy as any).noClawbackAfterDays ?? null,
+        clawbackWindowDays:     (policy as any).clawbackWindowDays ?? null,
+        recoveryMethodPriorityJson: recoveryJson,
+        allowPartialRecovery:   (policy as any).allowPartialRecovery ?? true,
+      };
+    }
+
+    const calculation = calculateClawback({
+      commissionEventId:        event.id,
+      cancellationReason:       cancellationReason,
+      policy:                   policyInput,
+      originalCommissionAmount: originalAmount,
+      paidCommissionAmount:     paidAmount,
+      contractStartDate:        contractStart,
+      contractEndDate:          contractEnd,
+      actualEndDate:            parsedActualEndDate,
+      recoveredAmount:          0,
+    });
+
+    // ── Audit log ────────────────────────────────────────────────────────────
+    await prisma.auditLog.create({
+      data: {
+        tenantId:   req.user!.tenantId,
+        userId:     req.user!.userId,
+        action:     "COMMISSION_EVENT_CANCELLED",
+        entityType: "CommissionEvent",
+        entityId:   event.id,
+        newValue:   JSON.stringify({ cancellationType, cancellationReason, cancellationDate, actualEndDate }),
+      },
+    }).catch(() => {});
+
+    res.json({
+      event: {
+        id:                 updated.id,
+        eventTitle:         updated.eventTitle,
+        approvalStatus:     updated.approvalStatus,
+        cancellationStatus: (updated as any).cancellationStatus,
+        cancellationDate:   parsedCancellationDate.toISOString(),
+        actualEndDate:      parsedActualEndDate.toISOString(),
+        cancellationReason: cancellationReason,
+      },
+      policy: policy ? {
+        id:             (policy as any).id,
+        policyName:     (policy as any).policyName,
+        clawbackMethod: (policy as any).clawbackMethod,
+        clawbackWindowDays:     (policy as any).clawbackWindowDays ?? null,
+        noClawbackAfterDays:    (policy as any).noClawbackAfterDays ?? null,
+        allowPartialRecovery:   (policy as any).allowPartialRecovery,
+        allowWaiver:            (policy as any).allowWaiver,
+        requiresApproval:       (policy as any).requiresApproval,
+        contractStartUsed:      contractStart.toISOString(),
+        contractEndUsed:        contractEnd.toISOString(),
+        wasContractEndEstimated: !(event as any).originalContractEndDate,
+      } : null,
+      calculation: {
+        ...calculation,
+        contractStartDate: calculation.contractStartDate.toISOString(),
+        contractEndDate:   calculation.contractEndDate.toISOString(),
+        actualEndDate:     calculation.actualEndDate.toISOString(),
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "CancelCommissionEvent error");
     res.status(500).json({ error: "Server error" });
   }
 });
