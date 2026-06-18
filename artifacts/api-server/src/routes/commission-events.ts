@@ -394,10 +394,12 @@ router.post("/:id/edit-start", requireAuth, async (req: Request, res: Response) 
 // Saves updated deal fields and recalculates commission. Clears editStatus.
 
 router.post("/:id/edit-save", requireAuth, async (req: Request, res: Response) => {
-  const { eventTitle, eventType, eventDataJson } = req.body;
+  const { eventTitle, eventType, eventDataJson, sourceType, externalProviderId, splitReferrerName } = req.body;
   if (!eventTitle || !eventType) {
     res.status(400).json({ error: "eventTitle and eventType are required" }); return;
   }
+  const validSourceTypes = ["SELF", "INTERNAL", "EXTERNAL"];
+  const resolvedSourceType = validSourceTypes.includes(sourceType) ? sourceType : undefined;
   try {
     const event = await prisma.commissionEvent.findFirst({
       where: { id: req.params.id as string, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
@@ -433,6 +435,15 @@ router.post("/:id/edit-save", requireAuth, async (req: Request, res: Response) =
           commissionPercentage:       calcResult.commissionPercentage,
           calculatedCommissionAmount: calcResult.calculatedCommissionAmount,
           editStatus: "NONE",
+          ...(resolvedSourceType && { sourceType: resolvedSourceType as any }),
+          ...(resolvedSourceType === "EXTERNAL" && externalProviderId
+            ? { externalProviderId }
+            : resolvedSourceType && resolvedSourceType !== "EXTERNAL"
+              ? { externalProviderId: null }
+              : {}),
+          ...(splitReferrerName && resolvedSourceType !== "SELF"
+            ? { splitReferrerName: splitReferrerName.trim() }
+            : resolvedSourceType === "SELF" ? { splitReferrerName: null } : {}),
         },
       });
 

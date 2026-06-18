@@ -1357,6 +1357,9 @@ export default function Deals() {
           eventTitle: eventTitle.trim(),
           eventType,
           eventDataJson: formValues,
+          sourceType,
+          ...(sourceType === "EXTERNAL" && externalProviderId && { externalProviderId }),
+          ...((sourceType === "INTERNAL" || sourceType === "EXTERNAL") && splitReferrerName && { splitReferrerName }),
         }),
       });
       if (!res.ok) {
@@ -1729,6 +1732,59 @@ export default function Deals() {
                           />
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Deal Source section — only shown when split is enabled */}
+                {splitConfig?.isEnabled && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
+                      Deal Source
+                    </p>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { value: "SELF",     label: "Self-Sourced",                         Icon: UserCircle },
+                          { value: "INTERNAL", label: splitConfig.internalLabel || "Internal", Icon: Users      },
+                          { value: "EXTERNAL", label: "External Provider",                     Icon: Building2  },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => {
+                              setSourceType(opt.value);
+                              setExternalProviderId("");
+                              setSplitReferrerName("");
+                            }}
+                            className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs font-medium transition-colors ${
+                              sourceType === opt.value
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            }`}
+                          >
+                            <opt.Icon className="h-4 w-4" />
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {sourceType === "INTERNAL" && splitConfig.deductionValue > 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          A {splitConfig.deductionType === "PERCENTAGE"
+                            ? `${splitConfig.deductionValue}%`
+                            : `R${splitConfig.deductionValue.toLocaleString()}`} split will be deducted from your commission on approval per the internal talent team rule.
+                        </p>
+                      )}
+
+                      {sourceType === "EXTERNAL" && (
+                        <ExternalProviderPicker
+                          providers={externalProviders}
+                          selectedId={externalProviderId}
+                          selectedName={splitReferrerName}
+                          onSelect={(id, name) => { setExternalProviderId(id); setSplitReferrerName(name); }}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
