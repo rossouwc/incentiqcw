@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { calculateClawback } from "../lib/clawback-engine";
+import type { ClawbackPolicyInput, CommissionComponentInput } from "../lib/clawback-engine";
 
 const router = Router();
 
@@ -578,6 +580,105 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
     logger.error({ err }, "ClawbackAction error");
     res.status(500).json({ error: "Server error" });
   }
+});
+
+// ── POST /api/clawbacks/calculate ─────────────────────────────────────────────
+// Pure calculation preview — no DB writes. Returns a full breakdown for review.
+
+router.post("/calculate", requireAuth, async (req: Request, res: Response) => {
+  const allowed = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"];
+  if (!allowed.includes(req.user!.role)) {
+    res.status(403).json({ error: "Insufficient permissions" }); return;
+  }
+
+  const {
+    commissionEventId,
+    cancellationReason,
+    policy,
+    originalCommissionAmount,
+    paidCommissionAmount,
+    contractStartDate,
+    contractEndDate,
+    actualEndDate,
+    recoveredAmount,
+    fixedAmount,
+    manualAmount,
+    manualReason,
+    commissionComponents,
+  } = req.body;
+
+  // Build policy from DB if not supplied inline; supply must include clawbackMethod at minimum
+  let resolvedPolicy: ClawbackPolicyInput | null = policy ?? null;
+
+  // If a commissionEventId is supplied and fields are missing, auto-hydrate from DB
+  let autoContractStart: Date | undefined;
+  let autoContractEnd: Date | undefined;
+  let autoPaidAmount: number | undefined;
+  let autoOriginalAmount: number | undefined;
+
+  if (commissionEventId) {
+    try {
+      const event = await prisma.commissionEvent.findFirst({
+        where: { id: commissionEventId, tenantId: req.user!.tenantId },
+        select: {
+          originalContractStartDate: true,
+          originalContractEndDate: true,
+          actualEndDate: true,
+          cancellationDate: true,
+          calculatedCommissionAmount: true,
+        },
+      });
+      if (!event) { res.status(404).json({ error: "Commission event not found" }); return; }
+      if (event.originalContractStartDate) autoContractStart = event.originalContractStartDate;
+      if (event.originalContractEndDate)   autoContractEnd   = event.originalContractEndDate;
+      if (event.calculatedCommissionAmount) {
+        autoPaidAmount     = Number(event.calculatedCommissionAmount);
+        autoOriginalAmount = Number(event.calculatedCommissionAmount);
+      }
+    } catch (err) {
+      logger.error({ err }, "ClawbackCalculate: event fetch error");
+      res.status(500).json({ error: "Server error" }); return;
+    }
+  }
+
+  if (!resolvedPolicy?.clawbackMethod) {
+    res.status(400).json({ error: "policy.clawbackMethod is required" }); return;
+  }
+
+  const parsedStart  = contractStartDate ? new Date(contractStartDate) : autoContractStart;
+  const parsedEnd    = contractEndDate   ? new Date(contractEndDate)   : autoContractEnd;
+  const parsedActual = actualEndDate     ? new Date(actualEndDate)     : undefined;
+
+  if (!parsedStart || !parsedEnd || !parsedActual) {
+    res.status(400).json({
+      error: "contractStartDate, contractEndDate and actualEndDate are required (supply them or reference a commissionEventId with those fields set)",
+    }); return;
+  }
+
+  const resolvedPaid     = paidCommissionAmount     != null ? Number(paidCommissionAmount)     : (autoPaidAmount     ?? 0);
+  const resolvedOriginal = originalCommissionAmount != null ? Number(originalCommissionAmount) : (autoOriginalAmount ?? resolvedPaid);
+
+  const parsedComponents: CommissionComponentInput[] | undefined = Array.isArray(commissionComponents)
+    ? (commissionComponents as CommissionComponentInput[])
+    : undefined;
+
+  const result = calculateClawback({
+    commissionEventId,
+    cancellationReason,
+    policy: resolvedPolicy,
+    originalCommissionAmount: resolvedOriginal,
+    paidCommissionAmount:     resolvedPaid,
+    contractStartDate:        parsedStart,
+    contractEndDate:          parsedEnd,
+    actualEndDate:            parsedActual,
+    recoveredAmount:          recoveredAmount != null ? Number(recoveredAmount) : 0,
+    fixedAmount:              fixedAmount     != null ? Number(fixedAmount)     : undefined,
+    manualAmount:             manualAmount    != null ? Number(manualAmount)    : undefined,
+    manualReason,
+    commissionComponents:     parsedComponents,
+  });
+
+  res.json(result);
 });
 
 export { router as clawbacksRouter };
