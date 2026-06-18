@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Plus, Search, Trash2, SendHorizontal, Briefcase, Clock,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
-  Zap, ZapOff, CheckSquare,
+  Zap, ZapOff, CheckSquare, Paperclip, ExternalLink, FileText, Link2, Upload, X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -698,6 +698,254 @@ function TriggerEventsModal({
   );
 }
 
+// ── Documents Modal ───────────────────────────────────────────────────────────
+
+interface CommDoc {
+  id: string;
+  documentType: string;
+  fileName: string;
+  fileUrl: string;
+  description: string | null;
+  uploadedByName: string;
+  uploadedById: string;
+  createdAt: string;
+}
+
+function DocumentsModal({
+  eventId,
+  eventTitle,
+  onClose,
+}: {
+  eventId: string;
+  eventTitle: string;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const { user: currentUser } = useAuth();
+  const [docs, setDocs] = useState<CommDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"file" | "link">("link");
+
+  // Link form
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [linkDesc, setLinkDesc] = useState("");
+  const [addingLink, setAddingLink] = useState(false);
+
+  // File upload form
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const fetchDocs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/commission-events/${eventId}/documents`, { headers: getAuthHeaders() });
+      const d = await r.json();
+      setDocs(Array.isArray(d) ? d : []);
+    } catch {
+      setDocs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
+
+  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  const canDelete = (doc: CommDoc) =>
+    doc.uploadedById === (currentUser as any)?.id ||
+    ["ADMIN", "SUPER_ADMIN"].includes(currentUser?.role ?? "");
+
+  async function handleAddLink(e: React.FormEvent) {
+    e.preventDefault();
+    if (!linkUrl.trim() || !linkName.trim()) return;
+    setAddingLink(true);
+    try {
+      const r = await fetch(`/api/commission-events/${eventId}/documents`, {
+        method: "POST",
+        headers: { ...getAuthHeaders() },
+        body: JSON.stringify({ documentType: "LINK", fileName: linkName.trim(), fileUrl: linkUrl.trim(), description: linkDesc.trim() || null }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      setLinkUrl(""); setLinkName(""); setLinkDesc("");
+      await fetchDocs();
+      toast({ title: "Link added" });
+    } catch {
+      toast({ title: "Failed to add link", variant: "destructive" });
+    } finally {
+      setAddingLink(false);
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      // 1. Request a presigned upload URL
+      const urlResp = await fetch("/api/storage/uploads/request-url", {
+        method: "POST",
+        headers: { ...getAuthHeaders() },
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+      });
+      if (!urlResp.ok) throw new Error("Could not get upload URL");
+      const { uploadURL, objectPath } = await urlResp.json();
+
+      // 2. PUT the file to GCS
+      await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+
+      // 3. Create the document record
+      const docResp = await fetch(`/api/commission-events/${eventId}/documents`, {
+        method: "POST",
+        headers: { ...getAuthHeaders() },
+        body: JSON.stringify({ documentType: "FILE", fileName: file.name, fileUrl: objectPath, description: null }),
+      });
+      if (!docResp.ok) throw new Error("Failed to save document");
+      await fetchDocs();
+      toast({ title: "File uploaded", description: file.name });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err?.message ?? "Something went wrong", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function handleDelete(doc: CommDoc) {
+    try {
+      const r = await fetch(`/api/commission-events/${eventId}/documents/${doc.id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!r.ok) throw new Error("Failed");
+      await fetchDocs();
+      toast({ title: "Document removed" });
+    } catch {
+      toast({ title: "Failed to remove document", variant: "destructive" });
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-primary" />
+            Supporting Documents
+          </DialogTitle>
+          <DialogDescription className="text-xs">{eventTitle}</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-4 pr-0.5">
+          {/* Existing documents */}
+          <div className="space-y-1.5">
+            {loading ? (
+              <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+            ) : docs.length === 0 ? (
+              <div className="flex flex-col items-center py-8 text-muted-foreground text-sm">
+                <Paperclip className="h-8 w-8 mb-2 opacity-30" />
+                <p>No documents attached yet.</p>
+                <p className="text-xs mt-0.5">Add a link or upload a file below.</p>
+              </div>
+            ) : (
+              docs.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-2.5 px-3 py-2 rounded-md border border-border bg-muted/20 group">
+                  {doc.documentType === "FILE"
+                    ? <FileText className="h-4 w-4 shrink-0 text-primary" />
+                    : <Link2 className="h-4 w-4 shrink-0 text-blue-500" />
+                  }
+                  <div className="flex-1 min-w-0">
+                    <a
+                      href={doc.documentType === "FILE" ? `/api/storage/objects${doc.fileUrl.replace(/^\/objects/, "")}` : doc.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium text-foreground hover:underline truncate block"
+                    >
+                      {doc.fileName}
+                    </a>
+                    {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
+                    <p className="text-[10px] text-muted-foreground">by {doc.uploadedByName} · {new Date(doc.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={doc.documentType === "FILE" ? `/api/storage/objects${doc.fileUrl.replace(/^\/objects/, "")}` : doc.fileUrl}
+                      target="_blank" rel="noopener noreferrer"
+                      className="h-7 w-7 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                    {canDelete(doc) && (
+                      <button
+                        onClick={() => handleDelete(doc)}
+                        className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-50 dark:hover:bg-red-950 transition-colors text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Add tabs */}
+          <div className="border border-border rounded-md overflow-hidden">
+            <div className="flex border-b border-border bg-muted/30">
+              <button
+                onClick={() => setTab("link")}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${tab === "link" ? "bg-background text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                <Link2 className="h-3 w-3" /> Add Link
+              </button>
+              <button
+                onClick={() => setTab("file")}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${tab === "file" ? "bg-background text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                <Upload className="h-3 w-3" /> Upload File
+              </button>
+            </div>
+
+            {tab === "link" && (
+              <form onSubmit={handleAddLink} className="p-3 space-y-2">
+                <div>
+                  <Label className="text-xs mb-1 block">URL <span className="text-destructive">*</span></Label>
+                  <Input placeholder="https://sharepoint.com/..." value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <Label className="text-xs mb-1 block">Display name <span className="text-destructive">*</span></Label>
+                  <Input placeholder="e.g. Quote Document" value={linkName} onChange={(e) => setLinkName(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <Label className="text-xs mb-1 block">Description (optional)</Label>
+                  <Input placeholder="Brief description…" value={linkDesc} onChange={(e) => setLinkDesc(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <Button size="sm" type="submit" disabled={addingLink || !linkUrl.trim() || !linkName.trim()} className="w-full h-8 gap-1.5">
+                  {addingLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                  Add Link
+                </Button>
+              </form>
+            )}
+
+            {tab === "file" && (
+              <div className="p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">Upload a PDF, image, spreadsheet, or other document.</p>
+                <input ref={fileRef} type="file" className="hidden" onChange={handleFileUpload} />
+                <Button
+                  size="sm" variant="outline" className="w-full h-8 gap-1.5"
+                  disabled={uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {uploading ? "Uploading…" : "Choose File"}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Deals() {
@@ -712,6 +960,7 @@ export default function Deals() {
   const [deleteTarget, setDeleteTarget] = useState<CommEvent | null>(null);
   const [viewApprovals, setViewApprovals] = useState<{ id: string; title: string } | null>(null);
   const [viewTriggers, setViewTriggers] = useState<{ id: string; title: string } | null>(null);
+  const [viewDocuments, setViewDocuments] = useState<{ id: string; title: string } | null>(null);
 
   const canManageTriggers = ["MANAGER", "ADMIN", "SUPER_ADMIN"].includes(currentUser?.role ?? "");
 
@@ -1058,6 +1307,14 @@ export default function Deals() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="icon" variant="ghost"
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
+                              onClick={() => setViewDocuments({ id: ev.id, title: ev.eventTitle })}
+                              title="Supporting documents"
+                            >
+                              <Paperclip className="h-4 w-4" />
+                            </Button>
                             {ev.approvalStatus !== "DRAFT" && (
                               <Button
                                 size="icon" variant="ghost"
@@ -1252,6 +1509,15 @@ export default function Deals() {
           canManage={canManageTriggers}
           onClose={() => setViewTriggers(null)}
           onUpdated={refetch}
+        />
+      )}
+
+      {/* ── Supporting documents modal ── */}
+      {viewDocuments && (
+        <DocumentsModal
+          eventId={viewDocuments.id}
+          eventTitle={viewDocuments.title}
+          onClose={() => setViewDocuments(null)}
         />
       )}
     </div>

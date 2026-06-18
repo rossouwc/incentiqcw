@@ -616,4 +616,105 @@ router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /api/commission-events/:id/documents ──────────────────────────────────
+
+router.get("/:id/documents", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+
+    const docs = await prisma.commissionDocument.findMany({
+      where: { commissionEventId: req.params.id as string, tenantId: req.user!.tenantId },
+      include: { uploadedBy: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    res.json(docs.map((d) => ({
+      id:               d.id,
+      documentType:     d.documentType,
+      fileName:         d.fileName,
+      fileUrl:          d.fileUrl,
+      description:      d.description ?? null,
+      uploadedByName:   `${d.uploadedBy.firstName} ${d.uploadedBy.lastName}`,
+      uploadedById:     d.uploadedById,
+      createdAt:        d.createdAt.toISOString(),
+    })));
+  } catch (err) {
+    logger.error({ err }, "ListDocuments error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── POST /api/commission-events/:id/documents ─────────────────────────────────
+
+router.post("/:id/documents", requireAuth, async (req: Request, res: Response) => {
+  const { documentType, fileName, fileUrl, description } = req.body;
+  if (!fileName || !fileUrl) {
+    res.status(400).json({ error: "fileName and fileUrl are required" });
+    return;
+  }
+
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+
+    const doc = await prisma.commissionDocument.create({
+      data: {
+        tenantId:          req.user!.tenantId,
+        commissionEventId: req.params.id as string,
+        documentType:      documentType ?? "LINK",
+        fileName,
+        fileUrl,
+        description:       description ?? null,
+        uploadedById:      req.user!.userId,
+      },
+      include: { uploadedBy: { select: { firstName: true, lastName: true } } },
+    });
+
+    res.status(201).json({
+      id:             doc.id,
+      documentType:   doc.documentType,
+      fileName:       doc.fileName,
+      fileUrl:        doc.fileUrl,
+      description:    doc.description ?? null,
+      uploadedByName: `${doc.uploadedBy.firstName} ${doc.uploadedBy.lastName}`,
+      uploadedById:   doc.uploadedById,
+      createdAt:      doc.createdAt.toISOString(),
+    });
+  } catch (err) {
+    logger.error({ err }, "CreateDocument error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── DELETE /api/commission-events/:id/documents/:docId ───────────────────────
+
+router.delete("/:id/documents/:docId", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const doc = await prisma.commissionDocument.findFirst({
+      where: {
+        id:                req.params.docId as string,
+        commissionEventId: req.params.id as string,
+        tenantId:          req.user!.tenantId,
+      },
+    });
+    if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
+
+    const canDelete =
+      doc.uploadedById === req.user!.userId ||
+      ["ADMIN", "SUPER_ADMIN"].includes(req.user!.role);
+    if (!canDelete) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    await prisma.commissionDocument.delete({ where: { id: doc.id } });
+    res.json({ message: "Deleted" });
+  } catch (err) {
+    logger.error({ err }, "DeleteDocument error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export { router as commissionEventsRouter };

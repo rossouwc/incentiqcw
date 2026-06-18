@@ -150,6 +150,7 @@ model Tenant {
   commissionEvents         CommissionEvent[]
   commissionEventApprovals CommissionEventApproval[]
   commissionEventTriggers  CommissionEventTrigger[]
+  commissionDocuments      CommissionDocument[]
 }
 
 model User {
@@ -178,6 +179,7 @@ model User {
   commissionEventsAsExecutive CommissionEvent[]          @relation("CommissionEventSalesExecutive")
   commissionEventApprovals    CommissionEventApproval[]
   triggeredTriggers           CommissionEventTrigger[]  @relation("TriggeredBy")
+  uploadedDocuments           CommissionDocument[]      @relation("UploadedDocuments")
 
   @@unique([tenantId, email])
 }
@@ -557,6 +559,7 @@ model CommissionEvent {
   salesExecutive   User               @relation("CommissionEventSalesExecutive", fields: [salesExecutiveId], references: [id])
   approvals        CommissionEventApproval[]
   triggers         CommissionEventTrigger[]
+  documents        CommissionDocument[]
 }
 
 model CommissionEventApproval {
@@ -598,4 +601,22 @@ model CommissionEventTrigger {
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
   triggeredBy     User?           @relation("TriggeredBy", fields: [triggeredById], references: [id])
+}
+
+// ─── Commission Event Supporting Documents ────────────────────────────────────
+
+model CommissionDocument {
+  id                String   @id @default(cuid())
+  tenantId          String
+  commissionEventId String
+  documentType      String   @default("LINK")
+  fileName          String
+  fileUrl           String
+  description       String?
+  uploadedById      String
+  createdAt         DateTime @default(now())
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
+  uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
 }

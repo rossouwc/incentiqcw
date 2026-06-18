@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListApprovals,
@@ -16,7 +16,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import {
   CheckCircle2, XCircle, Clock, MessageSquare,
   DollarSign, RotateCcw, Wallet, ArrowRight,
-  Search, X, User, ChevronDown,
+  Search, X, User, ChevronDown, FileText, ExternalLink,
+  Paperclip, TrendingUp, Calculator,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
@@ -29,6 +30,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 type ActionType = "APPROVE" | "REJECT" | "REQUEST_CHANGES";
 
@@ -37,6 +41,157 @@ interface ActionDialogProps {
   onClose: () => void;
   onAction: (action: ActionType, comments: string, payoutAmount?: number) => Promise<void>;
   submitting: boolean;
+}
+
+// ── Auth helper ────────────────────────────────────────────────────────────────
+function getAuthHeaders(): HeadersInit {
+  const t = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+// ── Commission Breakdown ───────────────────────────────────────────────────────
+
+interface Breakdown {
+  eventType: string;
+  revenueAmount: number;
+  costAmount: number;
+  grossProfitAmount: number;
+  commissionBaseAmount: number;
+  commissionPercentage: number;
+}
+
+function CommissionBreakdown({ bd }: { bd: Breakdown }) {
+  const [open, setOpen] = useState(false);
+  const gp = bd.grossProfitAmount;
+  const gpMargin = bd.revenueAmount > 0 ? ((gp / bd.revenueAmount) * 100).toFixed(1) : null;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-muted/40 hover:bg-muted/60 transition-colors text-sm text-left">
+          <span className="flex items-center gap-2 font-medium text-foreground">
+            <Calculator className="h-3.5 w-3.5 text-primary" />
+            How was this commission calculated?
+          </span>
+          <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-1 rounded-md border border-border bg-card overflow-hidden text-sm">
+          <div className="px-3 py-1.5 bg-muted/30 border-b border-border">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calculation breakdown</span>
+          </div>
+          <div className="divide-y divide-border">
+            {bd.revenueAmount > 0 && (
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-muted-foreground">Revenue</span>
+                <span className="font-medium tabular-nums">{formatCurrency(bd.revenueAmount)}</span>
+              </div>
+            )}
+            {bd.costAmount > 0 && (
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-muted-foreground">Cost of Sale</span>
+                <span className="font-medium tabular-nums text-red-600 dark:text-red-400">− {formatCurrency(bd.costAmount)}</span>
+              </div>
+            )}
+            {gp > 0 && (
+              <div className="flex justify-between px-3 py-2 bg-muted/20">
+                <span className="text-muted-foreground font-medium">Gross Profit{gpMargin ? ` (${gpMargin}%)` : ""}</span>
+                <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(gp)}</span>
+              </div>
+            )}
+            {bd.commissionBaseAmount !== bd.grossProfitAmount && bd.commissionBaseAmount > 0 && (
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-muted-foreground">Commission Base</span>
+                <span className="font-medium tabular-nums">{formatCurrency(bd.commissionBaseAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Commission Rate</span>
+              <span className="font-medium tabular-nums">{bd.commissionPercentage}%</span>
+            </div>
+            <div className="flex justify-between px-3 py-2.5 bg-primary/5 border-t-2 border-primary/20">
+              <span className="font-semibold text-foreground">Calculated Commission</span>
+              <span className="font-bold text-primary tabular-nums">
+                {formatCurrency((bd.commissionBaseAmount > 0 ? bd.commissionBaseAmount : bd.revenueAmount) * bd.commissionPercentage / 100)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+// ── Supporting Documents ───────────────────────────────────────────────────────
+
+interface CommDoc {
+  id: string;
+  documentType: string;
+  fileName: string;
+  fileUrl: string;
+  description: string | null;
+  uploadedByName: string;
+  createdAt: string;
+}
+
+function SupportingDocuments({ dealId }: { dealId: string }) {
+  const [docs, setDocs] = useState<CommDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/commission-events/${dealId}/documents`, { headers: getAuthHeaders() })
+      .then((r) => r.json())
+      .then((d) => setDocs(Array.isArray(d) ? d : []))
+      .catch(() => setDocs([]))
+      .finally(() => setLoading(false));
+  }, [dealId]);
+
+  if (loading) return (
+    <div className="space-y-1.5">
+      <Skeleton className="h-4 w-32" />
+      <Skeleton className="h-10 w-full" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Supporting Documents</span>
+        {docs.length > 0 && (
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">{docs.length}</Badge>
+        )}
+      </div>
+      {docs.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic pl-5">No supporting documents attached.</p>
+      ) : (
+        <div className="space-y-1">
+          {docs.map((doc) => (
+            <a
+              key={doc.id}
+              href={doc.documentType === "FILE" ? `/api/storage/objects${doc.fileUrl.replace(/^\/objects/, "")}` : doc.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded-md border border-border bg-muted/20 hover:bg-muted/40 transition-colors group"
+            >
+              {doc.documentType === "FILE" ? (
+                <FileText className="h-4 w-4 shrink-0 text-primary" />
+              ) : (
+                <ExternalLink className="h-4 w-4 shrink-0 text-blue-500" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate group-hover:underline">{doc.fileName}</p>
+                {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
+                <p className="text-[10px] text-muted-foreground">by {doc.uploadedByName}</p>
+              </div>
+              <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ApprovalChain({ dealId }: { dealId: string }) {
@@ -86,39 +241,50 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
   };
 
   const requiresComment = pendingAction !== null && !comments.trim();
+  const breakdown = (approval as any).commissionBreakdown as Breakdown | undefined;
 
   return (
     <Dialog open={!!approval} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-foreground">Review Deal</DialogTitle>
-          <DialogDescription>Review the deal details and choose an action.</DialogDescription>
+      <DialogContent className="max-w-xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-foreground">Review Commission</DialogTitle>
+          <DialogDescription>Review all details below before taking an action.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto flex-1 pr-0.5">
+          {/* Deal summary */}
           <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="font-semibold text-foreground">{approval.dealName}</p>
                 <p className="text-sm text-muted-foreground">{approval.customerName}</p>
               </div>
-              <Badge variant="outline" className="shrink-0">
+              <Badge variant="outline" className="shrink-0 text-xs">
                 Level {approval.approvalLevel}{approval.stepName ? ` – ${approval.stepName}` : ""}
               </Badge>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-muted-foreground">Sales Rep</span>
+                <span className="text-muted-foreground text-xs">Sales Rep</span>
                 <p className="font-medium text-foreground">{approval.salesExecutiveName}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Commission</span>
-                <p className="font-semibold text-primary text-base">{formatCurrency(approval.calculatedCommission)}</p>
+                <span className="text-muted-foreground text-xs">Commission</span>
+                <p className="font-semibold text-primary text-lg">{formatCurrency(approval.calculatedCommission)}</p>
               </div>
             </div>
             <ApprovalChain dealId={approval.dealId} />
           </div>
 
+          {/* Commission breakdown */}
+          {breakdown && (
+            <CommissionBreakdown bd={breakdown} />
+          )}
+
+          {/* Supporting documents */}
+          <SupportingDocuments dealId={approval.dealId} />
+
+          {/* Comments */}
           <div className="space-y-1.5">
             <Label htmlFor="comments" className="text-sm font-medium">
               Comments <span className="text-muted-foreground font-normal">(required for Reject / Request Changes)</span>
@@ -135,8 +301,11 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
               className={requiresComment ? "border-red-400" : ""}
             />
           </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+        {/* Actions — fixed at the bottom */}
+        <div className="space-y-2 pt-2 shrink-0 border-t border-border mt-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Button className="flex-1 gap-2 bg-green-600 hover:bg-green-700 text-white" disabled={submitting} onClick={() => handleAction("APPROVE")}>
               <CheckCircle2 className="h-4 w-4" />Approve
             </Button>

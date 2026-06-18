@@ -23,7 +23,7 @@ function ceaToResponse(cea: any) {
   return {
     id:                   cea.id,
     tenantId:             cea.tenantId,
-    dealId:               cea.commissionEventId,          // frontend uses dealId as the event ID
+    dealId:               cea.commissionEventId,
     dealName:             event.eventTitle ?? "",
     customerName:         extractCustomerName(event.eventDataJson),
     calculatedCommission: Number(event.calculatedCommissionAmount ?? 0),
@@ -38,16 +38,30 @@ function ceaToResponse(cea: any) {
     payoutAmount:         cea.payoutAmount ? Number(cea.payoutAmount) : null,
     approvedAt:           cea.approvedAt?.toISOString() ?? null,
     createdAt:            cea.createdAt.toISOString(),
+    commissionBreakdown: {
+      eventType:            event.eventType ?? "",
+      revenueAmount:        Number(event.revenueAmount ?? 0),
+      costAmount:           Number(event.costAmount ?? 0),
+      grossProfitAmount:    Number(event.grossProfitAmount ?? 0),
+      commissionBaseAmount: Number(event.commissionBaseAmount ?? 0),
+      commissionPercentage: Number(event.commissionPercentage ?? 0),
+    },
   };
 }
 
 const ceaInclude = {
   commissionEvent: {
     select: {
-      eventTitle:                true,
-      eventDataJson:             true,
+      eventTitle:                 true,
+      eventType:                  true,
+      eventDataJson:              true,
+      revenueAmount:              true,
+      costAmount:                 true,
+      grossProfitAmount:          true,
+      commissionBaseAmount:       true,
+      commissionPercentage:       true,
       calculatedCommissionAmount: true,
-      salesExecutiveId:          true,
+      salesExecutiveId:           true,
       salesExecutive: { select: { firstName: true, lastName: true } },
     },
   },
