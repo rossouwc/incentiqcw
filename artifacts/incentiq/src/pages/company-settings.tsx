@@ -20,28 +20,50 @@ function authHeaders() {
 }
 
 export default function CompanySettings() {
-  const { data: tenant, isLoading } = useGetTenant();
+  const { data: tenant, isLoading, refetch: refetchTenant } = useGetTenant();
   const { toast } = useToast();
   const { logout } = useAuth();
 
+  // ── Company Profile state ────────────────────────────────────────────────
+  const [profileCompanyName, setProfileCompanyName] = useState("");
+  const [profileContactName, setProfileContactName] = useState("");
+  const [profileContactEmail, setProfileContactEmail] = useState("");
+  const [profileContactPhone, setProfileContactPhone] = useState("");
+  const [profileWebsite, setProfileWebsite] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // ── Payroll config state ─────────────────────────────────────────────────
   const [payrollDay, setPayrollDay] = useState<number>(25);
   const [cutoffDay, setCutoffDay] = useState<number>(20);
   const [loadingPayroll, setLoadingPayroll] = useState(true);
   const [savingPayroll, setSavingPayroll] = useState(false);
+
+  // ── Industry state ───────────────────────────────────────────────────────
   const [industry, setIndustry] = useState<string>("");
   const [savingIndustry, setSavingIndustry] = useState(false);
 
-  // Reset dialog state
+  // ── Reset dialog state ───────────────────────────────────────────────────
   const [showReset, setShowReset] = useState(false);
   const [resetInput, setResetInput] = useState("");
   const [resetting, setResetting] = useState(false);
 
-  // Delete dialog state
+  // ── Delete dialog state ──────────────────────────────────────────────────
   const [showDelete, setShowDelete] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   const companyName = (tenant as any)?.companyName ?? "";
+
+  // Populate profile fields when tenant data loads
+  useEffect(() => {
+    if (!tenant) return;
+    const t = tenant as any;
+    setProfileCompanyName(t.companyName ?? "");
+    setProfileContactName(t.contactName ?? "");
+    setProfileContactEmail(t.contactEmail ?? "");
+    setProfileContactPhone(t.contactPhone ?? "");
+    setProfileWebsite(t.website ?? "");
+  }, [(tenant as any)?.id]);
 
   useEffect(() => {
     fetch("/api/tenant/payroll-config", { headers: authHeaders() as any })
@@ -59,6 +81,33 @@ export default function CompanySettings() {
   useEffect(() => {
     if ((tenant as any)?.industry) setIndustry((tenant as any).industry);
   }, [(tenant as any)?.industry]);
+
+  const saveProfile = async () => {
+    if (!profileCompanyName.trim()) {
+      toast({ title: "Company name is required", variant: "destructive" });
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const res = await fetch("/api/tenant", {
+        method: "PATCH",
+        headers: authHeaders() as any,
+        body: JSON.stringify({
+          companyName:   profileCompanyName,
+          contactName:   profileContactName,
+          contactEmail:  profileContactEmail,
+          contactPhone:  profileContactPhone,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      await refetchTenant();
+      toast({ title: "Company profile saved", description: "Your organisation details have been updated." });
+    } catch {
+      toast({ title: "Failed to save profile", variant: "destructive" });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const saveIndustry = async () => {
     if (!industry) return;
@@ -167,18 +216,31 @@ export default function CompanySettings() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Company Name</Label>
-                      <Input defaultValue={companyName} placeholder="Your company name" />
+                      <Input
+                        value={profileCompanyName}
+                        onChange={e => setProfileCompanyName(e.target.value)}
+                        placeholder="Your company name"
+                      />
                     </div>
                     <div className="space-y-2">
-                      <Label>Company Slug</Label>
-                      <Input defaultValue={(tenant as any)?.slug ?? ""} placeholder="company-slug" />
+                      <Label>Contact Name</Label>
+                      <Input
+                        value={profileContactName}
+                        onChange={e => setProfileContactName(e.target.value)}
+                        placeholder="Primary contact name"
+                      />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Website</Label>
                     <div className="relative">
                       <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input className="pl-9" defaultValue={(tenant as any)?.website ?? ""} placeholder="https://yourcompany.co.za" />
+                      <Input
+                        className="pl-9"
+                        value={profileWebsite}
+                        onChange={e => setProfileWebsite(e.target.value)}
+                        placeholder="https://yourcompany.co.za"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -186,19 +248,32 @@ export default function CompanySettings() {
                       <Label>Contact Email</Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input className="pl-9" defaultValue={(tenant as any)?.contactEmail ?? ""} placeholder="admin@company.co.za" />
+                        <Input
+                          className="pl-9"
+                          value={profileContactEmail}
+                          onChange={e => setProfileContactEmail(e.target.value)}
+                          placeholder="admin@company.co.za"
+                        />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <Label>Phone</Label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input className="pl-9" defaultValue={(tenant as any)?.contactPhone ?? ""} placeholder="+27 11 000 0000" />
+                        <Input
+                          className="pl-9"
+                          value={profileContactPhone}
+                          onChange={e => setProfileContactPhone(e.target.value)}
+                          placeholder="+27 11 000 0000"
+                        />
                       </div>
                     </div>
                   </div>
                   <div className="flex justify-end">
-                    <Button className="gap-2"><Save className="h-4 w-4" /> Save Changes</Button>
+                    <Button className="gap-2" onClick={saveProfile} disabled={savingProfile}>
+                      {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Changes
+                    </Button>
                   </div>
                 </>
               )}
@@ -208,31 +283,21 @@ export default function CompanySettings() {
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle>Commission Defaults</CardTitle>
-              <CardDescription>Default settings applied to new commission calculations</CardDescription>
+              <CardDescription>Platform-wide defaults applied to all commission calculations</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Currency</Label>
-                  <Input defaultValue="ZAR (R)" readOnly className="bg-muted" />
+                  <Input value="ZAR (South African Rand)" readOnly className="bg-muted cursor-not-allowed" />
                 </div>
-                <div className="space-y-2">
-                  <Label>Commission Basis</Label>
-                  <Input defaultValue="Gross Profit" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Payment Frequency</Label>
-                  <Input defaultValue="Monthly" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Deferred Period (months)</Label>
-                  <Input type="number" defaultValue="3" />
+                  <Input value="Monthly" readOnly className="bg-muted cursor-not-allowed" />
                 </div>
               </div>
-              <div className="flex justify-end">
-                <Button className="gap-2"><Save className="h-4 w-4" /> Save</Button>
+              <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs text-muted-foreground">
+                Commission basis, rate, and formula are configured per industry in the <span className="font-medium text-foreground">Industry Configuration</span> section below.
               </div>
             </CardContent>
           </Card>
