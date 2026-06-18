@@ -401,8 +401,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
     if (action === "EXECUTE") {
       if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
       if (cb.status !== "APPROVED") { res.status(400).json({ error: "Only APPROVED clawbacks can be executed" }); return; }
-      if (!recoveryMethod || !["WALLET_DEDUCTION", "FUTURE_OFFSET", "MANUAL", "WAIVED"].includes(recoveryMethod)) {
-        res.status(400).json({ error: "recoveryMethod is required: WALLET_DEDUCTION | FUTURE_OFFSET | MANUAL | WAIVED" }); return;
+      if (!recoveryMethod || !["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET", "PAYROLL_DEDUCTION", "MANUAL_PAYMENT", "WAIVED"].includes(recoveryMethod)) {
+        res.status(400).json({ error: "recoveryMethod is required: WALLET_DEDUCTION | FUTURE_COMMISSION_OFFSET | PAYROLL_DEDUCTION | MANUAL_PAYMENT | WAIVED" }); return;
       }
 
       const totalAmount = Number(cb.outstandingAmount);
@@ -452,13 +452,13 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           }),
         ]);
 
-      } else if (recoveryMethod === "FUTURE_OFFSET") {
+      } else if (recoveryMethod === "FUTURE_COMMISSION_OFFSET") {
         await prisma.$transaction([
           prisma.clawbackRecovery.create({
             data: {
               tenantId:       req.user!.tenantId,
               clawbackId:     cb.id,
-              recoveryMethod: "FUTURE_OFFSET",
+              recoveryMethod: "FUTURE_COMMISSION_OFFSET",
               amount:         totalAmount,
               description:    `Future commission offset. To be deducted from next approved commission.`,
               createdById:    req.user!.userId,
@@ -470,14 +470,14 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           }),
         ]);
 
-      } else if (recoveryMethod === "MANUAL") {
+      } else if (recoveryMethod === "MANUAL_PAYMENT" || recoveryMethod === "PAYROLL_DEDUCTION") {
         const manualAmount = amount != null ? Number(amount) : totalAmount;
         await prisma.$transaction([
           prisma.clawbackRecovery.create({
             data: {
               tenantId:       req.user!.tenantId,
               clawbackId:     cb.id,
-              recoveryMethod: "MANUAL",
+              recoveryMethod: recoveryMethod as any,
               amount:         manualAmount,
               description:    notes?.trim() ?? `Manual recovery recorded by ${actorName}`,
               createdById:    req.user!.userId,
@@ -505,9 +505,11 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
       const notifyType = recoveryMethod === "WAIVED" ? "CLAWBACK_WAIVED" : "CLAWBACK_EXECUTED";
       const notifyMsg  = recoveryMethod === "WALLET_DEDUCTION"
         ? `A clawback of ${totalAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} has been deducted from your wallet for "${eventTitle}".`
-        : recoveryMethod === "FUTURE_OFFSET"
+        : recoveryMethod === "FUTURE_COMMISSION_OFFSET"
         ? `A clawback of ${totalAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" will be offset against your next commission payment.`
-        : recoveryMethod === "MANUAL"
+        : recoveryMethod === "PAYROLL_DEDUCTION"
+        ? `A clawback of ${totalAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" will be deducted via payroll.`
+        : recoveryMethod === "MANUAL_PAYMENT"
         ? `A manual recovery of ${(amount ?? totalAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} has been recorded for your clawback on "${eventTitle}".`
         : `The clawback for "${eventTitle}" has been waived.`;
 
@@ -526,7 +528,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     req.user!.userId,
-          action:     `CLAWBACK_EXECUTED_${recoveryMethod}`,
+          action:     `CLAWBACK_EXECUTED`,
           entityType: "CommissionClawback",
           entityId:   cb.id,
           newValue:   JSON.stringify({ recoveryMethod, amount: totalAmount }),
@@ -554,7 +556,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           data: {
             tenantId:       req.user!.tenantId,
             clawbackId:     cb.id,
-            recoveryMethod: "MANUAL",
+            recoveryMethod: "MANUAL_PAYMENT",
             amount:         recoverAmount,
             description:    notes?.trim() ?? `Additional recovery by ${actorName}`,
             createdById:    req.user!.userId,

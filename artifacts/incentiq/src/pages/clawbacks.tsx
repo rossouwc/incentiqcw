@@ -98,10 +98,11 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 const RECOVERY_LABELS: Record<string, string> = {
-  WALLET_DEDUCTION: "Wallet Deduction",
-  FUTURE_OFFSET:    "Future Commission Offset",
-  MANUAL:           "Manual Recovery",
-  WAIVED:           "Waived",
+  WALLET_DEDUCTION:        "Wallet Deduction",
+  FUTURE_COMMISSION_OFFSET: "Future Commission Offset",
+  PAYROLL_DEDUCTION:       "Payroll Deduction",
+  MANUAL_PAYMENT:          "Manual Payment",
+  WAIVED:                  "Waived",
 };
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
@@ -494,10 +495,11 @@ function ExecuteModal({
             <Label>Recovery Method</Label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { v: "WALLET_DEDUCTION", icon: Wallet,          label: "Wallet Deduction",       desc: "Deduct immediately from available balance" },
-                { v: "FUTURE_OFFSET",   icon: ArrowRightLeft,   label: "Future Offset",           desc: "Offset against next commission payment" },
-                { v: "MANUAL",          icon: DollarSign,       label: "Manual Recovery",         desc: "Record cash/external recovery" },
-                { v: "WAIVED",          icon: Scale,            label: "Waive",                   desc: "Write off — no recovery needed" },
+                { v: "WALLET_DEDUCTION",         icon: Wallet,         label: "Wallet Deduction",        desc: "Deduct immediately from available balance" },
+                { v: "FUTURE_COMMISSION_OFFSET", icon: ArrowRightLeft, label: "Future Commission Offset", desc: "Offset against next commission payment" },
+                { v: "PAYROLL_DEDUCTION",        icon: DollarSign,     label: "Payroll Deduction",       desc: "Deduct via next payroll run" },
+                { v: "MANUAL_PAYMENT",           icon: DollarSign,     label: "Manual Payment",          desc: "Record cash / external recovery" },
+                { v: "WAIVED",                   icon: Scale,          label: "Waive",                   desc: "Write off — no recovery needed" },
               ].map(({ v, icon: Icon, label, desc }) => (
                 <button
                   key={v}
@@ -517,7 +519,7 @@ function ExecuteModal({
             </div>
           </div>
 
-          {recoveryMethod === "MANUAL" && (
+          {(recoveryMethod === "MANUAL_PAYMENT" || recoveryMethod === "PAYROLL_DEDUCTION") && (
             <div className="space-y-1.5">
               <Label>Recovery Amount (ZAR)</Label>
               <Input

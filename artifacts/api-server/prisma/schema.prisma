@@ -130,9 +130,38 @@ enum ClawbackStatus {
 
 enum RecoveryMethod {
   WALLET_DEDUCTION
+  FUTURE_COMMISSION_OFFSET
+  PAYROLL_DEDUCTION
+  MANUAL_PAYMENT
+  WAIVED
+  // legacy aliases kept for backward compatibility
   FUTURE_OFFSET
   MANUAL
+}
+
+enum AdjustmentType {
+  CLAWBACK
+  CHARGEBACK
+  REVERSAL
+  REBATE
+  CREDIT_NOTE
+  EARLY_TERMINATION
+  NON_PAYMENT
+  RETURN
+  MANUAL_ADJUSTMENT
+}
+
+enum AdjustmentStatus {
+  DRAFT
+  CALCULATED
+  PENDING_APPROVAL
+  APPROVED
+  RECOVERY_IN_PROGRESS
+  PARTIALLY_RECOVERED
+  FULLY_RECOVERED
   WAIVED
+  DISPUTED
+  CANCELLED
 }
 
 enum DealSourceType {
@@ -222,6 +251,9 @@ model Tenant {
   changeRequests           ChangeRequest[]
   commissionClawbacks      CommissionClawback[]
   clawbackRecoveries       ClawbackRecovery[]
+  commissionAdjustments    CommissionAdjustment[]
+  recoveryTransactions     CommissionRecoveryTransaction[]
+  commissionComponents     CommissionComponent[]
 }
 
 model User {
@@ -258,6 +290,9 @@ model User {
   clawbacksCreated            CommissionClawback[]      @relation("ClawbackCreatedBy")
   clawbacksApproved           CommissionClawback[]      @relation("ClawbackApprovedBy")
   clawbackRecoveriesCreated   ClawbackRecovery[]        @relation("RecoveryCreatedBy")
+  adjustmentsCreated          CommissionAdjustment[]    @relation("AdjustmentCreatedBy")
+  adjustmentsApproved         CommissionAdjustment[]    @relation("AdjustmentApprovedBy")
+  adjustmentsAsExecutive      CommissionAdjustment[]    @relation("AdjustmentSalesExecutive")
 
   @@unique([tenantId, email])
 }
@@ -393,6 +428,7 @@ model Wallet {
   tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
+  recoveryTransactions CommissionRecoveryTransaction[]
 }
 
 model WalletTransaction {
@@ -643,11 +679,25 @@ model CommissionEvent {
   salesExecutive     User               @relation("CommissionEventSalesExecutive", fields: [salesExecutiveId], references: [id])
   internalReferrer   User?              @relation("CommissionEventInternalReferrer", fields: [internalReferrerId], references: [id])
   externalProvider   ExternalProvider?  @relation(fields: [externalProviderId], references: [id])
+  originalContractStartDate   DateTime?
+  originalContractEndDate     DateTime?
+  actualEndDate               DateTime?
+  cancellationDate            DateTime?
+  cancellationReason          String?
+  cancellationStatus          String?
+  clawbackStatus              String?
+  totalClawbackAmount         Decimal?  @db.Decimal(15, 2)
+  totalRecoveredAmount        Decimal?  @db.Decimal(15, 2)
+  outstandingRecoveryAmount   Decimal?  @db.Decimal(15, 2)
+  clawbackWindowEndDate       DateTime?
+
   approvals          CommissionEventApproval[]
   triggers           CommissionEventTrigger[]
   documents          CommissionDocument[]
   changeRequests     ChangeRequest[]
   clawbacks          CommissionClawback[]
+  adjustments        CommissionAdjustment[]
+  components         CommissionComponent[]
 }
 
 model ChangeRequest {
@@ -810,4 +860,80 @@ model ClawbackRecovery {
   tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   clawback  CommissionClawback @relation(fields: [clawbackId], references: [id], onDelete: Cascade)
   createdBy User               @relation("RecoveryCreatedBy", fields: [createdById], references: [id])
+}
+
+// ─── Commission Adjustment / Recovery ────────────────────────────────────────
+
+model CommissionAdjustment {
+  id                        String           @id @default(cuid())
+  tenantId                  String
+  commissionEventId         String
+  salesExecutiveId          String
+  adjustmentType            AdjustmentType
+  adjustmentReason          String
+  originalCommissionAmount  Decimal          @db.Decimal(15, 2)
+  earnedCommissionAmount    Decimal          @db.Decimal(15, 2)
+  recoverableAmount         Decimal          @db.Decimal(15, 2)
+  recoveredAmount           Decimal          @default(0) @db.Decimal(15, 2)
+  outstandingAmount         Decimal          @default(0) @db.Decimal(15, 2)
+  calculationMethod         String
+  calculationBreakdownJson  Json?
+  eventOriginalStartDate    DateTime?
+  eventOriginalEndDate      DateTime?
+  actualEndDate             DateTime?
+  originalTermMonths        Int?
+  actualTermMonths          Int?
+  remainingTermMonths       Int?
+  status                    AdjustmentStatus @default(DRAFT)
+  createdByUserId           String
+  approvedByUserId          String?
+  approvedAt                DateTime?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+
+  tenant          Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent               @relation(fields: [commissionEventId], references: [id])
+  salesExecutive  User                          @relation("AdjustmentSalesExecutive", fields: [salesExecutiveId], references: [id])
+  createdBy       User                          @relation("AdjustmentCreatedBy", fields: [createdByUserId], references: [id])
+  approvedBy      User?                         @relation("AdjustmentApprovedBy", fields: [approvedByUserId], references: [id])
+  recoveryTransactions CommissionRecoveryTransaction[]
+}
+
+model CommissionRecoveryTransaction {
+  id                      String         @id @default(cuid())
+  tenantId                String
+  commissionAdjustmentId  String
+  walletId                String?
+  recoveryAmount          Decimal        @db.Decimal(15, 2)
+  recoveryMethod          RecoveryMethod
+  sourceType              String?
+  sourceId                String?
+  description             String?
+  createdAt               DateTime       @default(now())
+
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionAdjustment CommissionAdjustment @relation(fields: [commissionAdjustmentId], references: [id], onDelete: Cascade)
+  wallet               Wallet?              @relation(fields: [walletId], references: [id])
+}
+
+// ─── Commission Components ────────────────────────────────────────────────────
+
+model CommissionComponent {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  commissionEventId    String
+  componentName        String
+  componentType        String
+  baseAmount           Decimal  @db.Decimal(15, 2)
+  commissionPercentage Decimal  @db.Decimal(6, 4)
+  commissionAmount     Decimal  @db.Decimal(15, 2)
+  paidAmount           Decimal  @default(0) @db.Decimal(15, 2)
+  clawbackEligible     Boolean  @default(true)
+  clawbackWindowDays   Int?
+  status               String   @default("ACTIVE")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
 }
