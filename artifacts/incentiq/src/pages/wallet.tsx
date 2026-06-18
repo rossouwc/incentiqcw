@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetWallet,
   useListTransactions,
@@ -8,6 +9,9 @@ import {
   useListWalletUserTransactions,
   useListUsers,
   useCreatePayout,
+  useGetTaxProfile,
+  useEstimatePAYE,
+  getGetWalletQueryKey,
   type Wallet,
   type Transaction,
   type WalletDeal,
@@ -17,13 +21,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
@@ -47,6 +52,10 @@ import {
   PlusCircle,
   Receipt,
   Briefcase,
+  CalendarDays,
+  MessageSquare,
+  Info,
+  AlertCircle,
 } from "lucide-react";
 
 // ─── Transaction type display helpers ─────────────────────────────────────────
@@ -316,103 +325,307 @@ function DealsTable({ deals, loading }: { deals: WalletDeal[]; loading: boolean 
 
 // ─── Payout Request Dialog ─────────────────────────────────────────────────────
 
+type PayoutType = "FULL" | "PARTIAL" | "DEFER";
+
+function getUpcomingMonths(count: number, startFromNext = false): { label: string; value: string }[] {
+  const months: { label: string; value: string }[] = [];
+  const now = new Date();
+  const start = startFromNext ? 1 : 0;
+  for (let i = start; i < start + count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    months.push({
+      label: d.toLocaleDateString("en-ZA", { month: "long", year: "numeric" }),
+      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    });
+  }
+  return months;
+}
+
 function PayoutDialog({ open, onClose, availableBalance, onSuccess }: {
   open: boolean;
   onClose: () => void;
   availableBalance: number;
   onSuccess: () => void;
 }) {
-  const [amount, setAmount] = useState("");
-  const [payoutMonth, setPayoutMonth] = useState(CURRENT_MONTH);
-  const createPayout = useCreatePayout();
   const { toast } = useToast();
+  const qc = useQueryClient();
+  const createPayout = useCreatePayout();
+  const { data: taxProfile } = useGetTaxProfile();
+  const estimatePAYE = useEstimatePAYE();
 
-  const parsed = parseFloat(amount) || 0;
-  const estimatedTax = Math.round(parsed * TAX_RATE * 100) / 100;
-  const netPayout = Math.round((parsed - estimatedTax) * 100) / 100;
-  const isValid = parsed > 0 && parsed <= availableBalance;
+  const [payoutType, setPayoutType] = useState<PayoutType>("FULL");
+  const [amount, setAmount] = useState("");
+  const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1)[0].value);
+  const [deferToMonth, setDeferToMonth] = useState(() => getUpcomingMonths(1, true)[0].value);
+  const [comments, setComments] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [payeEstimate, setPayeEstimate] = useState<{
+    netTaxWithCommission: number;
+    netTaxBase: number;
+    effectiveRateOnCommission: number;
+  } | null>(null);
+
+  const profile = taxProfile as any;
+  const currentMonths = getUpcomingMonths(12);
+  const futureMonths = getUpcomingMonths(12, true);
+
+  const effectiveAmount = useMemo(() => {
+    if (payoutType === "FULL") return availableBalance;
+    return parseFloat(amount) || 0;
+  }, [payoutType, amount, availableBalance]);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    setPayeEstimate(null);
+    if (!profile?.annualSalary || effectiveAmount <= 0) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      estimatePAYE.mutate(
+        {
+          data: {
+            annualSalary: profile.annualSalary,
+            commissionPayout: effectiveAmount,
+            medicalAidCredits: profile.medicalAidCredits ?? 0,
+            retirementContribution: profile.retirementContribution ?? 0,
+            taxYear: profile.taxYear ?? new Date().getFullYear(),
+          },
+        },
+        { onSuccess: (r: any) => setPayeEstimate(r) },
+      );
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [effectiveAmount, profile]);
+
+  const hasTaxProfile = !!profile?.annualSalary;
+  const monthlySalary = hasTaxProfile ? (profile.annualSalary / 12) : 0;
+  const grossThisMonth = monthlySalary + effectiveAmount;
+  const totalMonthlyPAYE = payeEstimate ? Math.round((payeEstimate.netTaxWithCommission / 12) * 100) / 100 : null;
+  const salaryOnlyPAYE = payeEstimate ? Math.round((payeEstimate.netTaxBase / 12) * 100) / 100 : null;
+  const netTakeHome = totalMonthlyPAYE != null ? Math.round((grossThisMonth - totalMonthlyPAYE) * 100) / 100 : null;
+  const fallbackTax = Math.round(effectiveAmount * 0.25 * 100) / 100;
+  const fallbackNet = Math.round((effectiveAmount - fallbackTax) * 100) / 100;
+
+  const validate = (): boolean => {
+    const errs: Record<string, string> = {};
+    if (effectiveAmount <= 0) errs.amount = "Amount must be greater than zero";
+    if (effectiveAmount > availableBalance) errs.amount = `Cannot exceed available balance of ${formatCurrency(availableBalance)}`;
+    if (payoutType === "DEFER" && !deferToMonth) errs.deferTo = "Please select a deferred month";
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const resetDialog = () => {
+    setAmount("");
+    setComments("");
+    setErrors({});
+    setPayoutType("FULL");
+    setPayeEstimate(null);
+    setPayoutMonth(getUpcomingMonths(1)[0].value);
+    setDeferToMonth(getUpcomingMonths(1, true)[0].value);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValid) return;
+    if (!validate()) return;
     try {
-      await createPayout.mutateAsync({ data: { amount: parsed, payoutMonth } as any });
-      toast({ title: "Payout request submitted", description: `${formatCurrency(parsed)} has been requested for ${payoutMonth}.` });
+      await createPayout.mutateAsync({
+        data: {
+          requestedAmount: effectiveAmount,
+          payoutMonth: payoutType === "DEFER" ? deferToMonth : payoutMonth,
+          ...(payoutType === "DEFER" && { deferredToMonth: deferToMonth }),
+          ...(comments && { comments }),
+        },
+      });
+      qc.invalidateQueries({ queryKey: getGetWalletQueryKey() });
+      toast({
+        title: payoutType === "DEFER" ? "Commission deferred" : "Payout request submitted",
+        description: payoutType === "DEFER"
+          ? `R${effectiveAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} deferred to ${deferToMonth}`
+          : "Finance has been notified and will review your request.",
+      });
+      resetDialog();
       onClose();
-      setAmount("");
       onSuccess();
     } catch (err: any) {
-      toast({ title: "Failed to submit payout", description: err?.message ?? "Something went wrong", variant: "destructive" });
+      toast({ title: "Request failed", description: err?.response?.data?.error ?? "Please try again", variant: "destructive" });
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { resetDialog(); onClose(); } }}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Request Payout</DialogTitle>
-          <DialogDescription>Request a payout from your available commission balance</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="rounded-lg border border-border bg-muted/30 p-4 flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Available Balance</p>
-              <p className="text-xl font-bold text-green-600">{formatCurrency(availableBalance)}</p>
+          <div className="rounded-lg bg-muted/40 border border-border p-3 flex items-center gap-3 text-sm">
+            <WalletIcon className="h-4 w-4 text-primary shrink-0" />
+            <span className="text-muted-foreground">Available balance:</span>
+            <span className="font-semibold text-foreground ml-auto">{formatCurrency(availableBalance)}</span>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Payout type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["FULL", "PARTIAL", "DEFER"] as PayoutType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => { setPayoutType(t); setErrors({}); }}
+                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    payoutType === t
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {t === "FULL" ? "Full Balance" : t === "PARTIAL" ? "Partial" : "Defer"}
+                </button>
+              ))}
             </div>
-            <WalletIcon className="h-8 w-8 text-muted-foreground opacity-40" />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="payoutAmount">Amount (ZAR)</Label>
-            <Input
-              id="payoutAmount"
-              type="number"
-              min="1"
-              max={availableBalance}
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={`Max ${formatCurrency(availableBalance)}`}
-              className={parsed > availableBalance ? "border-red-400" : ""}
-            />
-            {parsed > availableBalance && (
-              <p className="text-xs text-red-600">Exceeds available balance</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="payoutMonth">Payout Month</Label>
-            <Input
-              id="payoutMonth"
-              type="month"
-              value={payoutMonth}
-              onChange={(e) => setPayoutMonth(e.target.value)}
-              required
-            />
-          </div>
-
-          {parsed > 0 && parsed <= availableBalance && (
-            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Gross payout</span>
-                <span className="font-medium">{formatCurrency(parsed)}</span>
+          {payoutType === "FULL" ? (
+            <div className="space-y-1">
+              <Label>Amount (ZAR)</Label>
+              <div className="h-10 px-3 flex items-center rounded-md border border-border bg-muted/40 text-foreground font-semibold">
+                {formatCurrency(availableBalance)}
               </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Est. tax (25%)</span>
-                <span className="text-red-600">- {formatCurrency(estimatedTax)}</span>
-              </div>
-              <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                <span>Est. net payout</span>
-                <span className="text-green-600">{formatCurrency(netPayout)}</span>
-              </div>
+              <p className="text-xs text-muted-foreground">Full available balance will be requested</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label>Amount (ZAR)</Label>
+              <Input
+                type="number"
+                min="1"
+                step="0.01"
+                max={availableBalance}
+                placeholder="e.g. 5000.00"
+                value={amount}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAmount(val);
+                  const parsed = parseFloat(val);
+                  if (!isNaN(parsed) && parsed > availableBalance) {
+                    setErrors((prev) => ({ ...prev, amount: `Cannot exceed available balance of ${formatCurrency(availableBalance)}` }));
+                  } else {
+                    setErrors((prev) => ({ ...prev, amount: "" }));
+                  }
+                }}
+              />
+              {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
-            <Button type="submit" className="flex-1" disabled={!isValid || createPayout.isPending}>
-              {createPayout.isPending ? "Submitting…" : "Submit Request"}
+          {payoutType === "DEFER" ? (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5" /> Defer to month</Label>
+              <Select value={deferToMonth} onValueChange={setDeferToMonth}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {futureMonths.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.deferTo && <p className="text-xs text-destructive">{errors.deferTo}</p>}
+              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-500/10 border border-blue-500/20 rounded-md p-2">
+                <Info className="h-3.5 w-3.5 mt-0.5 text-blue-400 shrink-0" />
+                Funds will be moved to your deferred balance and become available in the selected month.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5" /> Payout month</Label>
+              <Select value={payoutMonth} onValueChange={setPayoutMonth}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {currentMonths.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {effectiveAmount > 0 && payoutType !== "DEFER" && (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-sm">
+              {!hasTaxProfile ? (
+                <>
+                  <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md p-2 mb-1">
+                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>Using flat 25% estimate on commission only. <a href="/tax-profile" className="underline">Set up your Tax Profile</a> for a full monthly breakdown.</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Commission payout</span>
+                    <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Estimated tax (25%)</span>
+                    <span className="font-medium text-red-400">- {formatCurrency(fallbackTax)}</span>
+                  </div>
+                  <div className="border-t border-border pt-2 flex justify-between font-semibold">
+                    <span>Est. net commission</span>
+                    <span className="text-emerald-500">{formatCurrency(fallbackNet)}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pb-1">This month's estimated income</p>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Monthly salary</span>
+                    <span className="font-medium text-foreground">{formatCurrency(monthlySalary)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Commission payout</span>
+                    <span className="font-medium text-foreground">{formatCurrency(effectiveAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-foreground font-medium border-t border-border pt-2">
+                    <span>Gross this month</span>
+                    <span>{formatCurrency(grossThisMonth)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>
+                      {payeEstimate
+                        ? `Est. total PAYE (${payeEstimate.effectiveRateOnCommission}% on commission)`
+                        : "Calculating PAYE…"}
+                    </span>
+                    <span className="font-medium text-red-400">
+                      {totalMonthlyPAYE != null ? `- ${formatCurrency(totalMonthlyPAYE)}` : "—"}
+                    </span>
+                  </div>
+                  <div className="border-t border-border pt-2 flex justify-between font-semibold">
+                    <span>Est. net take-home</span>
+                    <span className="text-emerald-500">
+                      {netTakeHome != null ? formatCurrency(netTakeHome) : "—"}
+                    </span>
+                  </div>
+                  {salaryOnlyPAYE != null && (
+                    <p className="text-xs text-muted-foreground">
+                      * Salary-only PAYE would be {formatCurrency(salaryOnlyPAYE)}/month. Commission adds {formatCurrency(totalMonthlyPAYE! - salaryOnlyPAYE)} in PAYE.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">Estimated from your saved salary, retirement &amp; medical aid. Actual tax may differ.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5" /> Comments <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Textarea
+              placeholder="Any notes for the finance team..."
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={() => { resetDialog(); onClose(); }}>Cancel</Button>
+            <Button type="submit" disabled={createPayout.isPending || effectiveAmount <= 0 || !!errors.amount}>
+              {createPayout.isPending ? "Submitting…" : payoutType === "DEFER" ? "Defer Commission" : "Submit Request"}
             </Button>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
           </div>
         </form>
       </DialogContent>

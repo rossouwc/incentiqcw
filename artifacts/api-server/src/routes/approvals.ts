@@ -51,6 +51,7 @@ function ceaToResponse(cea: any) {
     sourceType:           event.sourceType ?? "SELF",
     splitReferrerName:    event.splitReferrerName ?? null,
     splitDeductionAmount: event.splitDeductionAmount ? Number(event.splitDeductionAmount) : null,
+    editStatus:           event.editStatus ?? "NONE",
   };
 }
 
@@ -73,6 +74,7 @@ const ceaInclude = {
       externalProviderId:         true,
       splitReferrerName:          true,
       splitDeductionAmount:       true,
+      editStatus:                 true,
       salesExecutive:             { select: { firstName: true, lastName: true } },
       internalReferrer:           { select: { firstName: true, lastName: true } },
     },
