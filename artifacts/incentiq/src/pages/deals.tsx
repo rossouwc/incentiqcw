@@ -501,7 +501,11 @@ function DynamicField({
 
 // ── Commission breakdown panel ────────────────────────────────────────────────
 
-function CalcBreakdown({ result }: { result: CalcResult }) {
+function CalcBreakdown({ result, deductionAmount, deductionLabel }: {
+  result: CalcResult;
+  deductionAmount?: number;
+  deductionLabel?: string;
+}) {
   if (result.lineItems.length === 0) return null;
 
   const fmtVal = (item: CalcResult["lineItems"][number]) => {
@@ -512,6 +516,9 @@ function CalcBreakdown({ result }: { result: CalcResult }) {
   };
 
   const resultItem = result.lineItems.find((i) => i.isResult);
+  const netCommission = resultItem && deductionAmount
+    ? resultItem.value - deductionAmount
+    : null;
 
   return (
     <div className="rounded-lg bg-primary/5 border border-primary/20 p-4 space-y-3">
@@ -539,16 +546,42 @@ function CalcBreakdown({ result }: { result: CalcResult }) {
         ))}
       </div>
 
-      {/* Separator + final result */}
+      {/* Separator + gross commission */}
       {resultItem && (
         <>
           <div className="border-t border-primary/20" />
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">{resultItem.label}</span>
-            <span className="text-lg font-bold text-primary tabular-nums">
+            <span className={`font-mono tabular-nums ${deductionAmount ? "text-base font-semibold text-foreground" : "text-lg font-bold text-primary"}`}>
               {formatCurrency(resultItem.value)}
             </span>
           </div>
+
+          {/* Internal deduction line */}
+          {deductionAmount != null && deductionAmount > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-amber-600 dark:text-amber-400">
+                {deductionLabel ?? "Internal Referral Deduction"}
+              </span>
+              <span className="font-mono tabular-nums text-amber-600 dark:text-amber-400">
+                − {formatCurrency(deductionAmount)}
+              </span>
+            </div>
+          )}
+
+          {/* Net commission after deduction */}
+          {netCommission != null && (
+            <>
+              <div className="border-t border-primary/20" />
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-foreground">Your Net Commission</span>
+                <span className="text-lg font-bold text-primary tabular-nums">
+                  {formatCurrency(netCommission)}
+                </span>
+              </div>
+            </>
+          )}
+
           <p className="text-[10px] text-muted-foreground">
             Based on your commission rate of {result.commissionPercentage}%
           </p>
@@ -1789,7 +1822,19 @@ export default function Deals() {
                   </div>
                 )}
 
-                {hasCalcValues && calcResult && <CalcBreakdown result={calcResult} />}
+                {hasCalcValues && calcResult && (
+                  <CalcBreakdown
+                    result={calcResult}
+                    deductionAmount={
+                      sourceType === "INTERNAL" && splitConfig?.isEnabled && splitConfig.deductionValue > 0
+                        ? splitConfig.deductionType === "PERCENTAGE"
+                          ? calcResult.calculatedCommissionAmount * splitConfig.deductionValue / 100
+                          : splitConfig.deductionValue
+                        : undefined
+                    }
+                    deductionLabel={splitConfig?.internalLabel ? `${splitConfig.internalLabel} Deduction` : "Internal Referral Deduction"}
+                  />
+                )}
               </>
             )}
           </div>
@@ -1945,7 +1990,19 @@ export default function Deals() {
                 )}
 
                 {/* Commission breakdown */}
-                {hasCalcValues && calcResult && <CalcBreakdown result={calcResult} />}
+                {hasCalcValues && calcResult && (
+                  <CalcBreakdown
+                    result={calcResult}
+                    deductionAmount={
+                      sourceType === "INTERNAL" && splitConfig?.isEnabled && splitConfig.deductionValue > 0
+                        ? splitConfig.deductionType === "PERCENTAGE"
+                          ? calcResult.calculatedCommissionAmount * splitConfig.deductionValue / 100
+                          : splitConfig.deductionValue
+                        : undefined
+                    }
+                    deductionLabel={splitConfig?.internalLabel ? `${splitConfig.internalLabel} Deduction` : "Internal Referral Deduction"}
+                  />
+                )}
               </>
             )}
           </div>
