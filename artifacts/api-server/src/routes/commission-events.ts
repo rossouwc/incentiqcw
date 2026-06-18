@@ -40,6 +40,33 @@ async function lookupCommissionPct(tenantId: string, salesExecutiveId: string): 
 
 // ── Load TenantIndustryConfig with template + field defs ─────────────────────
 
+// Keys already captured by hardcoded form fields — exclude from dynamic fieldDefs
+const EXCLUDED_FIELD_KEYS = new Set(["dealType", "eventType"]);
+
+function mergeCustomFields(templateDefs: any[], fieldConfigJson: any): any[] {
+  const customFields: any[] = (fieldConfigJson as any)?.customFields ?? [];
+  if (!customFields.length) return templateDefs;
+
+  const existingKeys = new Set(templateDefs.map((f) => f.fieldKey));
+  const maxOrder = templateDefs.reduce((m, f) => Math.max(m, f.displayOrder ?? 0), 0);
+
+  const extras = customFields
+    .filter((cf: any) => cf.enabled !== false && !existingKeys.has(cf.key ?? cf.fieldKey))
+    .map((cf: any, i: number) => ({
+      id:              `custom-${cf.key ?? cf.fieldKey}`,
+      fieldKey:        cf.key ?? cf.fieldKey,
+      fieldLabel:      cf.label ?? cf.fieldLabel,
+      fieldType:       cf.fieldType ?? cf.type ?? "text",
+      isRequired:      cf.required ?? cf.isRequired ?? false,
+      displayOrder:    maxOrder + i + 1,
+      calculationRole: null,
+      optionsJson:     cf.options ?? cf.optionsJson ?? null,
+      isActive:        true,
+    }));
+
+  return [...templateDefs, ...extras];
+}
+
 async function loadTenantConfig(tenantId: string) {
   const tic = await prisma.tenantIndustryConfig.findUnique({
     where: { tenantId },
@@ -56,13 +83,15 @@ async function loadTenantConfig(tenantId: string) {
   });
 
   if (tic) {
+    const templateDefs = tic.industryTemplate.dealFieldDefinitions;
+    const merged = mergeCustomFields(templateDefs, tic.fieldConfigJson);
     return {
-      industryCode:       tic.industryTemplate.code,
-      industryTemplateId: tic.industryTemplate.id,
-      dealEntityName:     tic.dealEntityName,
+      industryCode:        tic.industryTemplate.code,
+      industryTemplateId:  tic.industryTemplate.id,
+      dealEntityName:      tic.dealEntityName,
       commissionEventName: tic.commissionEventName,
-      triggerEventName:   tic.triggerEventName,
-      fieldDefs:          tic.industryTemplate.dealFieldDefinitions,
+      triggerEventName:    tic.triggerEventName,
+      fieldDefs:           merged,
     };
   }
 
@@ -80,12 +109,12 @@ async function loadTenantConfig(tenantId: string) {
   });
 
   return {
-    industryCode:       code,
-    industryTemplateId: template?.id ?? null,
-    dealEntityName:     null,
+    industryCode:        code,
+    industryTemplateId:  template?.id ?? null,
+    dealEntityName:      null,
     commissionEventName: null,
-    triggerEventName:   null,
-    fieldDefs:          template?.dealFieldDefinitions ?? [],
+    triggerEventName:    null,
+    fieldDefs:           template?.dealFieldDefinitions ?? [],
   };
 }
 
@@ -115,16 +144,18 @@ router.get("/field-config", requireAuth, async (req: Request, res: Response) => 
       commissionMethodLabel: cfg.commissionMethodLabel,
       eventTypes:           cfg.eventTypes,
       defaultCommissionPct,
-      fieldDefinitions:     tc.fieldDefs.map((f) => ({
-        id:              f.id,
-        fieldKey:        f.fieldKey,
-        fieldLabel:      f.fieldLabel,
-        fieldType:       f.fieldType,
-        isRequired:      f.isRequired,
-        displayOrder:    f.displayOrder,
-        calculationRole: f.calculationRole,
-        optionsJson:     f.optionsJson,
-      })),
+      fieldDefinitions:     tc.fieldDefs
+        .filter((f) => !EXCLUDED_FIELD_KEYS.has(f.fieldKey))
+        .map((f) => ({
+          id:              f.id,
+          fieldKey:        f.fieldKey,
+          fieldLabel:      f.fieldLabel,
+          fieldType:       f.fieldType,
+          isRequired:      f.isRequired,
+          displayOrder:    f.displayOrder,
+          calculationRole: f.calculationRole,
+          optionsJson:     f.optionsJson,
+        })),
     });
   } catch (err) {
     logger.error({ err }, "GetFieldConfig error");
