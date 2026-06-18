@@ -478,6 +478,10 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
 
           // ── Future-offset clawback hook ───────────────────────────────────────
           // Apply any pending FUTURE_COMMISSION_OFFSET clawbacks for this exec.
+          // Uses a per-clawback transaction so a failure on one doesn't block others.
+          // Caps deduction at the wallet's live available balance to prevent negatives.
+          // Handles partial coverage: outstandingAmount reduced by what was actually
+          // deducted, not forced to 0; recoveryStatus updated accordingly.
           try {
             const pendingOffsets = await prisma.commissionClawback.findMany({
               where: {
@@ -490,6 +494,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
                 recoveries:      { where: { recoveryMethod: "FUTURE_COMMISSION_OFFSET" } },
                 commissionEvent: { select: { eventTitle: true } },
               },
+              orderBy: { executedAt: "asc" }, // oldest debt first
             });
 
             for (const offset of pendingOffsets) {
@@ -497,51 +502,67 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
               const outstanding = Number(offset.outstandingAmount);
               if (outstanding <= 0) continue;
 
-              const execWallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
-              if (!execWallet) continue;
-
               const offsetTitle = (offset as any).commissionEvent?.eventTitle ?? "prior event";
-              await prisma.$transaction([
-                prisma.wallet.update({
-                  where: { id: execWallet.id },
-                  data:  { availableBalance: Number(execWallet.availableBalance) - outstanding },
-                }),
-                prisma.walletTransaction.create({
+
+              // Run inside a transaction so the wallet re-fetch and deduction are atomic
+              await prisma.$transaction(async (tx) => {
+                // Re-fetch wallet inside the transaction for the freshest balance
+                const freshWallet = await tx.wallet.findUnique({ where: { userId: salesExecId } });
+                if (!freshWallet) return;
+
+                const walletBalance = Number(freshWallet.availableBalance);
+                if (walletBalance <= 0) return;
+
+                // Cap deduction so the wallet can never go negative
+                const deductNow      = Math.min(walletBalance, outstanding);
+                const newOutstanding = Math.max(0, outstanding - deductNow);
+                const newRecovered   = Number(offset.recoveredAmount) + deductNow;
+                const newRecovSt     = newOutstanding === 0 ? "FULLY_RECOVERED" : "PARTIALLY_RECOVERED";
+
+                await tx.wallet.update({
+                  where: { id: freshWallet.id },
+                  data:  { availableBalance: walletBalance - deductNow },
+                });
+
+                await tx.walletTransaction.create({
                   data: {
                     tenantId:        req.user!.tenantId,
-                    walletId:        execWallet.id,
+                    walletId:        freshWallet.id,
                     transactionType: "FUTURE_OFFSET_APPLIED",
-                    amount:          outstanding,
+                    amount:          deductNow,
                     referenceType:   "CLAWBACK",
                     referenceId:     offset.id,
                     description:     `Future commission offset applied for "${offsetTitle}"`,
                   },
-                }),
-                prisma.clawbackRecovery.create({
+                });
+
+                await tx.clawbackRecovery.create({
                   data: {
                     tenantId:       req.user!.tenantId,
                     clawbackId:     offset.id,
                     recoveryMethod: "FUTURE_COMMISSION_OFFSET",
-                    amount:         outstanding,
+                    amount:         deductNow,
                     description:    `Auto-applied offset on approval of commission event ${eventId}`,
                     createdById:    req.user!.userId,
                   },
-                }),
-                prisma.commissionClawback.update({
+                });
+
+                await tx.commissionClawback.update({
                   where: { id: offset.id },
                   data: {
-                    recoveredAmount:   Number(offset.recoveredAmount) + outstanding,
-                    outstandingAmount: 0,
+                    recoveredAmount:   newRecovered,
+                    outstandingAmount: newOutstanding,
+                    recoveryStatus:    newRecovSt as any,
                   },
-                }),
-              ]);
+                });
+              });
 
               await prisma.notification.create({
                 data: {
                   tenantId:   req.user!.tenantId,
                   userId:     salesExecId,
                   title:      "Clawback Offset Applied",
-                  message:    `A clawback of ${outstanding.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${offsetTitle}" has been offset from your latest commission.`,
+                  message:    `A clawback offset for "${offsetTitle}" has been applied from your latest commission.`,
                   type:       "CLAWBACK_EXECUTED",
                   readStatus: false,
                 },
