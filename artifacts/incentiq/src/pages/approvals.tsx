@@ -158,9 +158,26 @@ interface CommDoc {
   createdAt: string;
 }
 
+async function openSecureFile(fileUrl: string) {
+  const apiPath = `/api/storage/objects${fileUrl.replace(/^\/objects/, "")}`;
+  try {
+    const res = await fetch(apiPath, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (win) {
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+  } catch {
+    alert("Unable to open document. Please try again.");
+  }
+}
+
 function SupportingDocuments({ dealId }: { dealId: string }) {
   const [docs, setDocs] = useState<CommDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/commission-events/${dealId}/documents`, { headers: getAuthHeaders() })
@@ -190,27 +207,45 @@ function SupportingDocuments({ dealId }: { dealId: string }) {
         <p className="text-xs text-muted-foreground italic pl-5">No supporting documents attached.</p>
       ) : (
         <div className="space-y-1">
-          {docs.map((doc) => (
-            <a
-              key={doc.id}
-              href={doc.documentType === "FILE" ? `/api/storage/objects${doc.fileUrl.replace(/^\/objects/, "")}` : doc.fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded-md border border-border bg-muted/20 hover:bg-muted/40 transition-colors group"
-            >
-              {doc.documentType === "FILE" ? (
+          {docs.map((doc) =>
+            doc.documentType === "FILE" ? (
+              <button
+                key={doc.id}
+                type="button"
+                disabled={opening === doc.id}
+                onClick={async () => {
+                  setOpening(doc.id);
+                  await openSecureFile(doc.fileUrl);
+                  setOpening(null);
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md border border-border bg-muted/20 hover:bg-muted/40 transition-colors group text-left disabled:opacity-60"
+              >
                 <FileText className="h-4 w-4 shrink-0 text-primary" />
-              ) : (
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate group-hover:underline">{doc.fileName}</p>
+                  {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
+                  <p className="text-[10px] text-muted-foreground">by {doc.uploadedByName}</p>
+                </div>
+                <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ) : (
+              <a
+                key={doc.id}
+                href={doc.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded-md border border-border bg-muted/20 hover:bg-muted/40 transition-colors group"
+              >
                 <ExternalLink className="h-4 w-4 shrink-0 text-blue-500" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate group-hover:underline">{doc.fileName}</p>
-                {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
-                <p className="text-[10px] text-muted-foreground">by {doc.uploadedByName}</p>
-              </div>
-              <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </a>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate group-hover:underline">{doc.fileName}</p>
+                  {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
+                  <p className="text-[10px] text-muted-foreground">by {doc.uploadedByName}</p>
+                </div>
+                <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </a>
+            )
+          )}
         </div>
       )}
     </div>
