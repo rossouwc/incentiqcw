@@ -24,6 +24,8 @@ export interface IndustryConfig {
   showGP: boolean;
   commissionMethodLabel: string;
   triggerLabel: string;
+  clawbackTerm: string;
+  clawbackTermPlural: string;
   extraFields: ExtraField[];
 }
 
@@ -45,6 +47,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: true,
     commissionMethodLabel: "Percentage of Gross Profit",
     triggerLabel: "Commission earned on Executive approval",
+    clawbackTerm:       "Early Termination Recovery",
+    clawbackTermPlural: "Early Termination Recoveries",
     extraFields: [
       { key: "dealDate",           label: "Deal Date",            type: "date", required: true  },
       { key: "contractStartDate",  label: "Contract Start Date",  type: "date", required: false },
@@ -67,6 +71,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: false,
     commissionMethodLabel: "Percentage of Placement Fee",
     triggerLabel: "Commission earned on placement confirmation",
+    clawbackTerm:       "Placement Rebate / Guarantee Recovery",
+    clawbackTermPlural: "Placement Rebates / Guarantee Recoveries",
     extraFields: [
       { key: "candidateName",       label: "Candidate Name",          type: "text", required: true,  placeholder: "e.g. John Smith" },
       { key: "position",            label: "Position / Role",          type: "text", required: true,  placeholder: "e.g. Senior Developer" },
@@ -92,6 +98,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: false,
     commissionMethodLabel: "Percentage of Annual Premium",
     triggerLabel: "Commission earned on policy activation",
+    clawbackTerm:       "Policy Chargeback",
+    clawbackTermPlural: "Policy Chargebacks",
     extraFields: [
       { key: "policyNumber",    label: "Policy Number",       type: "text", required: false, placeholder: "e.g. POL-2025-001" },
       { key: "insurer",         label: "Insurer / Provider",  type: "text", required: false, placeholder: "e.g. Discovery" },
@@ -115,6 +123,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: true,
     commissionMethodLabel: "Percentage of Gross Profit",
     triggerLabel: "Commission earned on sale completion",
+    clawbackTerm:       "Deal Reversal / Product Chargeback",
+    clawbackTermPlural: "Deal Reversals / Product Chargebacks",
     extraFields: [
       { key: "vehicleMake",  label: "Make",          type: "text", required: true,  placeholder: "e.g. Toyota" },
       { key: "vehicleModel", label: "Model",         type: "text", required: true,  placeholder: "e.g. Hilux GD-6" },
@@ -139,6 +149,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: false,
     commissionMethodLabel: "Percentage of Sale Price",
     triggerLabel: "Commission earned on transfer completion",
+    clawbackTerm:       "Commission Reversal",
+    clawbackTermPlural: "Commission Reversals",
     extraFields: [
       { key: "propertyAddress", label: "Property Address", type: "text", required: true,  placeholder: "e.g. 12 Main St, Sandton" },
       { key: "offerDate",       label: "Offer Date",      type: "date", required: true  },
@@ -162,6 +174,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: false,
     commissionMethodLabel: "Percentage of Monthly Rent",
     triggerLabel: "Commission earned on lease signing",
+    clawbackTerm:       "Lease Termination Recovery",
+    clawbackTermPlural: "Lease Termination Recoveries",
     extraFields: [
       { key: "propertyAddress", label: "Property Address", type: "text", required: true,  placeholder: "e.g. Unit 5, Park Mall" },
       { key: "leaseStartDate",   label: "Lease Start Date", type: "date", required: true  },
@@ -185,6 +199,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: false,
     commissionMethodLabel: "Percentage of Contract Value",
     triggerLabel: "Commission earned on activation confirmation",
+    clawbackTerm:       "Activation Chargeback",
+    clawbackTermPlural: "Activation Chargebacks",
     extraFields: [
       { key: "product",          label: "Product / Service",          type: "text",   required: true,  placeholder: "e.g. Fibre 100Mbps" },
       { key: "contractMonths",   label: "Contract Duration (months)", type: "number", required: false, placeholder: "e.g. 24" },
@@ -208,6 +224,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: false,
     commissionMethodLabel: "Percentage of ACV",
     triggerLabel: "Commission earned on subscription start",
+    clawbackTerm:       "Subscription Cancellation Clawback",
+    clawbackTermPlural: "Subscription Cancellation Clawbacks",
     extraFields: [
       { key: "plan",              label: "Plan / Tier",              type: "text",     required: false, placeholder: "e.g. Enterprise" },
       { key: "mrr",              label: "Monthly Recurring Revenue", type: "currency", required: false, placeholder: "0.00" },
@@ -231,6 +249,8 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: true,
     commissionMethodLabel: "Configurable",
     triggerLabel: "Commission earned on approval",
+    clawbackTerm:       "Commission Adjustment",
+    clawbackTermPlural: "Commission Adjustments",
     extraFields: [
       { key: "eventDate", label: "Event Date", type: "date", required: true  },
       { key: "dueDate",   label: "Due Date",   type: "date", required: false },

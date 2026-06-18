@@ -5,6 +5,7 @@ import { logger } from "../lib/logger";
 import { calculateClawback } from "../lib/clawback-engine";
 import type { ClawbackPolicyInput, CommissionComponentInput } from "../lib/clawback-engine";
 import { executeRecoveryWaterfall } from "../lib/recovery-engine";
+import { getIndustryConfig } from "../industry-config";
 
 const ZAR = (n: number) =>
   n.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" });
@@ -165,12 +166,14 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     });
 
     // Notify sales exec
+    const { industry: createIndustry } = (await prisma.tenant.findUnique({ where: { id: req.user!.tenantId }, select: { industry: true } })) ?? {};
+    const { clawbackTerm: createTerm } = getIndustryConfig(createIndustry);
     await prisma.notification.create({
       data: {
         tenantId:   req.user!.tenantId,
         userId:     event.salesExecutiveId,
-        title:      "Clawback Created",
-        message:    `A commission clawback of ${cbAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} has been created for "${event.eventTitle}". Reason: ${reason.trim().slice(0, 100)}`,
+        title:      `${createTerm} Created`,
+        message:    `A ${createTerm.toLowerCase()} of ${cbAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} has been created for "${event.eventTitle}". Reason: ${reason.trim().slice(0, 100)}`,
         type:       "CLAWBACK_CREATED",
         readStatus: false,
       },
@@ -310,6 +313,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
     const execId     = cb.salesExecutiveId;
     const eventTitle = (cb.commissionEvent as any).eventTitle as string;
     const actorName  = `${(req.user as any).firstName ?? ""} ${(req.user as any).lastName ?? ""}`.trim() || "Admin";
+    const { industry: actionIndustry } = (await prisma.tenant.findUnique({ where: { id: req.user!.tenantId }, select: { industry: true } })) ?? {};
+    const { clawbackTerm: cTerm, clawbackTermPlural: cTermPlural } = getIndustryConfig(actionIndustry);
 
     // ── SUBMIT (DRAFT → PENDING_APPROVAL, multi-step approval) ──────────────
     if (action === "SUBMIT") {
@@ -402,8 +407,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           data: {
             tenantId:   req.user!.tenantId,
             userId:     u.id,
-            title:      "Clawback Awaiting Review",
-            message:    `A clawback of ${clawbackAmt.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" requires your review (Step 1: ${steps[0].stepName}).`,
+            title:      `${cTerm} Awaiting Review`,
+            message:    `A ${cTerm.toLowerCase()} of ${clawbackAmt.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" requires your review (Step 1: ${steps[0].stepName}).`,
             type:       "CLAWBACK_CREATED",
             readStatus: false,
           },
@@ -415,8 +420,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     execId,
-          title:      "Potential Commission Clawback",
-          message:    `A clawback of ${clawbackAmt.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" has been submitted for approval and will appear as a potential deduction in your wallet.`,
+          title:      `Potential ${cTerm}`,
+          message:    `A ${cTerm.toLowerCase()} of ${clawbackAmt.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" has been submitted for approval and will appear as a potential deduction in your wallet.`,
           type:       "CLAWBACK_CREATED",
           readStatus: false,
         },
@@ -477,8 +482,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
             data: {
               tenantId:   req.user!.tenantId,
               userId:     u.id,
-              title:      "Clawback Awaiting Your Approval",
-              message:    `A clawback of ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" is at Step ${nextStep.stepOrder}: ${nextStep.stepName}.`,
+              title:      `${cTerm} Awaiting Your Approval`,
+              message:    `A ${cTerm.toLowerCase()} of ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" is at Step ${nextStep.stepOrder}: ${nextStep.stepName}.`,
               type:       "CLAWBACK_STEP_APPROVED",
               readStatus: false,
             },
@@ -489,7 +494,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           data: {
             tenantId:   req.user!.tenantId,
             userId:     execId,
-            title:      "Clawback Approval In Progress",
+            title:      `${cTerm} Approval In Progress`,
             message:    `Step ${currentStepOrder} (${currentStep.stepName}) approved. Now pending Step ${nextStep.stepOrder}: ${nextStep.stepName}.`,
             type:       "CLAWBACK_STEP_APPROVED",
             readStatus: false,
@@ -516,8 +521,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           data: {
             tenantId:   req.user!.tenantId,
             userId:     execId,
-            title:      "Clawback Approved",
-            message:    `Your commission clawback for "${eventTitle}" has been fully approved. Amount: ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })}`,
+            title:      `${cTerm} Approved`,
+            message:    `Your ${cTerm.toLowerCase()} for "${eventTitle}" has been fully approved. Amount: ${Number(cb.clawbackAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })}`,
             type:       "CLAWBACK_APPROVED",
             readStatus: false,
           },
@@ -569,8 +574,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     execId,
-          title:      "Clawback Cancelled",
-          message:    `The clawback for "${eventTitle}" has been rejected and cancelled.${notes ? ` Reason: ${notes.trim().slice(0, 100)}` : ""}`,
+          title:      `${cTerm} Cancelled`,
+          message:    `The ${cTerm.toLowerCase()} for "${eventTitle}" has been rejected and cancelled.${notes ? ` Reason: ${notes.trim().slice(0, 100)}` : ""}`,
           type:       "CLAWBACK_CANCELLED",
           readStatus: false,
         },
@@ -619,8 +624,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     execId,
-          title:      "Clawback Waived",
-          message:    `Your commission clawback for "${eventTitle}" has been waived. Reason: ${waiveReason.trim().slice(0, 150)}`,
+          title:      `${cTerm} Waived`,
+          message:    `Your ${cTerm.toLowerCase()} for "${eventTitle}" has been waived. Reason: ${waiveReason.trim().slice(0, 150)}`,
           type:       "CLAWBACK_WAIVED",
           readStatus: false,
         },
@@ -667,8 +672,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     cb.createdById,
-          title:      "Clawback Disputed",
-          message:    `${actorName} has disputed the clawback for "${eventTitle}". Recovery is frozen until resolved.${disputeNote ? ` Note: ${disputeNote.trim().slice(0, 100)}` : ""}`,
+          title:      `${cTerm} Disputed`,
+          message:    `${actorName} has disputed the ${cTerm.toLowerCase()} for "${eventTitle}". Recovery is frozen until resolved.${disputeNote ? ` Note: ${disputeNote.trim().slice(0, 100)}` : ""}`,
           type:       "CLAWBACK_DISPUTED",
           readStatus: false,
         },
@@ -701,8 +706,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     cb.createdById,
-          title:      "Clawback Changes Requested",
-          message:    `Changes have been requested on the clawback for "${eventTitle}".${notes ? ` Notes: ${notes.trim().slice(0, 100)}` : ""}`,
+          title:      `${cTerm} Changes Requested`,
+          message:    `Changes have been requested on the ${cTerm.toLowerCase()} for "${eventTitle}".${notes ? ` Notes: ${notes.trim().slice(0, 100)}` : ""}`,
           type:       "CLAWBACK_CHANGES_REQUESTED",
           readStatus: false,
         },
@@ -714,8 +719,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
           data: {
             tenantId:   req.user!.tenantId,
             userId:     execId,
-            title:      "Clawback Under Review",
-            message:    `The clawback for "${eventTitle}" requires changes before it can proceed.${notes ? ` Notes: ${notes.trim().slice(0, 100)}` : ""}`,
+            title:      `${cTerm} Under Review`,
+            message:    `The ${cTerm.toLowerCase()} for "${eventTitle}" requires changes before it can proceed.${notes ? ` Notes: ${notes.trim().slice(0, 100)}` : ""}`,
             type:       "CLAWBACK_CHANGES_REQUESTED",
             readStatus: false,
           },
@@ -769,16 +774,16 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
 
       const walletDeducted = newRecovered - prevRecovered;
       const notifyMsg = newOutstanding === 0
-        ? `A clawback of ${ZAR(outstandingAmt)} for "${eventTitle}" has been fully recovered from your wallet.`
+        ? `A ${cTerm.toLowerCase()} of ${ZAR(outstandingAmt)} for "${eventTitle}" has been fully recovered from your wallet.`
         : walletDeducted > 0
-        ? `${ZAR(walletDeducted)} has been deducted from your wallet for the clawback on "${eventTitle}". ${ZAR(newOutstanding)} remains and will be offset against future commissions.`
-        : `${ZAR(newOutstanding)} clawback on "${eventTitle}" will be recovered from future commission payments.`;
+        ? `${ZAR(walletDeducted)} has been deducted from your wallet for the ${cTerm.toLowerCase()} on "${eventTitle}". ${ZAR(newOutstanding)} remains and will be offset against future commissions.`
+        : `${ZAR(newOutstanding)} ${cTerm.toLowerCase()} on "${eventTitle}" will be recovered from future commission payments.`;
 
       await prisma.notification.create({
         data: {
           tenantId:   req.user!.tenantId,
           userId:     execId,
-          title:      "Clawback Executed",
+          title:      `${cTerm} Executed`,
           message:    notifyMsg,
           type:       "CLAWBACK_EXECUTED" as any,
           readStatus: false,

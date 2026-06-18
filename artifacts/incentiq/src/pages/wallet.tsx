@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import {
   useGetWallet,
   useListTransactions,
@@ -135,6 +136,7 @@ function BalanceCards({
   potentialClawbacks?: number;
   recoveryLoading?: boolean;
 }) {
+  const { clawbackTerm, clawbackTermPlural } = useIndustryConfig();
   const cards = [
     {
       label: "Available Balance",
@@ -182,7 +184,7 @@ function BalanceCards({
       extraLoading: recoveryLoading,
     },
     {
-      label: "Potential Clawbacks",
+      label: `Potential ${clawbackTermPlural}`,
       value: potentialClawbacks,
       description: "Pending approval — may affect wallet",
       colorClass: "border-l-amber-600",
@@ -413,6 +415,7 @@ const RECOVERY_STATUS_BADGE: Record<string, string> = {
 };
 
 function RecoverySection({ clawbacks, loading }: { clawbacks: any[]; loading: boolean }) {
+  const { clawbackTerm, clawbackTermPlural } = useIndustryConfig();
   const active = clawbacks.filter(c =>
     !["DRAFT", "CANCELLED", "WAIVED", "FULLY_RECOVERED"].includes(c.status) ||
     c.outstandingAmount > 0
@@ -424,14 +427,14 @@ function RecoverySection({ clawbacks, loading }: { clawbacks: any[]; loading: bo
         <div>
           <CardTitle className="flex items-center gap-2">
             <ShieldAlert className="h-4 w-4 text-red-500" />
-            Recovery Overview
+            {clawbackTermPlural}
           </CardTitle>
-          <CardDescription>Clawbacks affecting your commission wallet</CardDescription>
+          <CardDescription>{clawbackTermPlural} affecting your commission wallet</CardDescription>
         </div>
         {active.length > 0 && (
           <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md px-3 py-1.5">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            {active.length} active clawback{active.length !== 1 ? "s" : ""} require attention
+            {active.length} active {active.length !== 1 ? clawbackTermPlural.toLowerCase() : clawbackTerm.toLowerCase()} require attention
           </div>
         )}
       </CardHeader>
@@ -441,7 +444,7 @@ function RecoverySection({ clawbacks, loading }: { clawbacks: any[]; loading: bo
         ) : clawbacks.length === 0 ? (
           <div className="px-6 py-14 text-center text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No clawbacks on record — your commission is clean.</p>
+            <p className="text-sm">No {clawbackTermPlural.toLowerCase()} on record — your commission is clean.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

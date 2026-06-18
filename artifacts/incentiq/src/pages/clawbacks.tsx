@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,7 @@ function CreateClawbackModal({
   onCreated: () => void;
 }) {
   const { toast } = useToast();
+  const { clawbackTerm } = useIndustryConfig();
   const [events, setEvents] = useState<CommissionEventOption[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -306,7 +308,7 @@ function CreateClawbackModal({
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <TrendingDown className="h-4 w-4 text-red-500" />
-            <DialogTitle>Create Clawback / Reversal</DialogTitle>
+            <DialogTitle>Create {clawbackTerm}</DialogTitle>
           </div>
           <DialogDescription>
             Record a commission clawback against an approved or in-approval deal.
@@ -465,7 +467,7 @@ function CreateClawbackModal({
             className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingDown className="h-4 w-4" />}
-            Create Clawback
+            Create {clawbackTerm}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -489,6 +491,7 @@ function ExecuteModal({
   onDone: () => void;
 }) {
   const { toast } = useToast();
+  const { clawbackTerm } = useIndustryConfig();
   const [submitting, setSubmitting] = useState(false);
 
   if (!clawback) return null;
@@ -522,7 +525,7 @@ function ExecuteModal({
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Wallet className="h-4 w-4 text-red-500" />
-            <DialogTitle>Execute Recovery</DialogTitle>
+            <DialogTitle>Execute {clawbackTerm} Recovery</DialogTitle>
           </div>
           <DialogDescription>
             Recover <strong>{formatCurrency(outstanding)}</strong> from{" "}
@@ -588,6 +591,7 @@ function DetailModal({
   canManage: boolean;
 }) {
   const { toast } = useToast();
+  const { clawbackTerm } = useIndustryConfig();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [disputeNote, setDisputeNote] = useState("");
   const [waiveReason, setWaiveReason] = useState("");
@@ -645,7 +649,7 @@ function DetailModal({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingDown className="h-4 w-4 text-red-500" />
-              <DialogTitle className="text-foreground">Clawback Details</DialogTitle>
+              <DialogTitle className="text-foreground">{clawbackTerm} Details</DialogTitle>
             </div>
             <StatusBadge status={clawback.status} />
           </div>
@@ -955,6 +959,7 @@ function DetailModal({
 export default function Clawbacks() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { clawbackTerm, clawbackTermPlural } = useIndustryConfig();
   const role = user?.role ?? "";
   const canManage = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"].includes(role);
 
@@ -990,7 +995,7 @@ export default function Clawbacks() {
     try {
       const res = await fetch(`/api/clawbacks/${deleteTarget.id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to delete");
-      toast({ title: "Clawback deleted" });
+      toast({ title: `${clawbackTerm} deleted` });
       setDeleteTarget(null);
       fetchClawbacks();
     } catch (err: any) {
@@ -1017,17 +1022,17 @@ export default function Clawbacks() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <TrendingDown className="h-6 w-6 text-red-500" />
-            Commission Clawbacks
+            {clawbackTermPlural}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {canManage
-              ? "Manage commission reversals, chargebacks, and recoveries across your team."
-              : "View clawbacks and reversals applied to your commission."}
+              ? `Manage ${clawbackTermPlural.toLowerCase()} and commission recoveries across your team.`
+              : `View ${clawbackTermPlural.toLowerCase()} and reversals applied to your commission.`}
           </p>
         </div>
         {canManage && (
           <Button onClick={() => setShowCreate(true)} className="gap-1.5 bg-red-600 hover:bg-red-700 text-white shrink-0">
-            <Plus className="h-4 w-4" /> New Clawback
+            <Plus className="h-4 w-4" /> New {clawbackTerm}
           </Button>
         )}
       </div>
@@ -1035,7 +1040,7 @@ export default function Clawbacks() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Total Clawback Value",  value: formatCurrency(totalClawback),    icon: TrendingDown,   accent: "border-l-red-500",    valueClass: "text-red-600 dark:text-red-400" },
+          { label: `Total ${clawbackTerm} Value`,  value: formatCurrency(totalClawback),    icon: TrendingDown,   accent: "border-l-red-500",    valueClass: "text-red-600 dark:text-red-400" },
           { label: "Pending Approval",       value: String(pending),                  icon: Clock,          accent: "border-l-amber-400",  valueClass: "text-foreground" },
           { label: "Executed",               value: String(executed),                 icon: CheckCircle2,   accent: "border-l-rose-500",   valueClass: "text-foreground" },
           { label: "Outstanding Recovery",   value: formatCurrency(totalOutstanding), icon: AlertTriangle,  accent: "border-l-orange-500", valueClass: "text-orange-600 dark:text-orange-400" },
@@ -1059,7 +1064,7 @@ export default function Clawbacks() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-base">Clawback Records</CardTitle>
+              <CardTitle className="text-base">{clawbackTermPlural}</CardTitle>
               <CardDescription className="text-xs mt-0.5">
                 {filtered.length} record{filtered.length !== 1 ? "s" : ""}
               </CardDescription>
@@ -1091,10 +1096,10 @@ export default function Clawbacks() {
           ) : filtered.length === 0 ? (
             <div className="px-6 py-16 text-center text-muted-foreground space-y-2">
               <TrendingDown className="h-10 w-10 mx-auto text-muted-foreground/40" />
-              <p>No clawback records found.</p>
+              <p>No {clawbackTermPlural.toLowerCase()} found.</p>
               {canManage && (
                 <Button variant="outline" size="sm" onClick={() => setShowCreate(true)} className="gap-1">
-                  <Plus className="h-3.5 w-3.5" /> Create first clawback
+                  <Plus className="h-3.5 w-3.5" /> Create first {clawbackTerm.toLowerCase()}
                 </Button>
               )}
             </div>
@@ -1192,9 +1197,9 @@ export default function Clawbacks() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete clawback?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {clawbackTerm.toLowerCase()}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the clawback for <strong>{deleteTarget?.eventTitle}</strong>. This cannot be undone.
+              This will permanently delete this {clawbackTerm.toLowerCase()} for <strong>{deleteTarget?.eventTitle}</strong>. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
