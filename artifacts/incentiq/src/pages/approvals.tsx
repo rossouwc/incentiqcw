@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListApprovals,
@@ -14,14 +14,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
-  CheckCircle2, XCircle, Clock, AlertTriangle, MessageSquare,
-  ChevronDown, CheckSquare, DollarSign, RotateCcw, Wallet, ArrowRight,
+  CheckCircle2, XCircle, Clock, MessageSquare,
+  DollarSign, RotateCcw, Wallet, ArrowRight,
+  Search, X, User, ChevronDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -332,10 +336,37 @@ export default function Approvals({ title = "Pending Approvals", description }: 
 
   const [selected, setSelected] = useState<Approval | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [execFilter, setExecFilter] = useState("all");
+
+  // Unique sales execs for the filter dropdown
+  const salesExecs = useMemo(() => {
+    const map = new Map<string, string>();
+    list.forEach((a) => {
+      if (a.salesExecutiveName) map.set(a.salesExecutiveName, a.salesExecutiveName);
+    });
+    return Array.from(map.values()).sort();
+  }, [list]);
+
+  const hasFilters = search.trim() !== "" || execFilter !== "all";
+
+  function applyFilters(items: Approval[]) {
+    const q = search.trim().toLowerCase();
+    return items.filter((a) => {
+      const matchesSearch =
+        !q ||
+        a.dealName?.toLowerCase().includes(q) ||
+        a.customerName?.toLowerCase().includes(q) ||
+        a.salesExecutiveName?.toLowerCase().includes(q) ||
+        a.stepName?.toLowerCase().includes(q);
+      const matchesExec = execFilter === "all" || a.salesExecutiveName === execFilter;
+      return matchesSearch && matchesExec;
+    });
+  }
 
   const totalCommission = list.reduce((s, a) => s + (a.calculatedCommission ?? 0), 0);
-  const salesExecConfirmations = list.filter((a) => a.approverRole === "SALES_EXECUTIVE");
-  const standardApprovals = list.filter((a) => a.approverRole !== "SALES_EXECUTIVE");
+  const salesExecConfirmations = applyFilters(list.filter((a) => a.approverRole === "SALES_EXECUTIVE"));
+  const standardApprovals = applyFilters(list.filter((a) => a.approverRole !== "SALES_EXECUTIVE"));
 
   const handleAction = async (action: ActionType, comments: string, payoutAmount?: number) => {
     if (!selected) return;
@@ -420,6 +451,60 @@ export default function Approvals({ title = "Pending Approvals", description }: 
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search deal, customer, rep…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-9 h-9"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <User className="h-4 w-4 text-muted-foreground shrink-0" />
+          <Select value={execFilter} onValueChange={setExecFilter}>
+            <SelectTrigger className="h-9 w-48 text-sm">
+              <SelectValue placeholder="All sales reps" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sales reps</SelectItem>
+              {salesExecs.map((name) => (
+                <SelectItem key={name} value={name}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 px-3 text-muted-foreground hover:text-foreground gap-1.5"
+              onClick={() => { setSearch(""); setExecFilter("all"); }}
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {hasFilters && (
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {standardApprovals.length + salesExecConfirmations.length} result{standardApprovals.length + salesExecConfirmations.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
 
       {/* Sales Exec Confirmation section */}
