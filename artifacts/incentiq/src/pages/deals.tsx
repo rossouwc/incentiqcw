@@ -363,6 +363,31 @@ function DynamicField({
         </div>
       );
 
+    case "calculated": {
+      const isPct = def.fieldKey.toLowerCase().includes("pct")
+                 || def.fieldKey.toLowerCase().includes("percent");
+      const num = parseFloat(value);
+      let display = "—";
+      if (!isNaN(num) && value !== "") {
+        display = isPct
+          ? `${num.toFixed(2)}%`
+          : `R\u00a0${num.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+      const isPositive = !isNaN(num) && num > 0;
+      const isNegative = !isNaN(num) && num < 0;
+      return (
+        <div className="space-y-1.5">
+          <Label className="text-muted-foreground">{def.fieldLabel}</Label>
+          <div className={`h-10 px-3 rounded-md border flex items-center text-sm font-semibold tabular-nums select-none
+            ${isPositive ? "border-emerald-400/50 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700/40"
+              : isNegative ? "border-red-400/50 bg-red-50/50 text-red-700 dark:bg-red-900/20 dark:text-red-400 dark:border-red-700/40"
+              : "border-border bg-muted/50 text-muted-foreground"}`}>
+            {display}
+          </div>
+        </div>
+      );
+    }
+
     default: // "text"
       return (
         <div className="space-y-1.5">
@@ -766,7 +791,27 @@ export default function Deals() {
   }
 
   function setField(key: string, val: string) {
-    setFormValues((prev) => ({ ...prev, [key]: val }));
+    setFormValues((prev) => {
+      const next = { ...prev, [key]: val };
+
+      // Auto-compute Gross Profit and Gross Profit % whenever revenue or cost changes
+      if (fc) {
+        const revField  = fc.fieldDefinitions.find((f) => f.calculationRole === "REVENUE");
+        const costField = fc.fieldDefinitions.find((f) => f.calculationRole === "COST");
+        if (revField && costField) {
+          const rev  = parseFloat(key === revField.fieldKey  ? val : (prev[revField.fieldKey]  ?? "0")) || 0;
+          const cost = parseFloat(key === costField.fieldKey ? val : (prev[costField.fieldKey] ?? "0")) || 0;
+          const gp    = rev - cost;
+          const gpPct = rev > 0 ? Math.round((gp / rev) * 10000) / 100 : 0;
+          const gpField    = fc.fieldDefinitions.find((f) => f.fieldKey === "grossProfit");
+          const gpPctField = fc.fieldDefinitions.find((f) => f.fieldKey === "grossProfitPercentage");
+          if (gpField)    next[gpField.fieldKey]    = String(gp);
+          if (gpPctField) next[gpPctField.fieldKey] = String(gpPct);
+        }
+      }
+
+      return next;
+    });
   }
 
   async function handleCreate(submitImmediately: boolean) {
