@@ -141,6 +141,13 @@ enum ClawbackStepStatus {
   SKIPPED
 }
 
+enum ClawbackRecoveryStatus {
+  PENDING
+  RECOVERY_IN_PROGRESS
+  PARTIALLY_RECOVERED
+  FULLY_RECOVERED
+}
+
 enum RecoveryMethod {
   WALLET_DEDUCTION
   FUTURE_COMMISSION_OFFSET
@@ -247,8 +254,9 @@ model Tenant {
   contactPhone       String?
   status             TenantStatus     @default(ACTIVE)
   subscriptionPlan   SubscriptionPlan @default(STARTER)
-  payrollDay           Int?             @default(25)
-  commissionCutoffDay  Int?             @default(20)
+  payrollDay               Int?             @default(25)
+  commissionCutoffDay      Int?             @default(20)
+  allowPayrollDeduction    Boolean          @default(false)
   onboardingStatus     String           @default("PENDING")
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -858,6 +866,7 @@ model CommissionClawback {
   proRataFactor            Decimal?               @db.Decimal(6, 4)
   componentDescription     String?
   status                   ClawbackStatus         @default(DRAFT)
+  recoveryStatus           ClawbackRecoveryStatus @default(PENDING)
   notes                    String?
   waiveReason              String?
   disputeNote              String?

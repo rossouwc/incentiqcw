@@ -55,6 +55,7 @@ interface Clawback {
   approvalSteps: ApprovalStep[];
   approvalCurrentStep: number | null;
   walletPendingTxId: string | null;
+  recoveryStatus: string;
 }
 
 interface Recovery {
@@ -129,6 +130,23 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   DISPUTED:          { label: "Disputed",          cls: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
   EXECUTED:          { label: "Executed",          cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
   CHANGES_REQUESTED: { label: "Changes Requested", cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300" },
+};
+
+const RECOVERY_STATUS_CONFIG: Record<string, { label: string; cls: string; barCls: string }> = {
+  PENDING:              { label: "Pending",             cls: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",         barCls: "bg-slate-400" },
+  RECOVERY_IN_PROGRESS: { label: "In Progress",         cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",          barCls: "bg-blue-500" },
+  PARTIALLY_RECOVERED:  { label: "Partially Recovered", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",      barCls: "bg-amber-500" },
+  FULLY_RECOVERED:      { label: "Fully Recovered",     cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", barCls: "bg-emerald-500" },
+};
+
+const RECOVERY_METHOD_ICON: Record<string, string> = {
+  WALLET_DEDUCTION:        "💳",
+  FUTURE_COMMISSION_OFFSET: "📅",
+  PAYROLL_DEDUCTION:        "🗂",
+  MANUAL_PAYMENT:           "💵",
+  WAIVED:                   "~",
+  FUTURE_OFFSET:            "📅",
+  MANUAL:                   "💵",
 };
 
 const STEP_STATUS_CONFIG: Record<string, { label: string; icon: string; cls: string }> = {
@@ -456,6 +474,10 @@ function CreateClawbackModal({
 }
 
 // ── Execute Clawback Modal ────────────────────────────────────────────────────
+// The recovery engine runs the cascade automatically:
+//   1) Deduct from wallet available balance
+//   2) Future commission offset for remainder
+//   3) Payroll deduction (if tenant allows it)
 
 function ExecuteModal({
   clawback,
@@ -467,33 +489,23 @@ function ExecuteModal({
   onDone: () => void;
 }) {
   const { toast } = useToast();
-  const [recoveryMethod, setRecoveryMethod] = useState("WALLET_DEDUCTION");
-  const [manualAmount, setManualAmount] = useState("");
-  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (clawback) { setRecoveryMethod("WALLET_DEDUCTION"); setManualAmount(""); setNotes(""); }
-  }, [clawback]);
 
   if (!clawback) return null;
 
   async function handleExecute() {
     setSubmitting(true);
     try {
-      const body: any = { action: "EXECUTE", recoveryMethod, notes: notes.trim() || undefined };
-      if (recoveryMethod === "MANUAL" && manualAmount) body.amount = parseFloat(manualAmount);
-
       const res = await fetch(`/api/clawbacks/${clawback!.id}/action`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify(body),
+        body: JSON.stringify({ action: "EXECUTE" }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Failed to execute clawback");
       }
-      toast({ title: "Clawback executed", description: `Recovery via ${RECOVERY_LABELS[recoveryMethod]} processed.` });
+      toast({ title: "Recovery engine started", description: "Wallet deduction + future offset applied automatically." });
       onDone(); onClose();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -502,81 +514,48 @@ function ExecuteModal({
     }
   }
 
+  const outstanding = clawback.outstandingAmount;
+
   return (
     <Dialog open={!!clawback} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Wallet className="h-4 w-4 text-red-500" />
-            <DialogTitle>Execute Clawback</DialogTitle>
+            <DialogTitle>Execute Recovery</DialogTitle>
           </div>
           <DialogDescription>
-            Choose how to recover <strong>{formatCurrency(clawback.outstandingAmount)}</strong> from{" "}
+            Recover <strong>{formatCurrency(outstanding)}</strong> from{" "}
             <strong>{clawback.salesExecutiveName}</strong> for "{clawback.eventTitle}".
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 pt-1">
-          <div className="space-y-2">
-            <Label>Recovery Method</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { v: "WALLET_DEDUCTION",         icon: Wallet,         label: "Wallet Deduction",        desc: "Deduct immediately from available balance" },
-                { v: "FUTURE_COMMISSION_OFFSET", icon: ArrowRightLeft, label: "Future Commission Offset", desc: "Offset against next commission payment" },
-                { v: "PAYROLL_DEDUCTION",        icon: DollarSign,     label: "Payroll Deduction",       desc: "Deduct via next payroll run" },
-                { v: "MANUAL_PAYMENT",           icon: DollarSign,     label: "Manual Payment",          desc: "Record cash / external recovery" },
-                { v: "WAIVED",                   icon: Scale,          label: "Waive",                   desc: "Write off — no recovery needed" },
-              ].map(({ v, icon: Icon, label, desc }) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setRecoveryMethod(v)}
-                  className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
-                    recoveryMethod === v
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="text-xs font-semibold">{label}</span>
-                  <span className="text-[10px] text-muted-foreground leading-snug">{desc}</span>
-                </button>
-              ))}
-            </div>
+        <div className="space-y-3 pt-1">
+          <p className="text-sm text-muted-foreground">
+            The recovery engine will automatically cascade through the priority order:
+          </p>
+          <div className="space-y-2 text-sm">
+            {[
+              { step: "1", icon: "💳", label: "Wallet Balance",          desc: "Deducts from available balance immediately" },
+              { step: "2", icon: "📅", label: "Future Commission Offset", desc: "Remainder offset against next approved commission" },
+              { step: "3", icon: "🗂",  label: "Payroll Deduction",       desc: "Fallback if enabled by your organisation settings" },
+            ].map(({ step, icon, label, desc }) => (
+              <div key={step} className="flex items-start gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2.5">
+                <span className="h-5 w-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">{step}</span>
+                <div>
+                  <p className="font-medium">{icon} {label}</p>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
-
-          {(recoveryMethod === "MANUAL_PAYMENT" || recoveryMethod === "PAYROLL_DEDUCTION") && (
-            <div className="space-y-1.5">
-              <Label>Recovery Amount (ZAR)</Label>
-              <Input
-                type="number" min="0" max={clawback.outstandingAmount} step="0.01"
-                placeholder={clawback.outstandingAmount.toFixed(2)}
-                value={manualAmount}
-                onChange={(e) => setManualAmount(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">Leave blank to recover the full outstanding amount.</p>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label className="text-muted-foreground font-normal">Note (optional)</Label>
-            <Textarea
-              placeholder="Any notes for the record…"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-            />
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Wallet deduction happens immediately and is not reversible.
+              Any outstanding balance will be tracked and automatically recovered from future commissions.
+            </p>
           </div>
-
-          {recoveryMethod === "WALLET_DEDUCTION" && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2.5">
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                This will deduct {formatCurrency(clawback.outstandingAmount)} from the executive's wallet immediately.
-                If the balance is insufficient it will go negative.
-              </p>
-            </div>
-          )}
         </div>
 
         <DialogFooter className="pt-2 gap-2">
@@ -584,10 +563,10 @@ function ExecuteModal({
           <Button
             onClick={handleExecute}
             disabled={submitting}
-            className={`gap-1.5 text-white ${recoveryMethod === "WAIVED" ? "bg-purple-600 hover:bg-purple-700" : "bg-red-600 hover:bg-red-700"}`}
+            className="gap-1.5 text-white bg-red-600 hover:bg-red-700"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {recoveryMethod === "WAIVED" ? "Waive Clawback" : "Execute Clawback"}
+            Execute Recovery
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -747,24 +726,61 @@ function DetailModal({
             </div>
           )}
 
-          {/* Recovery history */}
-          {clawback.recoveries.length > 0 && (
+          {/* Recovery Engine Status */}
+          {["EXECUTED", "WAIVED"].includes(clawback.status) && (
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recovery History</p>
-              <div className="divide-y divide-border border border-border rounded-md overflow-hidden">
-                {clawback.recoveries.map((r) => (
-                  <div key={r.id} className="flex items-start justify-between px-3 py-2 text-sm">
-                    <div>
-                      <p className="font-medium">{RECOVERY_LABELS[r.recoveryMethod] ?? r.recoveryMethod}</p>
-                      {r.description && <p className="text-xs text-muted-foreground">{r.description}</p>}
-                      <p className="text-[10px] text-muted-foreground">{formatDate(r.createdAt)}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-red-600 dark:text-red-400 tabular-nums ml-4 shrink-0">
-                      {formatCurrency(r.amount)}
-                    </span>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recovery Engine</p>
+                {(() => {
+                  const rcfg = RECOVERY_STATUS_CONFIG[clawback.recoveryStatus] ?? RECOVERY_STATUS_CONFIG.PENDING;
+                  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${rcfg.cls}`}>{rcfg.label}</span>;
+                })()}
               </div>
+
+              {/* Progress bar */}
+              {clawback.clawbackAmount > 0 && (
+                <div className="space-y-1">
+                  <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${(RECOVERY_STATUS_CONFIG[clawback.recoveryStatus] ?? RECOVERY_STATUS_CONFIG.PENDING).barCls}`}
+                      style={{ width: `${Math.min(100, (clawback.recoveredAmount / clawback.clawbackAmount) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>Recovered: {formatCurrency(clawback.recoveredAmount)}</span>
+                    <span>Outstanding: {formatCurrency(clawback.outstandingAmount)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* In-progress note */}
+              {["RECOVERY_IN_PROGRESS", "PARTIALLY_RECOVERED"].includes(clawback.recoveryStatus) && (
+                <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 px-3 py-2 text-xs text-blue-700 dark:text-blue-400">
+                  <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>{formatCurrency(clawback.outstandingAmount)} will be automatically offset from the next approved commission payment.</span>
+                </div>
+              )}
+
+              {/* Recovery transaction history */}
+              {clawback.recoveries.length > 0 && (
+                <div className="divide-y divide-border border border-border rounded-md overflow-hidden">
+                  {clawback.recoveries.map((r) => (
+                    <div key={r.id} className="flex items-start justify-between px-3 py-2 text-sm">
+                      <div className="flex items-start gap-2">
+                        <span className="text-base leading-none mt-0.5">{RECOVERY_METHOD_ICON[r.recoveryMethod] ?? "•"}</span>
+                        <div>
+                          <p className="font-medium">{RECOVERY_LABELS[r.recoveryMethod] ?? r.recoveryMethod}</p>
+                          {r.description && <p className="text-xs text-muted-foreground line-clamp-1">{r.description}</p>}
+                          <p className="text-[10px] text-muted-foreground">{formatDate(r.createdAt)}</p>
+                        </div>
+                      </div>
+                      <span className="text-sm font-semibold text-red-600 dark:text-red-400 tabular-nums ml-4 shrink-0">
+                        {formatCurrency(r.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

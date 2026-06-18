@@ -4,6 +4,10 @@ import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { calculateClawback } from "../lib/clawback-engine";
 import type { ClawbackPolicyInput, CommissionComponentInput } from "../lib/clawback-engine";
+import { executeRecoveryWaterfall } from "../lib/recovery-engine";
+
+const ZAR = (n: number) =>
+  n.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" });
 
 const router = Router();
 
@@ -43,6 +47,7 @@ function clawbackToResponse(cb: any) {
     approvedByName:           approvedBy.firstName ? `${approvedBy.firstName} ${approvedBy.lastName}` : null,
     createdAt:                cb.createdAt.toISOString(),
     updatedAt:                cb.updatedAt.toISOString(),
+    recoveryStatus:           cb.recoveryStatus ?? "PENDING",
     recoveries:               (cb.recoveries ?? []).map((r: any) => ({
       id:             r.id,
       recoveryMethod: r.recoveryMethod,
@@ -720,130 +725,62 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
       res.json(clawbackToResponse(updated)); return;
     }
 
-    // ── EXECUTE (APPROVED → EXECUTED, apply wallet deduction or future offset) ─
+    // ── EXECUTE (APPROVED → EXECUTED) — auto recovery waterfall ─────────────
 
     if (action === "EXECUTE") {
       if (!managerRoles.includes(req.user!.role)) { res.status(403).json({ error: "Forbidden" }); return; }
       if (cb.status !== "APPROVED") { res.status(400).json({ error: "Only APPROVED clawbacks can be executed" }); return; }
-      if (!recoveryMethod || !["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET", "PAYROLL_DEDUCTION", "MANUAL_PAYMENT", "WAIVED"].includes(recoveryMethod)) {
-        res.status(400).json({ error: "recoveryMethod is required: WALLET_DEDUCTION | FUTURE_COMMISSION_OFFSET | PAYROLL_DEDUCTION | MANUAL_PAYMENT | WAIVED" }); return;
-      }
 
-      const totalAmount = Number(cb.outstandingAmount);
+      const tenant = await prisma.tenant.findUnique({
+        where:  { id: req.user!.tenantId },
+        select: { allowPayrollDeduction: true },
+      });
+      const outstandingAmt = Number(cb.outstandingAmount);
+      const prevRecovered  = Number(cb.recoveredAmount);
 
-      if (recoveryMethod === "WALLET_DEDUCTION") {
-        // Deduct from wallet
-        const wallet = await prisma.wallet.findUnique({ where: { userId: execId } });
-        if (!wallet) { res.status(400).json({ error: "Sales executive has no wallet" }); return; }
+      const { newRecovered, newOutstanding, recoveryStatus } =
+        await prisma.$transaction(async (tx) => {
+          const result = await executeRecoveryWaterfall({
+            clawbackId:           cb.id,
+            tenantId:             req.user!.tenantId,
+            salesExecutiveId:     execId,
+            outstandingAmount:    outstandingAmt,
+            clawbackAmount:       Number(cb.clawbackAmount),
+            recoveredAmount:      prevRecovered,
+            eventTitle,
+            executedByUserId:     req.user!.userId,
+            allowPayrollDeduction: tenant?.allowPayrollDeduction ?? false,
+            tx,
+          });
 
-        const deductAmount = totalAmount;
-
-        await prisma.$transaction([
-          // Deduct from available balance (allow going negative — clawback debt)
-          prisma.wallet.update({
-            where: { id: wallet.id },
-            data:  { availableBalance: Number(wallet.availableBalance) - deductAmount },
-          }),
-          prisma.walletTransaction.create({
-            data: {
-              tenantId:       req.user!.tenantId,
-              walletId:       wallet.id,
-              transactionType: "CLAWBACK_DEDUCTION",
-              amount:         deductAmount,
-              referenceType:  "CLAWBACK",
-              referenceId:    cb.id,
-              description:    `Clawback: ${eventTitle}`,
-            },
-          }),
-          prisma.clawbackRecovery.create({
-            data: {
-              tenantId:       req.user!.tenantId,
-              clawbackId:     cb.id,
-              recoveryMethod: "WALLET_DEDUCTION",
-              amount:         deductAmount,
-              description:    `Wallet deduction executed by ${actorName}`,
-              createdById:    req.user!.userId,
-            },
-          }),
-          prisma.commissionClawback.update({
+          await tx.commissionClawback.update({
             where: { id: cb.id },
-            data:  {
-              status:           "EXECUTED",
-              recoveredAmount:  Number(cb.recoveredAmount) + deductAmount,
-              outstandingAmount: 0,
-              executedAt:       new Date(),
-            },
-          }),
-        ]);
-
-      } else if (recoveryMethod === "FUTURE_COMMISSION_OFFSET") {
-        await prisma.$transaction([
-          prisma.clawbackRecovery.create({
             data: {
-              tenantId:       req.user!.tenantId,
-              clawbackId:     cb.id,
-              recoveryMethod: "FUTURE_COMMISSION_OFFSET",
-              amount:         totalAmount,
-              description:    `Future commission offset. To be deducted from next approved commission.`,
-              createdById:    req.user!.userId,
+              status:            "EXECUTED",
+              recoveredAmount:   result.newRecovered,
+              outstandingAmount: result.newOutstanding,
+              recoveryStatus:    result.recoveryStatus as any,
+              executedAt:        new Date(),
             },
-          }),
-          prisma.commissionClawback.update({
-            where: { id: cb.id },
-            data:  { status: "EXECUTED", executedAt: new Date() },
-          }),
-        ]);
+          });
 
-      } else if (recoveryMethod === "MANUAL_PAYMENT" || recoveryMethod === "PAYROLL_DEDUCTION") {
-        const manualAmount = amount != null ? Number(amount) : totalAmount;
-        await prisma.$transaction([
-          prisma.clawbackRecovery.create({
-            data: {
-              tenantId:       req.user!.tenantId,
-              clawbackId:     cb.id,
-              recoveryMethod: recoveryMethod as any,
-              amount:         manualAmount,
-              description:    notes?.trim() ?? `Manual recovery recorded by ${actorName}`,
-              createdById:    req.user!.userId,
-            },
-          }),
-          prisma.commissionClawback.update({
-            where: { id: cb.id },
-            data:  {
-              status:           "EXECUTED",
-              recoveredAmount:  Number(cb.recoveredAmount) + manualAmount,
-              outstandingAmount: Math.max(0, totalAmount - manualAmount),
-              executedAt:       new Date(),
-            },
-          }),
-        ]);
-
-      } else if (recoveryMethod === "WAIVED") {
-        await prisma.commissionClawback.update({
-          where: { id: cb.id },
-          data:  { status: "WAIVED", waiveReason: notes?.trim() ?? "Waived during execution", executedAt: new Date() },
+          return result;
         });
-      }
 
-      // Notify sales exec
-      const notifyType = recoveryMethod === "WAIVED" ? "CLAWBACK_WAIVED" : "CLAWBACK_EXECUTED";
-      const notifyMsg  = recoveryMethod === "WALLET_DEDUCTION"
-        ? `A clawback of ${totalAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} has been deducted from your wallet for "${eventTitle}".`
-        : recoveryMethod === "FUTURE_COMMISSION_OFFSET"
-        ? `A clawback of ${totalAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" will be offset against your next commission payment.`
-        : recoveryMethod === "PAYROLL_DEDUCTION"
-        ? `A clawback of ${totalAmount.toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} for "${eventTitle}" will be deducted via payroll.`
-        : recoveryMethod === "MANUAL_PAYMENT"
-        ? `A manual recovery of ${(amount ?? totalAmount).toLocaleString("en-ZA", { style: "currency", currency: "ZAR" })} has been recorded for your clawback on "${eventTitle}".`
-        : `The clawback for "${eventTitle}" has been waived.`;
+      const walletDeducted = newRecovered - prevRecovered;
+      const notifyMsg = newOutstanding === 0
+        ? `A clawback of ${ZAR(outstandingAmt)} for "${eventTitle}" has been fully recovered from your wallet.`
+        : walletDeducted > 0
+        ? `${ZAR(walletDeducted)} has been deducted from your wallet for the clawback on "${eventTitle}". ${ZAR(newOutstanding)} remains and will be offset against future commissions.`
+        : `${ZAR(newOutstanding)} clawback on "${eventTitle}" will be recovered from future commission payments.`;
 
       await prisma.notification.create({
         data: {
           tenantId:   req.user!.tenantId,
           userId:     execId,
-          title:      recoveryMethod === "WAIVED" ? "Clawback Waived" : "Clawback Executed",
+          title:      "Clawback Executed",
           message:    notifyMsg,
-          type:       notifyType as any,
+          type:       "CLAWBACK_EXECUTED" as any,
           readStatus: false,
         },
       }).catch(() => {});
@@ -852,10 +789,10 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         data: {
           tenantId:   req.user!.tenantId,
           userId:     req.user!.userId,
-          action:     `CLAWBACK_EXECUTED`,
+          action:     "CLAWBACK_EXECUTED",
           entityType: "CommissionClawback",
           entityId:   cb.id,
-          newValue:   JSON.stringify({ recoveryMethod, amount: totalAmount }),
+          newValue:   JSON.stringify({ recoveryStatus, newRecovered, newOutstanding, walletDeducted }),
         },
       }).catch(() => {});
 

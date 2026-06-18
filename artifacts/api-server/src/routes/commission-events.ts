@@ -5,10 +5,15 @@ import { logger } from "../lib/logger";
 import { getIndustryConfig } from "../industry-config";
 import { calculateCommission } from "../lib/commission-formula";
 import { getDefaultWorkflow } from "../lib/industry-workflows";
+import { applyFutureOffsets } from "../lib/recovery-engine";
 import { getIndustryTriggers } from "../lib/industry-triggers";
 import { ApprovalStatus, TriggerStatus } from "@prisma/client";
 import { calculateClawback } from "../lib/clawback-engine";
 import type { ClawbackPolicyInput } from "../lib/clawback-engine";
+
+const ZAR = (n: number | { toNumber?: () => number }) =>
+  (typeof n === "object" && n.toNumber ? n.toNumber() : Number(n))
+    .toLocaleString("en-ZA", { style: "currency", currency: "ZAR" });
 
 const router = Router();
 
@@ -632,6 +637,7 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
 });
 
 // ── Wallet credit helper — only fires when BOTH approved AND triggered ─────────
+// Applies any outstanding clawback offsets before crediting the net to wallet.
 
 async function checkAndCreditWallet(commissionEventId: string, tenantId: string) {
   const ev = await prisma.commissionEvent.findUnique({
@@ -645,36 +651,60 @@ async function checkAndCreditWallet(commissionEventId: string, tenantId: string)
   const wallet = await prisma.wallet.findUnique({ where: { userId: ev.salesExecutiveId } });
   if (!wallet) return;
 
-  const amt = ev.calculatedCommissionAmount;
+  const grossAmt = Number(ev.calculatedCommissionAmount);
+
   await prisma.$transaction(async (tx) => {
+    // ── Step 1: Apply any outstanding clawback future offsets ─────────────────
+    const { netAmount, totalDeducted } = await applyFutureOffsets({
+      userId:            ev.salesExecutiveId,
+      tenantId,
+      grossIncoming:     grossAmt,
+      walletId:          wallet.id,
+      commissionEventId,
+      eventTitle:        ev.eventTitle,
+      tx,
+    });
+
+    // ── Step 2: Credit net commission to wallet ───────────────────────────────
     await tx.wallet.update({
       where: { id: wallet.id },
       data: {
-        availableBalance: { increment: amt },
-        pendingBalance:   { decrement: amt },
+        availableBalance: { increment: netAmount },
+        pendingBalance:   { decrement: grossAmt },
       },
     });
-    await tx.walletTransaction.create({
-      data: {
-        tenantId,
-        walletId:        wallet.id,
-        transactionType: "TRIGGER_RELEASED",
-        amount:          amt,
-        referenceType:   "COMMISSION_EVENT",
-        referenceId:     ev.id,
-        description:     `Commission released: ${ev.eventTitle}`,
-      },
-    });
+
+    if (netAmount > 0) {
+      await tx.walletTransaction.create({
+        data: {
+          tenantId,
+          walletId:        wallet.id,
+          transactionType: "TRIGGER_RELEASED",
+          amount:          netAmount,
+          referenceType:   "COMMISSION_EVENT",
+          referenceId:     ev.id,
+          description:     totalDeducted > 0
+            ? `Commission released: ${ev.eventTitle} (${ZAR(totalDeducted)} offset for clawback recovery)`
+            : `Commission released: ${ev.eventTitle}`,
+        },
+      });
+    }
+
     await tx.commissionEvent.update({
       where: { id: commissionEventId },
       data:  { walletStatus: "CREDITED" },
     });
+
     await tx.notification.create({
       data: {
         tenantId,
         userId:     ev.salesExecutiveId,
-        title:      "Commission Released to Wallet",
-        message:    `R${amt.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for "${ev.eventTitle}" is now available in your wallet.`,
+        title:      netAmount > 0 ? "Commission Released to Wallet" : "Commission Applied to Clawback Recovery",
+        message:    netAmount > 0
+          ? totalDeducted > 0
+            ? `${ZAR(netAmount)} of your commission for "${ev.eventTitle}" is now available. ${ZAR(totalDeducted)} was applied to outstanding clawback recovery.`
+            : `${ZAR(netAmount)} commission for "${ev.eventTitle}" is now available in your wallet.`
+          : `Your commission for "${ev.eventTitle}" (${ZAR(grossAmt)}) was fully applied to outstanding clawback recovery.`,
         type:       "WALLET_CREDITED",
         readStatus: false,
       },
