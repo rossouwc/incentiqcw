@@ -558,8 +558,10 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess, cutoffDay = 
 
   const [payoutType, setPayoutType] = useState<PayoutType>("FULL");
   const [amount, setAmount] = useState("");
-  // Initialise directly from pastCutoff — no async wait, no post-mount effect.
-  const [payoutMonth, setPayoutMonth] = useState(() => getUpcomingMonths(1, pastCutoff)[0].value);
+  // Nullable override: null means "use the first available month" (derived).
+  // This avoids any useState initializer / useEffect race — payoutMonth is
+  // always re-derived from the live cutoffDay prop on every render.
+  const [payoutMonthOverride, setPayoutMonthOverride] = useState<string | null>(null);
   const [deferToMonth, setDeferToMonth] = useState(() => getUpcomingMonths(1, true)[0].value);
   const [comments, setComments] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -569,19 +571,16 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess, cutoffDay = 
     effectiveRateOnCommission: number;
   } | null>(null);
 
-  // Re-sync the selected month whenever the dialog re-opens so that a stale
-  // "June" state is corrected if the user opens/closes across cut-off midnight.
-  useEffect(() => {
-    if (open) {
-      setPayoutMonth(getUpcomingMonths(1, pastCutoff)[0].value);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pastCutoff]);
-
   const profile = taxProfile as any;
   // Months available for "this payroll run": skip current month if past cut-off.
   const currentMonths = getUpcomingMonths(12, pastCutoff);
   const futureMonths = getUpcomingMonths(12, true);
+
+  // Derived: use the user's explicit selection only if it is still in the list;
+  // otherwise fall back to the first available month (respects cut-off live).
+  const payoutMonth = (payoutMonthOverride && currentMonths.some(m => m.value === payoutMonthOverride))
+    ? payoutMonthOverride
+    : currentMonths[0]?.value ?? "";
 
   const effectiveAmount = useMemo(() => {
     if (payoutType === "FULL") return availableBalance;
@@ -634,7 +633,7 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess, cutoffDay = 
     setErrors({});
     setPayoutType("FULL");
     setPayeEstimate(null);
-    setPayoutMonth(getUpcomingMonths(1)[0].value);
+    setPayoutMonthOverride(null);
     setDeferToMonth(getUpcomingMonths(1, true)[0].value);
   };
 
@@ -751,7 +750,7 @@ function PayoutDialog({ open, onClose, availableBalance, onSuccess, cutoffDay = 
           ) : (
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5" /> Payout month</Label>
-              <Select value={payoutMonth} onValueChange={setPayoutMonth}>
+              <Select value={payoutMonth} onValueChange={setPayoutMonthOverride}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {currentMonths.map((m) => (
