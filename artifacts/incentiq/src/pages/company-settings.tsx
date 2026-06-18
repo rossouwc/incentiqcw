@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
-import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2, Factory, AlertTriangle, Trash2, RotateCcw } from "lucide-react";
+import { Building2, Globe, Mail, Phone, Save, CalendarDays, Loader2, Factory, AlertTriangle, Trash2, RotateCcw, Users, Plus, Pencil, XCircle, CheckCircle2, UserCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { INDUSTRY_OPTIONS, getIndustryConfig } from "@/lib/industry-config";
@@ -17,6 +19,11 @@ import { INDUSTRY_OPTIONS, getIndustryConfig } from "@/lib/industry-config";
 function authHeaders() {
   const token = localStorage.getItem("incentiq_token");
   return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
+
+interface ExtProvider {
+  id: string; name: string; contactName?: string; contactEmail?: string;
+  providerType?: string; notes?: string; isActive: boolean;
 }
 
 export default function CompanySettings() {
@@ -41,6 +48,25 @@ export default function CompanySettings() {
   // ── Industry state ───────────────────────────────────────────────────────
   const [industry, setIndustry] = useState<string>("");
   const [savingIndustry, setSavingIndustry] = useState(false);
+
+  // ── Deal Source / Split config state ────────────────────────────────────
+  const [splitEnabled, setSplitEnabled]         = useState(false);
+  const [splitInternalLabel, setSplitInternalLabel] = useState("Internal Referral");
+  const [splitDeductionType, setSplitDeductionType] = useState<"PERCENTAGE" | "FLAT_AMOUNT">("PERCENTAGE");
+  const [splitDeductionValue, setSplitDeductionValue] = useState<number>(0);
+  const [savingSplit, setSavingSplit]           = useState(false);
+
+  // ── External providers state ─────────────────────────────────────────────
+  const [providers, setProviders]               = useState<ExtProvider[]>([]);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [editingProvider, setEditingProvider]   = useState<ExtProvider | null>(null);
+  const [pvName, setPvName]                     = useState("");
+  const [pvContact, setPvContact]               = useState("");
+  const [pvEmail, setPvEmail]                   = useState("");
+  const [pvType, setPvType]                     = useState("");
+  const [pvNotes, setPvNotes]                   = useState("");
+  const [savingProvider, setSavingProvider]     = useState(false);
 
   // ── Reset dialog state ───────────────────────────────────────────────────
   const [showReset, setShowReset] = useState(false);
@@ -81,6 +107,31 @@ export default function CompanySettings() {
   useEffect(() => {
     if ((tenant as any)?.industry) setIndustry((tenant as any).industry);
   }, [(tenant as any)?.industry]);
+
+  // Load split config
+  useEffect(() => {
+    fetch("/api/commission-split-config", { headers: authHeaders() as any })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        setSplitEnabled(d.isEnabled ?? false);
+        setSplitInternalLabel(d.internalLabel ?? "Internal Referral");
+        setSplitDeductionType(d.deductionType ?? "PERCENTAGE");
+        setSplitDeductionValue(d.deductionValue ?? 0);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load external providers
+  function loadProviders() {
+    setLoadingProviders(true);
+    fetch("/api/external-providers?activeOnly=false", { headers: authHeaders() as any })
+      .then(r => r.ok ? r.json() : [])
+      .then(setProviders)
+      .catch(() => setProviders([]))
+      .finally(() => setLoadingProviders(false));
+  }
+  useEffect(() => { loadProviders(); }, []);
 
   const saveProfile = async () => {
     if (!profileCompanyName.trim()) {
@@ -125,6 +176,90 @@ export default function CompanySettings() {
       toast({ title: "Failed to save", variant: "destructive" });
     } finally {
       setSavingIndustry(false);
+    }
+  };
+
+  const saveSplitConfig = async () => {
+    setSavingSplit(true);
+    try {
+      const res = await fetch("/api/commission-split-config", {
+        method: "PUT",
+        headers: authHeaders() as any,
+        body: JSON.stringify({
+          isEnabled: splitEnabled,
+          internalLabel: splitInternalLabel.trim() || "Internal Referral",
+          deductionType: splitDeductionType,
+          deductionValue: splitDeductionValue,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Deal Source settings saved" });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSavingSplit(false);
+    }
+  };
+
+  const openAddProvider = () => {
+    setEditingProvider(null);
+    setPvName(""); setPvContact(""); setPvEmail(""); setPvType(""); setPvNotes("");
+    setShowProviderForm(true);
+  };
+
+  const openEditProvider = (p: ExtProvider) => {
+    setEditingProvider(p);
+    setPvName(p.name); setPvContact(p.contactName ?? ""); setPvEmail(p.contactEmail ?? "");
+    setPvType(p.providerType ?? ""); setPvNotes(p.notes ?? "");
+    setShowProviderForm(true);
+  };
+
+  const saveProvider = async () => {
+    if (!pvName.trim()) {
+      toast({ title: "Provider name is required", variant: "destructive" }); return;
+    }
+    setSavingProvider(true);
+    try {
+      const method = editingProvider ? "PUT" : "POST";
+      const url    = editingProvider ? `/api/external-providers/${editingProvider.id}` : "/api/external-providers";
+      const res = await fetch(url, {
+        method,
+        headers: authHeaders() as any,
+        body: JSON.stringify({ name: pvName.trim(), contactName: pvContact.trim() || null, contactEmail: pvEmail.trim() || null, providerType: pvType.trim() || null, notes: pvNotes.trim() || null }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: editingProvider ? "Provider updated" : "Provider added" });
+      setShowProviderForm(false);
+      loadProviders();
+    } catch {
+      toast({ title: "Failed to save provider", variant: "destructive" });
+    } finally {
+      setSavingProvider(false);
+    }
+  };
+
+  const toggleProvider = async (p: ExtProvider) => {
+    try {
+      const res = await fetch(`/api/external-providers/${p.id}`, {
+        method: "PUT",
+        headers: authHeaders() as any,
+        body: JSON.stringify({ isActive: !p.isActive }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      loadProviders();
+    } catch {
+      toast({ title: "Failed to update provider", variant: "destructive" });
+    }
+  };
+
+  const deleteProvider = async (p: ExtProvider) => {
+    try {
+      const res = await fetch(`/api/external-providers/${p.id}`, { method: "DELETE", headers: authHeaders() as any });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Provider removed" });
+      loadProviders();
+    } catch {
+      toast({ title: "Failed to remove provider", variant: "destructive" });
     }
   };
 
@@ -417,6 +552,154 @@ export default function CompanySettings() {
               )}
             </CardContent>
           </Card>
+
+          {/* Deal Source & Commission Split */}
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Deal Source & Commission Split
+              </CardTitle>
+              <CardDescription>
+                Track how deals are sourced and automatically split commissions with internal referrers or external partners
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+
+              {/* Enable toggle + rule config */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Enable Deal Source Tracking</p>
+                    <p className="text-xs text-muted-foreground">Show source selector on deal capture forms</p>
+                  </div>
+                  <Switch
+                    checked={splitEnabled}
+                    onCheckedChange={setSplitEnabled}
+                  />
+                </div>
+
+                {splitEnabled && (
+                  <div className="space-y-4 pt-2 border-t border-border">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Internal Referral Label</Label>
+                      <Input
+                        value={splitInternalLabel}
+                        onChange={e => setSplitInternalLabel(e.target.value)}
+                        placeholder="Internal Referral"
+                        className="h-9"
+                      />
+                      <p className="text-xs text-muted-foreground">Shown on deal forms as the "Internal" source option</p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Deduction for Internal Referrals</Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Select value={splitDeductionType} onValueChange={(v) => setSplitDeductionType(v as "PERCENTAGE" | "FLAT_AMOUNT")}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
+                            <SelectItem value="FLAT_AMOUNT">Flat Amount (R)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number" min={0}
+                          value={splitDeductionValue}
+                          onChange={e => setSplitDeductionValue(Number(e.target.value))}
+                          placeholder={splitDeductionType === "PERCENTAGE" ? "e.g. 10" : "e.g. 500"}
+                          className="h-9"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {splitDeductionType === "PERCENTAGE"
+                          ? `${splitDeductionValue || 0}% of the sales rep's commission is deducted and credited to the referrer's wallet on approval.`
+                          : `R${(splitDeductionValue || 0).toLocaleString()} is deducted from the sales rep and credited to the referrer on approval.`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <Button className="gap-2" onClick={saveSplitConfig} disabled={savingSplit}>
+                    {savingSplit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save Settings
+                  </Button>
+                </div>
+              </div>
+
+              {/* External provider/partner directory */}
+              <div className="space-y-3 border-t border-border pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">External Providers / Partners</p>
+                    <p className="text-xs text-muted-foreground">ISPs, resellers, and referral partners shown in the deal source picker</p>
+                  </div>
+                  <Button size="sm" className="gap-1.5" onClick={openAddProvider}>
+                    <Plus className="h-3.5 w-3.5" /> Add Provider
+                  </Button>
+                </div>
+
+                {loadingProviders ? (
+                  <div className="space-y-2">
+                    {[1, 2].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                  </div>
+                ) : providers.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm border border-dashed border-border rounded-lg">
+                    No external providers added yet
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                    {providers.map((p) => (
+                      <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 bg-card hover:bg-muted/30 transition-colors">
+                        <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
+                          {(p.contactName || p.providerType) && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {[p.providerType, p.contactName].filter(Boolean).join(" · ")}
+                            </p>
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] shrink-0 ${p.isActive ? "text-emerald-600 border-emerald-300" : "text-muted-foreground"}`}
+                        >
+                          {p.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                        <button
+                          type="button"
+                          onClick={() => openEditProvider(p)}
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleProvider(p)}
+                          className={`transition-colors ${p.isActive ? "text-amber-500 hover:text-amber-600" : "text-emerald-500 hover:text-emerald-600"}`}
+                          title={p.isActive ? "Deactivate" : "Reactivate"}
+                        >
+                          {p.isActive ? <XCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteProvider(p)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-6">
@@ -581,6 +864,62 @@ export default function CompanySettings() {
             >
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Delete Account Permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add / Edit External Provider Dialog ─────────────────────────────── */}
+      <Dialog open={showProviderForm} onOpenChange={(open) => { if (!savingProvider) setShowProviderForm(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              {editingProvider ? "Edit Provider" : "Add External Provider"}
+            </DialogTitle>
+            <DialogDescription>
+              External providers appear in the deal source picker when capturing new deals.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="pv-name">Provider / Company Name <span className="text-destructive">*</span></Label>
+              <Input
+                id="pv-name"
+                value={pvName}
+                onChange={e => setPvName(e.target.value)}
+                placeholder="e.g. XYZ Referral Partners"
+                autoFocus
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="pv-contact">Contact Name</Label>
+                <Input id="pv-contact" value={pvContact} onChange={e => setPvContact(e.target.value)} placeholder="Jane Smith" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pv-email">Contact Email</Label>
+                <Input id="pv-email" type="email" value={pvEmail} onChange={e => setPvEmail(e.target.value)} placeholder="jane@xyz.com" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pv-type">Provider Type</Label>
+              <Input id="pv-type" value={pvType} onChange={e => setPvType(e.target.value)} placeholder="e.g. ISP, Reseller, Broker" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pv-notes">Notes</Label>
+              <Input id="pv-notes" value={pvNotes} onChange={e => setPvNotes(e.target.value)} placeholder="Optional notes" />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowProviderForm(false)} disabled={savingProvider}>
+              Cancel
+            </Button>
+            <Button onClick={saveProvider} disabled={!pvName.trim() || savingProvider} className="gap-2">
+              {savingProvider ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {editingProvider ? "Save Changes" : "Add Provider"}
             </Button>
           </DialogFooter>
         </DialogContent>

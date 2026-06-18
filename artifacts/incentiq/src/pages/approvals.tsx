@@ -18,6 +18,7 @@ import {
   DollarSign, RotateCcw, Wallet, ArrowRight,
   Search, X, User, ChevronDown, FileText, ExternalLink,
   Paperclip, TrendingUp, Calculator, CalendarDays,
+  Users, Building2, UserCircle, Scissors,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
@@ -332,6 +333,28 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
                 <p className="font-semibold text-primary text-lg">{formatCurrency(approval.calculatedCommission)}</p>
               </div>
             </div>
+
+            {/* Deal source info */}
+            {(approval as any).sourceType && (approval as any).sourceType !== "SELF" && (
+              <div className="flex items-center gap-2 pt-1 border-t border-border/60">
+                {(approval as any).sourceType === "INTERNAL" ? (
+                  <Users className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                ) : (
+                  <Building2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {(approval as any).sourceType === "INTERNAL" ? "Internal referral" : "External provider"}
+                  {(approval as any).splitReferrerName ? ` — ${(approval as any).splitReferrerName}` : ""}
+                </span>
+                {(approval as any).splitDeductionAmount && (approval as any).splitDeductionAmount > 0 && (
+                  <Badge variant="outline" className="ml-auto text-[10px] gap-1 text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700">
+                    <Scissors className="h-2.5 w-2.5" />
+                    −{formatCurrency((approval as any).splitDeductionAmount)} split
+                  </Badge>
+                )}
+              </div>
+            )}
+
             <ApprovalChain dealId={approval.dealId} />
           </div>
 

@@ -22,6 +22,7 @@ import {
   Plus, Search, Trash2, SendHorizontal, Briefcase, Clock,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
   Zap, ZapOff, CheckSquare, Paperclip, ExternalLink, FileText, Link2, Upload, X,
+  UserCircle, Users, Building2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -129,6 +130,100 @@ function useCustomers() {
       .catch(() => setNames([]));
   }, []);
   return names;
+}
+
+interface TenantUser { id: string; firstName: string; lastName: string; role: string }
+interface ExternalProvider { id: string; name: string }
+interface SplitConfig { isEnabled: boolean; internalLabel: string; deductionType: string; deductionValue: number }
+
+function useTenantUsers() {
+  const [users, setUsers] = useState<TenantUser[]>([]);
+  useEffect(() => {
+    fetch("/api/users?status=ACTIVE", { headers: getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : [])
+      .then(setUsers)
+      .catch(() => setUsers([]));
+  }, []);
+  return users;
+}
+
+function useExternalProviders() {
+  const [providers, setProviders] = useState<ExternalProvider[]>([]);
+  useEffect(() => {
+    fetch("/api/external-providers", { headers: getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : [])
+      .then(setProviders)
+      .catch(() => setProviders([]));
+  }, []);
+  return providers;
+}
+
+function useSplitConfig() {
+  const [config, setConfig] = useState<SplitConfig | null>(null);
+  useEffect(() => {
+    fetch("/api/commission-split-config", { headers: getAuthHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then(setConfig)
+      .catch(() => {});
+  }, []);
+  return config;
+}
+
+// ── External provider picker (autocomplete from list) ─────────────────────────
+
+function ExternalProviderPicker({
+  providers, selectedId, selectedName, onSelect,
+}: {
+  providers: ExternalProvider[];
+  selectedId: string;
+  selectedName: string;
+  onSelect: (id: string, name: string) => void;
+}) {
+  const [query, setQuery]   = useState(selectedName);
+  const [open, setOpen]     = useState(false);
+  const inputRef            = useRef<HTMLInputElement>(null);
+
+  const filtered = query
+    ? providers.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()))
+    : providers;
+
+  return (
+    <div className="relative">
+      <Label className="text-xs mb-1 block">Provider / Partner Name</Label>
+      <Input
+        ref={inputRef}
+        value={query}
+        placeholder="Type to search or enter a new name…"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          if (!e.target.value) onSelect("", "");
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => { setTimeout(() => setOpen(false), 150); if (!selectedId) onSelect("", query.trim()); }}
+        className="h-9 text-sm"
+      />
+      {open && (query || providers.length > 0) && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-48 overflow-auto">
+          {filtered.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onSelect(p.id, p.name); setQuery(p.name); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+            >
+              {p.name}
+            </button>
+          ))}
+          {filtered.length === 0 && query.trim() && (
+            <div className="px-3 py-2 text-sm text-muted-foreground italic">
+              "{query}" — will be recorded as a new provider
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Trigger status display ─────────────────────────────────────────────────────
@@ -970,6 +1065,16 @@ export default function Deals() {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Deal source state
+  const [sourceType, setSourceType]               = useState<string>("SELF");
+  const [internalReferrerId, setInternalReferrerId] = useState<string>("");
+  const [externalProviderId, setExternalProviderId] = useState<string>("");
+  const [splitReferrerName, setSplitReferrerName]   = useState<string>("");
+
+  const tenantUsers       = useTenantUsers();
+  const externalProviders = useExternalProviders();
+  const splitConfig       = useSplitConfig();
+
   // Filters
   const [search, setSearch]         = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1032,6 +1137,10 @@ export default function Deals() {
     setEventTitle("");
     setEventType(fc?.eventTypes[0]?.value ?? "");
     setFormValues({});
+    setSourceType("SELF");
+    setInternalReferrerId("");
+    setExternalProviderId("");
+    setSplitReferrerName("");
     setShowForm(true);
   }
 
@@ -1077,6 +1186,10 @@ export default function Deals() {
           eventTitle: eventTitle.trim(),
           eventType,
           eventDataJson: formValues,
+          sourceType,
+          ...(sourceType === "INTERNAL" && internalReferrerId && { internalReferrerId }),
+          ...(sourceType === "EXTERNAL" && externalProviderId && { externalProviderId }),
+          ...((sourceType === "INTERNAL" || sourceType === "EXTERNAL") && splitReferrerName && { splitReferrerName }),
         }),
       });
       if (!res.ok) {
@@ -1438,6 +1551,89 @@ export default function Deals() {
                           />
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Deal Source section — only shown when split is enabled */}
+                {splitConfig?.isEnabled && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">
+                      Deal Source
+                    </p>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { value: "SELF",     label: "Self-Sourced",                         Icon: UserCircle },
+                          { value: "INTERNAL", label: splitConfig.internalLabel || "Internal", Icon: Users      },
+                          { value: "EXTERNAL", label: "External Provider",                     Icon: Building2  },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => {
+                              setSourceType(opt.value);
+                              setInternalReferrerId("");
+                              setExternalProviderId("");
+                              setSplitReferrerName("");
+                            }}
+                            className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs font-medium transition-colors ${
+                              sourceType === opt.value
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            }`}
+                          >
+                            <opt.Icon className="h-4 w-4" />
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {sourceType === "INTERNAL" && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Select Referrer <span className="text-muted-foreground">(optional)</span></Label>
+                          <Select
+                            value={internalReferrerId}
+                            onValueChange={(v) => {
+                              setInternalReferrerId(v);
+                              const u = tenantUsers.find((u) => u.id === v);
+                              if (u) setSplitReferrerName(`${u.firstName} ${u.lastName}`);
+                            }}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Select team member…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {tenantUsers
+                                .filter((u) => u.id !== (currentUser as any)?.id)
+                                .map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.firstName} {u.lastName}
+                                    <span className="ml-1.5 text-muted-foreground text-xs">
+                                      {u.role.replace(/_/g, " ")}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                          {splitConfig.deductionValue > 0 && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400">
+                              A {splitConfig.deductionType === "PERCENTAGE"
+                                ? `${splitConfig.deductionValue}%`
+                                : `R${splitConfig.deductionValue.toLocaleString()}`} split will be deducted from your commission on approval.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {sourceType === "EXTERNAL" && (
+                        <ExternalProviderPicker
+                          providers={externalProviders}
+                          selectedId={externalProviderId}
+                          selectedName={splitReferrerName}
+                          onSelect={(id, name) => { setExternalProviderId(id); setSplitReferrerName(name); }}
+                        />
+                      )}
                     </div>
                   </div>
                 )}

@@ -21,6 +21,8 @@ import { customersRouter } from "./customers";
 import { commissionEventsRouter } from "./commission-events";
 import { onboardingRouter } from "./onboarding";
 import { industryConfigRouter } from "./industry-config";
+import { externalProvidersRouter } from "./external-providers";
+import { commissionSplitConfigRouter } from "./commission-split-config";
 
 const router: IRouter = Router();
 
@@ -47,5 +49,7 @@ router.use("/customers", customersRouter);
 router.use("/commission-events", commissionEventsRouter);
 router.use("/onboarding", onboardingRouter);
 router.use("/industry-config", industryConfigRouter);
+router.use("/external-providers", externalProvidersRouter);
+router.use("/commission-split-config", commissionSplitConfigRouter);
 
 export default router;

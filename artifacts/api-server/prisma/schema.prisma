@@ -92,6 +92,19 @@ enum TransactionType {
   PAYOUT_PAID
   PAYOUT_DEFERRED
   MANUAL_ADJUSTMENT
+  COMMISSION_SPLIT_DEDUCTION
+  COMMISSION_SPLIT_CREDIT
+}
+
+enum DealSourceType {
+  SELF
+  INTERNAL
+  EXTERNAL
+}
+
+enum SplitDeductionType {
+  PERCENTAGE
+  FLAT_AMOUNT
 }
 
 enum TriggerStatus {
@@ -151,6 +164,8 @@ model Tenant {
   commissionEventApprovals CommissionEventApproval[]
   commissionEventTriggers  CommissionEventTrigger[]
   commissionDocuments      CommissionDocument[]
+  externalProviders        ExternalProvider[]
+  commissionSplitConfig    CommissionSplitConfig?
 }
 
 model User {
@@ -180,6 +195,7 @@ model User {
   commissionEventApprovals    CommissionEventApproval[]
   triggeredTriggers           CommissionEventTrigger[]  @relation("TriggeredBy")
   uploadedDocuments           CommissionDocument[]      @relation("UploadedDocuments")
+  internalReferralEvents      CommissionEvent[]          @relation("CommissionEventInternalReferrer")
 
   @@unique([tenantId, email])
 }
@@ -533,33 +549,40 @@ model TenantApprovalWorkflow {
 // ─── Commission Event Models ───────────────────────────────────────────────────
 
 model CommissionEvent {
-  id                        String    @id @default(cuid())
+  id                        String          @id @default(cuid())
   tenantId                  String
   industryTemplateId        String?
   salesExecutiveId          String
   eventTitle                String
   eventType                 String
   eventDataJson             Json?
-  revenueAmount             Float     @default(0)
-  costAmount                Float     @default(0)
-  grossProfitAmount         Float     @default(0)
-  commissionBaseAmount      Float     @default(0)
-  commissionPercentage      Float     @default(0)
-  calculatedCommissionAmount Float    @default(0)
-  triggerStatus             String    @default("NOT_TRIGGERED")
-  approvalStatus            String    @default("DRAFT")
-  walletStatus              String    @default("PENDING")
+  revenueAmount             Float           @default(0)
+  costAmount                Float           @default(0)
+  grossProfitAmount         Float           @default(0)
+  commissionBaseAmount      Float           @default(0)
+  commissionPercentage      Float           @default(0)
+  calculatedCommissionAmount Float          @default(0)
+  sourceType                DealSourceType  @default(SELF)
+  internalReferrerId        String?
+  externalProviderId        String?
+  splitReferrerName         String?
+  splitDeductionAmount      Float?
+  triggerStatus             String          @default("NOT_TRIGGERED")
+  approvalStatus            String          @default("DRAFT")
+  walletStatus              String          @default("PENDING")
   submittedAt               DateTime?
   approvedAt                DateTime?
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
 
-  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  industryTemplate IndustryTemplate?  @relation(fields: [industryTemplateId], references: [id])
-  salesExecutive   User               @relation("CommissionEventSalesExecutive", fields: [salesExecutiveId], references: [id])
-  approvals        CommissionEventApproval[]
-  triggers         CommissionEventTrigger[]
-  documents        CommissionDocument[]
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  industryTemplate   IndustryTemplate?  @relation(fields: [industryTemplateId], references: [id])
+  salesExecutive     User               @relation("CommissionEventSalesExecutive", fields: [salesExecutiveId], references: [id])
+  internalReferrer   User?              @relation("CommissionEventInternalReferrer", fields: [internalReferrerId], references: [id])
+  externalProvider   ExternalProvider?  @relation(fields: [externalProviderId], references: [id])
+  approvals          CommissionEventApproval[]
+  triggers           CommissionEventTrigger[]
+  documents          CommissionDocument[]
 }
 
 model CommissionEventApproval {
@@ -619,4 +642,37 @@ model CommissionDocument {
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
   uploadedBy      User            @relation("UploadedDocuments", fields: [uploadedById], references: [id])
+}
+
+// ─── Deal Source Models ────────────────────────────────────────────────────────
+
+model ExternalProvider {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  contactName  String?
+  contactEmail String?
+  providerType String?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commissionEvents CommissionEvent[]
+
+  @@unique([tenantId, name])
+}
+
+model CommissionSplitConfig {
+  id              String             @id @default(cuid())
+  tenantId        String             @unique
+  isEnabled       Boolean            @default(false)
+  internalLabel   String             @default("Internal Referral")
+  deductionType   SplitDeductionType @default(PERCENTAGE)
+  deductionValue  Float              @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

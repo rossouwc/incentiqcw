@@ -48,6 +48,9 @@ function ceaToResponse(cea: any) {
       commissionBaseAmount: Number(event.commissionBaseAmount ?? 0),
       commissionPercentage: Number(event.commissionPercentage ?? 0),
     },
+    sourceType:           event.sourceType ?? "SELF",
+    splitReferrerName:    event.splitReferrerName ?? null,
+    splitDeductionAmount: event.splitDeductionAmount ? Number(event.splitDeductionAmount) : null,
   };
 }
 
@@ -65,7 +68,13 @@ const ceaInclude = {
       calculatedCommissionAmount: true,
       salesExecutiveId:           true,
       submittedAt:                true,
-      salesExecutive: { select: { firstName: true, lastName: true } },
+      sourceType:                 true,
+      internalReferrerId:         true,
+      externalProviderId:         true,
+      splitReferrerName:          true,
+      splitDeductionAmount:       true,
+      salesExecutive:             { select: { firstName: true, lastName: true } },
+      internalReferrer:           { select: { firstName: true, lastName: true } },
     },
   },
   approver: { select: { firstName: true, lastName: true } },
@@ -93,6 +102,65 @@ async function deductPendingBalance(
       },
     });
   }
+}
+
+// Compute split deduction and credit internal referrer if applicable.
+// Returns the net commission for the sales exec after deduction.
+async function computeAndApplySplit(
+  tenantId: string, event: any, fullCommission: number, eventId: string, eventTitle: string
+): Promise<number> {
+  if (event.sourceType !== "INTERNAL" || !event.internalReferrerId) return fullCommission;
+
+  const splitConfig = await prisma.commissionSplitConfig.findUnique({ where: { tenantId } });
+  if (!splitConfig || !splitConfig.isEnabled || splitConfig.deductionValue <= 0) return fullCommission;
+
+  const rawSplit = splitConfig.deductionType === "PERCENTAGE"
+    ? fullCommission * (Number(splitConfig.deductionValue) / 100)
+    : Number(splitConfig.deductionValue);
+  const splitAmount = Math.min(rawSplit, fullCommission);
+  const netCommission = fullCommission - splitAmount;
+
+  // Credit internal referrer wallet
+  const referrerWallet = await prisma.wallet.findUnique({ where: { userId: event.internalReferrerId } });
+  if (referrerWallet) {
+    await prisma.wallet.update({
+      where: { id: referrerWallet.id },
+      data:  { availableBalance: Number(referrerWallet.availableBalance) + splitAmount },
+    });
+    await prisma.walletTransaction.create({
+      data: {
+        tenantId,
+        walletId:        referrerWallet.id,
+        transactionType: "COMMISSION_SPLIT_CREDIT",
+        amount:          splitAmount,
+        referenceType:   "DEAL",
+        referenceId:     eventId,
+        description:     `Commission split credit: ${eventTitle}`,
+      },
+    });
+    const referrerName = event.internalReferrer
+      ? `${event.internalReferrer.firstName} ${event.internalReferrer.lastName}`
+      : "Internal referrer";
+    await prisma.notification.create({
+      data: {
+        tenantId,
+        userId:   event.internalReferrerId,
+        title:    "Commission Split Credited",
+        message:  `R${splitAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission split credited for "${eventTitle}"`,
+        type:     "WALLET_CREDITED",
+        readStatus: false,
+      },
+    }).catch(() => {});
+    logger.info({ referrerName, splitAmount, eventId }, "Commission split credited to referrer");
+  }
+
+  // Store the split amount on the commission event
+  await prisma.commissionEvent.update({
+    where: { id: eventId },
+    data:  { splitDeductionAmount: splitAmount },
+  });
+
+  return netCommission;
 }
 
 async function creditWalletForSalesExec(
@@ -291,7 +359,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
 
         // SALES_EXECUTIVE next step — credit wallet and assign step to this exec
         if (nextStep.approverRole === "SALES_EXECUTIVE") {
-          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
+          const netCommission1 = await computeAndApplySplit(req.user!.tenantId, event, commission, eventId, eventTitle);
+          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, netCommission1, eventId, eventTitle);
           await prisma.commissionEventApproval.update({
             where: { id: nextStep.id },
             data:  { approverUserId: salesExecId, status: "PENDING" },
@@ -301,7 +370,7 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
               tenantId: req.user!.tenantId,
               userId:   salesExecId,
               title:    "Commission Credited — Action Required",
-              message:  `R${commission.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for ${eventTitle} has been credited to your wallet. Please go to Approvals to confirm your payout amount.`,
+              message:  `R${netCommission1.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for ${eventTitle} has been credited to your wallet. Please go to Approvals to confirm your payout amount.`,
               type:     "WALLET_CREDITED",
               readStatus: false,
             },
@@ -392,13 +461,14 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         });
 
         if (!alreadyCredited) {
-          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
+          const netCommission2 = await computeAndApplySplit(req.user!.tenantId, event, commission, eventId, eventTitle);
+          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, netCommission2, eventId, eventTitle);
           await prisma.notification.create({
             data: {
               tenantId: req.user!.tenantId,
               userId:   salesExecId,
               title:    "Commission Approved & Credited",
-              message:  `R${commission.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} has been credited to your wallet for ${eventTitle}`,
+              message:  `R${netCommission2.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} has been credited to your wallet for ${eventTitle}`,
               type:     "WALLET_CREDITED",
               readStatus: false,
             },

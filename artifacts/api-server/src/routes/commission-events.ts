@@ -201,6 +201,9 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
         salesExecutiveName:        e.salesExecutive
           ? `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`
           : "",
+        sourceType:          (e as any).sourceType ?? "SELF",
+        splitReferrerName:   (e as any).splitReferrerName ?? null,
+        splitDeductionAmount: (e as any).splitDeductionAmount ?? null,
       })),
     });
   } catch (err) {
@@ -240,6 +243,9 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       salesExecutiveName:        event.salesExecutive
         ? `${event.salesExecutive.firstName} ${event.salesExecutive.lastName}`
         : "",
+      sourceType:           (event as any).sourceType ?? "SELF",
+      splitReferrerName:    (event as any).splitReferrerName ?? null,
+      splitDeductionAmount: (event as any).splitDeductionAmount ?? null,
       approvals: (event.approvals as any[]).map((a) => ({
         id:            a.id,
         approvalStep:  a.approvalStep,
@@ -259,12 +265,15 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
 // ── POST /api/commission-events ───────────────────────────────────────────────
 
 router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const { eventTitle, eventType, eventDataJson } = req.body;
+  const { eventTitle, eventType, eventDataJson, sourceType, internalReferrerId, externalProviderId, splitReferrerName } = req.body;
 
   if (!eventTitle || !eventType) {
     res.status(400).json({ error: "eventTitle and eventType are required" });
     return;
   }
+
+  const validSourceTypes = ["SELF", "INTERNAL", "EXTERNAL"];
+  const resolvedSourceType = validSourceTypes.includes(sourceType) ? sourceType : "SELF";
 
   try {
     const [tc, commissionPct] = await Promise.all([
@@ -289,6 +298,10 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
         commissionBaseAmount:      calcResult.commissionBaseAmount,
         commissionPercentage:      calcResult.commissionPercentage,
         calculatedCommissionAmount: calcResult.calculatedCommissionAmount,
+        sourceType:      resolvedSourceType,
+        ...(resolvedSourceType === "INTERNAL" && internalReferrerId && { internalReferrerId }),
+        ...(resolvedSourceType === "EXTERNAL" && externalProviderId && { externalProviderId }),
+        ...(splitReferrerName && { splitReferrerName: splitReferrerName.trim() }),
         triggerStatus:   "NOT_TRIGGERED",
         approvalStatus:  "DRAFT",
         walletStatus:    "PENDING",
