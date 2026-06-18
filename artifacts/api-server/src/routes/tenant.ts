@@ -128,6 +128,10 @@ router.post("/reset-commission-data", requireAuth, requireRole(...ADMIN_ROLES), 
   const tenantId = req.user!.tenantId;
   try {
     await prisma.$transaction(async (tx) => {
+      // Clawbacks — must go before commission events (FK constraint).
+      // ClawbackApprovalStep and ClawbackRecovery cascade via onDelete: Cascade.
+      await tx.commissionClawback.deleteMany({ where: { tenantId } });
+
       // Commission events (approvals + triggers cascade via FK)
       await tx.commissionEventApproval.deleteMany({ where: { tenantId } });
       await tx.commissionEventTrigger.deleteMany({ where: { tenantId } });
