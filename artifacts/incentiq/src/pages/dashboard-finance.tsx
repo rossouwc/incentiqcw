@@ -1,6 +1,7 @@
 import {
   useListApprovals, useListPayouts, useGetPayoutSummary, useGetMyTasks, useGetRecentActivity,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,8 +10,18 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
   ClipboardCheck, DollarSign, FileText, AlertTriangle, CheckCircle2,
-  ArrowRight, Download, Clock, TrendingDown,
+  ArrowRight, Download, Clock, TrendingDown, RotateCcw, Scale, MessageSquare,
 } from "lucide-react";
+
+function financeAuthHeaders(): HeadersInit {
+  const t = localStorage.getItem("incentiq_token");
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function monthStart() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+}
 
 export default function FinanceDashboard() {
   const { data: pendingApprovals, isLoading: loadingApprovals } = useListApprovals({ status: "PENDING" });
@@ -20,10 +31,30 @@ export default function FinanceDashboard() {
   const { data: myTasks,          isLoading: loadingTasks     } = useGetMyTasks();
   const { data: recentActivity,   isLoading: loadingActivity  } = useGetRecentActivity();
 
+  const mStart = monthStart();
+  const { data: cbSummary, isLoading: loadingCbSummary } = useQuery({
+    queryKey: ["finance-cb-summary"],
+    queryFn: async () => { const r = await fetch("/api/reports/clawback-summary", { headers: financeAuthHeaders() }); return r.json(); },
+  });
+  const { data: cbMonthly } = useQuery({
+    queryKey: ["finance-cb-monthly", mStart],
+    queryFn: async () => { const r = await fetch(`/api/reports/clawback-summary?from=${mStart}`, { headers: financeAuthHeaders() }); return r.json(); },
+  });
+
   const approvalList = pendingApprovals ?? [];
   const payoutList   = pendingPayouts   ?? [];
   const readyList    = readyPayouts     ?? [];
   const totalPendingComm = payoutList.reduce((s, p) => s + p.requestedAmount, 0);
+
+  const cbRows = (cbSummary?.rows ?? []) as any[];
+  const cbPendingRow  = cbRows.find((r: any) => r.status === "PENDING_APPROVAL");
+  const cbDisputedRow = cbRows.find((r: any) => r.status === "DISPUTED");
+  const cbPendingCount    = cbPendingRow?.count ?? 0;
+  const cbPendingAmount   = cbPendingRow?.amount ?? 0;
+  const cbOutstandingTotal = cbSummary?.totals?.outstanding ?? 0;
+  const cbDisputedCount   = cbDisputedRow?.count ?? 0;
+  const cbDisputedAmount  = cbDisputedRow?.amount ?? 0;
+  const cbDueThisMonth    = cbMonthly?.totals?.outstanding ?? 0;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -78,6 +109,71 @@ export default function FinanceDashboard() {
           loading={loadingSummary}
         />
       </div>
+
+      {/* Clawback Recovery Section */}
+      <div className="flex items-center gap-2 pt-1">
+        <TrendingDown className="h-4 w-4 text-red-500" />
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Clawback Recovery</h2>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard
+          title="Clawbacks Pending Approval"
+          value={cbPendingCount}
+          sub={formatCurrency(cbPendingAmount) + " total value"}
+          icon={RotateCcw}
+          accent="border-l-amber-400"
+          loading={loadingCbSummary}
+          valueColor={cbPendingCount > 0 ? "text-amber-500" : undefined}
+        />
+        <StatCard
+          title="Outstanding Recovery Total"
+          value={formatCurrency(cbOutstandingTotal)}
+          sub="across all executives"
+          icon={TrendingDown}
+          accent="border-l-red-500"
+          loading={loadingCbSummary}
+          valueColor={cbOutstandingTotal > 0 ? "text-red-500" : undefined}
+        />
+        <StatCard
+          title="Recovery Due This Month"
+          value={formatCurrency(cbDueThisMonth)}
+          sub="outstanding on clawbacks raised this month"
+          icon={Clock}
+          accent="border-l-orange-400"
+          loading={loadingCbSummary}
+        />
+        <StatCard
+          title="Disputed Clawbacks"
+          value={cbDisputedCount}
+          sub={formatCurrency(cbDisputedAmount) + " frozen"}
+          icon={MessageSquare}
+          accent="border-l-orange-500"
+          loading={loadingCbSummary}
+          valueColor={cbDisputedCount > 0 ? "text-orange-500" : undefined}
+        />
+        <StatCard
+          title="Payroll Recovery Required"
+          value={formatCurrency(cbOutstandingTotal)}
+          sub="pending offset from future payroll"
+          icon={Scale}
+          accent="border-l-rose-400"
+          loading={loadingCbSummary}
+          valueColor={cbOutstandingTotal > 0 ? "text-rose-500" : undefined}
+        />
+      </div>
+      {cbPendingCount > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800/40 rounded-xl px-5 py-3.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {cbPendingCount} clawback{cbPendingCount !== 1 ? "s" : ""} ({formatCurrency(cbPendingAmount)}) require your approval
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-50 dark:text-amber-400" asChild>
+            <a href="/clawbacks" className="flex items-center gap-1.5">Review <ArrowRight className="h-3.5 w-3.5" /></a>
+          </Button>
+        </div>
+      )}
 
       {/* Secondary indicators */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

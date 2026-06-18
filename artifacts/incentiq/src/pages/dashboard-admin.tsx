@@ -2,6 +2,7 @@ import {
   useListUsers, useListDeals, useListApprovals, useListPayouts,
   useGetCommissionTrend, useGetCommissionByType, useGetDealsReport,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,13 +12,25 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
   Users, Briefcase, DollarSign, AlertTriangle, CheckCircle2, ArrowUpRight,
-  Clock, TrendingUp, ExternalLink,
+  Clock, TrendingUp, ExternalLink, TrendingDown, RotateCcw, Scale,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
+  BarChart, Bar,
 } from "recharts";
 import { useAuth } from "@/hooks/use-auth";
+
+function adminAuthHeaders(): HeadersInit {
+  const t = localStorage.getItem("incentiq_token");
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+const REASON_LABELS: Record<string, string> = {
+  CANCELLATION: "Cancellation", TERMINATION: "Termination", NON_PAYMENT: "Non-Payment",
+  REVERSAL: "Reversal", RETURN: "Return/Refund", LAPSE: "Policy Lapse",
+  NO_LONGER_QUALIFIES: "No Longer Qualifies", OTHER: "Other",
+};
 
 const COLORS = [
   "hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -34,6 +47,20 @@ export default function AdminDashboard() {
   const { data: trend,       isLoading: loadingTrend }    = useGetCommissionTrend();
   const { data: byType,      isLoading: loadingByType }   = useGetCommissionByType();
   const { data: report,      isLoading: loadingReport }   = useGetDealsReport();
+
+  const monthFrom = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const { data: cbMonth, isLoading: loadingCbMonth } = useQuery({
+    queryKey: ["admin-cb-month", monthFrom],
+    queryFn: async () => { const r = await fetch(`/api/reports/clawback-summary?from=${monthFrom}`, { headers: adminAuthHeaders() }); return r.json(); },
+  });
+  const { data: cbAll, isLoading: loadingCbAll } = useQuery({
+    queryKey: ["admin-cb-all"],
+    queryFn: async () => { const r = await fetch("/api/reports/clawback-summary", { headers: adminAuthHeaders() }); return r.json(); },
+  });
+  const { data: cbReasons, isLoading: loadingCbReasons } = useQuery({
+    queryKey: ["admin-cb-reasons"],
+    queryFn: async () => { const r = await fetch("/api/reports/clawback-by-reason", { headers: adminAuthHeaders() }); return r.json(); },
+  });
 
   const indCfg          = useIndustryConfig();
   const salesExecs      = (allUsers ?? []).filter(u => u.role === "SALES_EXECUTIVE");
@@ -131,6 +158,136 @@ export default function AdminDashboard() {
           valueColor={approvalList.some(a => Date.now() - new Date(a.createdAt).getTime() > 48 * 60 * 60 * 1000) ? "text-red-500" : undefined}
         />
       </div>
+
+      {/* Clawback Risk Section */}
+      {(() => {
+        const cbThisMonthCount  = cbMonth?.totals?.count ?? 0;
+        const cbThisMonthAmt    = cbMonth?.totals?.amount ?? 0;
+        const cbOutstanding     = cbAll?.totals?.outstanding ?? 0;
+        const cbWaivedRow       = (cbAll?.rows ?? []).find((r: any) => r.status === "WAIVED");
+        const cbWaivedCount     = cbWaivedRow?.count ?? 0;
+        const cbWaivedAmt       = cbWaivedRow?.amount ?? 0;
+        const cbRate            = totalDeals > 0 ? ((cbThisMonthCount / totalDeals) * 100).toFixed(1) : "0.0";
+        const topReasons        = ((cbReasons?.rows ?? []) as any[]).slice(0, 5);
+        const loading           = loadingCbMonth || loadingCbAll;
+        return (
+          <>
+            <div className="flex items-center gap-2 pt-1">
+              <TrendingDown className="h-4 w-4 text-red-500" />
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Clawback & Recovery</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <StatCard
+                title={`${indCfg.clawbackTermPlural} This Month`}
+                value={cbThisMonthCount}
+                sub={formatCurrency(cbThisMonthAmt) + " total value"}
+                icon={TrendingDown}
+                accent="border-l-red-400"
+                loading={loading}
+                valueColor={cbThisMonthCount > 0 ? "text-red-500" : undefined}
+              />
+              <StatCard
+                title="Outstanding Recovery"
+                value={formatCurrency(cbOutstanding)}
+                sub="across all executives"
+                icon={DollarSign}
+                accent="border-l-rose-500"
+                loading={loading}
+                valueColor={cbOutstanding > 0 ? "text-rose-600" : undefined}
+              />
+              <StatCard
+                title="Clawback Rate"
+                value={`${cbRate}%`}
+                sub="of deals this month"
+                icon={AlertTriangle}
+                accent="border-l-orange-400"
+                loading={loading}
+                valueColor={parseFloat(cbRate) > 5 ? "text-orange-500" : undefined}
+              />
+              <StatCard
+                title="Waived Clawbacks"
+                value={cbWaivedCount}
+                sub={formatCurrency(cbWaivedAmt) + " written off"}
+                icon={Scale}
+                accent="border-l-purple-400"
+                loading={loading}
+              />
+              <StatCard
+                title="Recovery Actions"
+                value={((cbAll?.rows ?? []) as any[]).filter((r: any) => r.status === "PENDING_APPROVAL").reduce((s: number, r: any) => s + r.count, 0)}
+                sub="pending approval"
+                icon={RotateCcw}
+                accent="border-l-amber-400"
+                loading={loading}
+                valueColor={((cbAll?.rows ?? []) as any[]).some((r: any) => r.status === "PENDING_APPROVAL" && r.count > 0) ? "text-amber-500" : undefined}
+              />
+            </div>
+
+            {/* Top Clawback Reasons */}
+            {topReasons.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="shadow-sm">
+                  <CardHeader>
+                    <CardTitle>Top {indCfg.clawbackTerm} Reasons</CardTitle>
+                    <CardDescription>Breakdown by reason category (all time)</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {loadingCbReasons ? <Skeleton className="h-48 w-full" /> : (
+                      <div className="h-[200px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={topReasons.map((r: any) => ({ name: REASON_LABELS[r.reasonCategory] ?? r.reasonCategory, amount: r.amount, count: r.count }))} layout="vertical" margin={{ left: 0, right: 16, top: 4, bottom: 4 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} tickFormatter={v => `R${v / 1000}k`} />
+                            <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} width={110} />
+                            <Tooltip formatter={(v: number) => [formatCurrency(v), "Amount"]} contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))" }} />
+                            <Bar dataKey="amount" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} opacity={0.85} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle>{indCfg.clawbackTerm} Reason Details</CardTitle>
+                      <CardDescription>Recovery performance by category</CardDescription>
+                    </div>
+                    <Button variant="ghost" size="sm" asChild>
+                      <a href="/reports-clawbacks" className="flex items-center gap-1.5 text-sm">Full Report <ExternalLink className="h-3.5 w-3.5" /></a>
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y divide-border">
+                      {topReasons.map((r: any) => {
+                        const pct = r.amount > 0 ? Math.min(100, (r.recovered / r.amount) * 100) : 0;
+                        return (
+                          <div key={r.reasonCategory} className="flex items-center justify-between px-6 py-3 hover:bg-muted/30 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium">{REASON_LABELS[r.reasonCategory] ?? r.reasonCategory}</span>
+                                <span className="text-xs text-muted-foreground ml-4 shrink-0">{r.count} case{r.count !== 1 ? "s" : ""}</span>
+                              </div>
+                              <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                              <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                                <span>{formatCurrency(r.recovered)} recovered</span>
+                                <span>{formatCurrency(r.outstanding)} outstanding</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

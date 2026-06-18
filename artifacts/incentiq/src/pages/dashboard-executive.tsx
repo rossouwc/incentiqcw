@@ -1,6 +1,7 @@
 import {
   useListApprovals, useGetPayoutSummary, useGetCommissionByType, useGetDealsReport, useListUsers,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,12 +10,17 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
   BadgeCheck, DollarSign, TrendingUp, Users, BarChart2, ArrowRight,
-  AlertTriangle, Calendar,
+  AlertTriangle, Calendar, TrendingDown, Scale, ShieldAlert,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from "recharts";
+
+function execAuthHeaders(): HeadersInit {
+  const t = localStorage.getItem("incentiq_token");
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
 
 const COLORS = [
   "hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -28,8 +34,22 @@ export default function ExecutiveDashboard() {
   const { data: report,          isLoading: loadingReport    } = useGetDealsReport();
   const { data: allUsers,        isLoading: loadingUsers     } = useListUsers();
 
+  const { data: pendingCb, isLoading: loadingPendingCb } = useQuery({
+    queryKey: ["exec-pending-cb"],
+    queryFn: async () => { const r = await fetch("/api/clawbacks?status=PENDING_APPROVAL", { headers: execAuthHeaders() }); return r.json(); },
+  });
+  const { data: cbSummary, isLoading: loadingCbSummary } = useQuery({
+    queryKey: ["exec-cb-summary"],
+    queryFn: async () => { const r = await fetch("/api/reports/clawback-summary", { headers: execAuthHeaders() }); return r.json(); },
+  });
+
   const approvalList  = pendingApprovals ?? [];
   const salesExecs    = (allUsers ?? []).filter(u => u.role === "SALES_EXECUTIVE");
+  const pendingCbList = (Array.isArray(pendingCb) ? pendingCb : []) as any[];
+  const highValueCb   = [...pendingCbList].sort((a, b) => b.clawbackAmount - a.clawbackAmount).slice(0, 5);
+  const cbOutstanding = cbSummary?.totals?.outstanding ?? 0;
+  const cbRiskPct     = (report?.totalCommission ?? 0) > 0
+    ? ((cbOutstanding / report!.totalCommission!) * 100).toFixed(1) : "0.0";
 
   const MONTHLY_FORECAST = [
     { month: "Jul", forecast: 85000 },
@@ -95,6 +115,79 @@ export default function ExecutiveDashboard() {
           loading={loadingUsers}
         />
       </div>
+
+      {/* Clawback Risk Section */}
+      <div className="flex items-center gap-2 pt-1">
+        <TrendingDown className="h-4 w-4 text-red-500" />
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Clawback Risk Overview</h2>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="High-Value Clawbacks"
+          value={pendingCbList.filter(c => c.clawbackAmount >= 10000).length}
+          sub="≥ R10k pending approval"
+          icon={ShieldAlert}
+          accent="border-l-red-500"
+          loading={loadingPendingCb}
+          valueColor={pendingCbList.some(c => c.clawbackAmount >= 10000) ? "text-red-500" : undefined}
+        />
+        <StatCard
+          title="Waiver Approvals Required"
+          value={pendingCbList.length}
+          sub="clawbacks awaiting your sign-off"
+          icon={Scale}
+          accent="border-l-amber-400"
+          loading={loadingPendingCb}
+          valueColor={pendingCbList.length > 0 ? "text-amber-500" : undefined}
+        />
+        <StatCard
+          title="Commission Risk Exposure"
+          value={`${cbRiskPct}%`}
+          sub={`${formatCurrency(cbOutstanding)} outstanding vs commission YTD`}
+          icon={AlertTriangle}
+          accent="border-l-orange-400"
+          loading={loadingCbSummary || loadingReport}
+          valueColor={parseFloat(cbRiskPct) > 5 ? "text-orange-500" : undefined}
+        />
+      </div>
+
+      {/* High-value clawback queue */}
+      {highValueCb.length > 0 && (
+        <Card className="shadow-sm border-l-4 border-l-red-400">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-red-500" />
+                High-Value Clawbacks Requiring Attention
+              </CardTitle>
+              <CardDescription>Pending approval — sorted by clawback amount</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" asChild>
+              <a href="/clawbacks" className="flex items-center gap-1.5 text-sm">All <ArrowRight className="h-3.5 w-3.5" /></a>
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {highValueCb.map((cb: any) => (
+                <div key={cb.id} className="flex items-center justify-between px-6 py-3.5 hover:bg-muted/30 transition-colors">
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm text-foreground truncate">{cb.eventTitle}</div>
+                    <div className="text-xs text-muted-foreground">{cb.salesExecutiveName} · {cb.reasonCategory?.replace(/_/g, " ")}</div>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 ml-4">
+                    <span className="font-semibold text-sm text-red-600 dark:text-red-400 tabular-nums">
+                      {formatCurrency(cb.clawbackAmount)}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                      Pending Approval
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payout forecast + commission by type */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

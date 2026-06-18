@@ -2,6 +2,7 @@ import {
   useGetDashboardSummary, useGetCommissionTrend, useGetRecentActivity,
   useGetMyTasks, useListDeals,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,11 +12,16 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
   Wallet, Clock, Lock, CheckCircle2, TrendingUp, AlertCircle, Briefcase,
-  ArrowRight, DollarSign,
+  ArrowRight, DollarSign, TrendingDown, AlertTriangle, ShieldAlert,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+
+function salesAuthHeaders(): HeadersInit {
+  const t = localStorage.getItem("incentiq_token");
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
 
 export default function SalesDashboard() {
   const indCfg = useIndustryConfig();
@@ -24,8 +30,18 @@ export default function SalesDashboard() {
   const { data: recentActivity, isLoading: loadingActivity } = useGetRecentActivity();
   const { data: myTasks,      isLoading: loadingTasks }    = useGetMyTasks();
   const { data: dealsPage,    isLoading: loadingDeals }    = useListDeals();
+  const { data: cbList, isLoading: loadingCb } = useQuery({
+    queryKey: ["my-cb-dash"],
+    queryFn: async () => { const r = await fetch("/api/clawbacks", { headers: salesAuthHeaders() }); return r.json(); },
+  });
 
   const deals = dealsPage?.data ?? [];
+  const myClawbacks = (Array.isArray(cbList) ? cbList : []) as any[];
+  const cbOutstanding = myClawbacks
+    .filter(c => ["APPROVED", "EXECUTED"].includes(c.status))
+    .reduce((s: number, c: any) => s + (c.outstandingAmount ?? 0), 0);
+  const cbPotential = myClawbacks.filter(c => c.status === "PENDING_APPROVAL");
+  const cbNetAvailable = (summary?.available ?? 0) - cbOutstanding;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -79,6 +95,59 @@ export default function SalesDashboard() {
           loading={loadingSummary}
         />
       </div>
+
+      {/* Clawback & Recovery Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="Outstanding Recovery"
+          value={formatCurrency(cbOutstanding)}
+          sub="owed across approved clawbacks"
+          icon={TrendingDown}
+          accent="border-l-red-400"
+          loading={loadingCb || loadingSummary}
+          valueColor={cbOutstanding > 0 ? "text-red-500" : undefined}
+        />
+        <StatCard
+          title={`Potential ${indCfg.clawbackTermPlural}`}
+          value={cbPotential.length}
+          sub="pending approval — visible in wallet"
+          icon={AlertTriangle}
+          accent="border-l-amber-400"
+          loading={loadingCb}
+          valueColor={cbPotential.length > 0 ? "text-amber-500" : undefined}
+        />
+        <StatCard
+          title="Net Available After Recovery"
+          value={summary ? formatCurrency(Math.max(0, cbNetAvailable)) : "—"}
+          sub="available balance minus outstanding"
+          icon={ShieldAlert}
+          accent={cbNetAvailable < 0 ? "border-l-red-600" : "border-l-emerald-500"}
+          loading={loadingCb || loadingSummary}
+          valueColor={cbNetAvailable < 0 ? "text-red-600" : "text-emerald-600"}
+        />
+      </div>
+
+      {/* Recovery warning banner */}
+      {cbOutstanding > 0 && (
+        <div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800/40 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <TrendingDown className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-red-700 dark:text-red-400">
+                {formatCurrency(cbOutstanding)} outstanding recovery balance
+              </p>
+              <p className="text-sm text-red-600/80 dark:text-red-400/70">
+                This will be offset from your future commission payments automatically.
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0 border-red-300 text-red-700 hover:bg-red-50 dark:text-red-400" asChild>
+            <a href="/clawbacks" className="flex items-center gap-1.5">
+              View Details <ArrowRight className="h-3.5 w-3.5" />
+            </a>
+          </Button>
+        </div>
+      )}
 
       {/* Payout CTA banner */}
       {summary && summary.available > 0 && (
