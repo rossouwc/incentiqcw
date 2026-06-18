@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed": "npx tsx prisma/seed.ts",
     "db:push": "npx prisma db push --schema=./prisma/schema.prisma",
-    "db:reset": "npx prisma db push --schema=./prisma/schema.prisma --force-reset && npx tsx prisma/seed.ts"
+    "db:reset": "npx prisma db push --schema=./prisma/schema.prisma --force-reset && npx tsx prisma/seed.ts",
+    "migrate-deals": "npx tsx src/scripts/migrate-deals.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
