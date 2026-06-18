@@ -156,11 +156,8 @@ export function Sidebar() {
   return (
     <div className="w-64 bg-sidebar flex flex-col h-full border-r border-sidebar-border shadow-sm shrink-0">
       {/* Logo */}
-      <div className="p-4 flex items-center gap-2.5 border-b border-sidebar-border">
-        <div className="bg-sidebar-primary p-1.5 rounded-md">
-          <Wallet className="h-5 w-5 text-white" />
-        </div>
-        <span className="text-sidebar-foreground font-bold text-lg tracking-tight">Incentiq</span>
+      <div className="px-4 py-3 flex items-center border-b border-sidebar-border">
+        <img src="/logo-icon.png" alt="Incentiq" className="h-9 w-auto" />
       </div>
 
       {/* Nav */}

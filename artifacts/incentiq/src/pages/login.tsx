@@ -4,7 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Wallet, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import logoFull from "/logo-full.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -69,8 +70,8 @@ export default function Login() {
       <div className="w-full max-w-md space-y-6">
         <div className="bg-card p-8 rounded-xl shadow-lg border border-border space-y-6">
           <div className="flex flex-col items-center text-center">
-            <div className="bg-sidebar-primary p-2.5 rounded-lg mb-4">
-              <Wallet className="h-7 w-7 text-white" />
+            <div className="bg-white rounded-xl px-6 py-4 mb-2 shadow-sm">
+              <img src={logoFull} alt="Incentiq" className="h-24 w-auto" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
             <p className="text-sm text-muted-foreground mt-1">Sign in to your Incentiq account</p>
