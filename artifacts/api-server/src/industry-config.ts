@@ -6,7 +6,7 @@ export interface EventType {
 export interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "currency" | "number" | "select";
+  type: "text" | "currency" | "number" | "select" | "date";
   required: boolean;
   placeholder?: string;
   options?: string[];
@@ -45,7 +45,11 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: true,
     commissionMethodLabel: "Percentage of Gross Profit",
     triggerLabel: "Commission earned on Executive approval",
-    extraFields: [],
+    extraFields: [
+      { key: "dealDate",           label: "Deal Date",            type: "date", required: true  },
+      { key: "contractStartDate",  label: "Contract Start Date",  type: "date", required: false },
+      { key: "contractEndDate",    label: "Contract End Date",    type: "date", required: false },
+    ],
   },
   {
     id: "RECRUITMENT",
@@ -64,8 +68,11 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of Placement Fee",
     triggerLabel: "Commission earned on placement confirmation",
     extraFields: [
-      { key: "candidateName", label: "Candidate Name", type: "text", required: true,  placeholder: "e.g. John Smith" },
-      { key: "position",      label: "Position / Role", type: "text", required: true,  placeholder: "e.g. Senior Developer" },
+      { key: "candidateName",       label: "Candidate Name",          type: "text", required: true,  placeholder: "e.g. John Smith" },
+      { key: "position",            label: "Position / Role",          type: "text", required: true,  placeholder: "e.g. Senior Developer" },
+      { key: "placementDate",       label: "Placement Date",           type: "date", required: true  },
+      { key: "candidateStartDate",  label: "Candidate Start Date",     type: "date", required: false },
+      { key: "guaranteeEndDate",    label: "Guarantee Period End Date", type: "date", required: false },
     ],
   },
   {
@@ -86,8 +93,10 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of Annual Premium",
     triggerLabel: "Commission earned on policy activation",
     extraFields: [
-      { key: "policyNumber", label: "Policy Number",    type: "text", required: false, placeholder: "e.g. POL-2025-001" },
-      { key: "insurer",      label: "Insurer / Provider", type: "text", required: false, placeholder: "e.g. Discovery" },
+      { key: "policyNumber",    label: "Policy Number",       type: "text", required: false, placeholder: "e.g. POL-2025-001" },
+      { key: "insurer",         label: "Insurer / Provider",  type: "text", required: false, placeholder: "e.g. Discovery" },
+      { key: "inceptionDate",   label: "Policy Inception Date", type: "date", required: true  },
+      { key: "renewalDate",     label: "Renewal Date",          type: "date", required: false },
     ],
   },
   {
@@ -107,8 +116,10 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of Gross Profit",
     triggerLabel: "Commission earned on sale completion",
     extraFields: [
-      { key: "vehicleMake",  label: "Make",  type: "text", required: true, placeholder: "e.g. Toyota" },
-      { key: "vehicleModel", label: "Model", type: "text", required: true, placeholder: "e.g. Hilux GD-6" },
+      { key: "vehicleMake",  label: "Make",          type: "text", required: true,  placeholder: "e.g. Toyota" },
+      { key: "vehicleModel", label: "Model",         type: "text", required: true,  placeholder: "e.g. Hilux GD-6" },
+      { key: "saleDate",     label: "Sale Date",     type: "date", required: true  },
+      { key: "deliveryDate", label: "Delivery Date", type: "date", required: false },
     ],
   },
   {
@@ -129,7 +140,10 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of Sale Price",
     triggerLabel: "Commission earned on transfer completion",
     extraFields: [
-      { key: "propertyAddress", label: "Property Address", type: "text", required: true, placeholder: "e.g. 12 Main St, Sandton" },
+      { key: "propertyAddress", label: "Property Address", type: "text", required: true,  placeholder: "e.g. 12 Main St, Sandton" },
+      { key: "offerDate",       label: "Offer Date",      type: "date", required: true  },
+      { key: "transferDate",    label: "Transfer Date",   type: "date", required: false },
+      { key: "occupationDate",  label: "Occupation Date", type: "date", required: false },
     ],
   },
   {
@@ -149,7 +163,9 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of Monthly Rent",
     triggerLabel: "Commission earned on lease signing",
     extraFields: [
-      { key: "propertyAddress", label: "Property Address", type: "text", required: true, placeholder: "e.g. Unit 5, Park Mall" },
+      { key: "propertyAddress", label: "Property Address", type: "text", required: true,  placeholder: "e.g. Unit 5, Park Mall" },
+      { key: "leaseStartDate",   label: "Lease Start Date", type: "date", required: true  },
+      { key: "leaseEndDate",     label: "Lease End Date",   type: "date", required: false },
     ],
   },
   {
@@ -170,8 +186,10 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of Contract Value",
     triggerLabel: "Commission earned on activation confirmation",
     extraFields: [
-      { key: "product",        label: "Product / Service",          type: "text",   required: true,  placeholder: "e.g. Fibre 100Mbps" },
-      { key: "contractMonths", label: "Contract Duration (months)", type: "number", required: false, placeholder: "e.g. 24" },
+      { key: "product",          label: "Product / Service",          type: "text",   required: true,  placeholder: "e.g. Fibre 100Mbps" },
+      { key: "contractMonths",   label: "Contract Duration (months)", type: "number", required: false, placeholder: "e.g. 24" },
+      { key: "activationDate",   label: "Activation Date",            type: "date",   required: true  },
+      { key: "contractEndDate",  label: "Contract End Date",          type: "date",   required: false },
     ],
   },
   {
@@ -191,8 +209,10 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     commissionMethodLabel: "Percentage of ACV",
     triggerLabel: "Commission earned on subscription start",
     extraFields: [
-      { key: "plan", label: "Plan / Tier",              type: "text",     required: false, placeholder: "e.g. Enterprise" },
-      { key: "mrr",  label: "Monthly Recurring Revenue", type: "currency", required: false, placeholder: "0.00" },
+      { key: "plan",              label: "Plan / Tier",              type: "text",     required: false, placeholder: "e.g. Enterprise" },
+      { key: "mrr",              label: "Monthly Recurring Revenue", type: "currency", required: false, placeholder: "0.00" },
+      { key: "subscriptionStart", label: "Subscription Start Date",  type: "date",     required: true  },
+      { key: "renewalDate",       label: "Renewal Date",             type: "date",     required: false },
     ],
   },
   {
@@ -211,7 +231,10 @@ export const INDUSTRY_CONFIGS: IndustryConfig[] = [
     showGP: true,
     commissionMethodLabel: "Configurable",
     triggerLabel: "Commission earned on approval",
-    extraFields: [],
+    extraFields: [
+      { key: "eventDate", label: "Event Date", type: "date", required: true  },
+      { key: "dueDate",   label: "Due Date",   type: "date", required: false },
+    ],
   },
 ];
 

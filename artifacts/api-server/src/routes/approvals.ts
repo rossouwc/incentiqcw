@@ -38,6 +38,8 @@ function ceaToResponse(cea: any) {
     payoutAmount:         cea.payoutAmount ? Number(cea.payoutAmount) : null,
     approvedAt:           cea.approvedAt?.toISOString() ?? null,
     createdAt:            cea.createdAt.toISOString(),
+    submittedAt:          event.submittedAt?.toISOString() ?? null,
+    eventDataJson:        event.eventDataJson ?? {},
     commissionBreakdown: {
       eventType:            event.eventType ?? "",
       revenueAmount:        Number(event.revenueAmount ?? 0),
@@ -62,6 +64,7 @@ const ceaInclude = {
       commissionPercentage:       true,
       calculatedCommissionAmount: true,
       salesExecutiveId:           true,
+      submittedAt:                true,
       salesExecutive: { select: { firstName: true, lastName: true } },
     },
   },

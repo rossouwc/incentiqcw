@@ -17,7 +17,7 @@ import {
   CheckCircle2, XCircle, Clock, MessageSquare,
   DollarSign, RotateCcw, Wallet, ArrowRight,
   Search, X, User, ChevronDown, FileText, ExternalLink,
-  Paperclip, TrendingUp, Calculator,
+  Paperclip, TrendingUp, Calculator, CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
@@ -121,6 +121,28 @@ function CommissionBreakdown({ bd }: { bd: Breakdown }) {
       </CollapsibleContent>
     </Collapsible>
   );
+}
+
+// ── Key Dates ─────────────────────────────────────────────────────────────────
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function camelToWords(key: string) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (s) => s.toUpperCase())
+    .trim();
+}
+
+function extractDateFields(data: Record<string, unknown>) {
+  return Object.entries(data)
+    .filter(([, v]) => typeof v === "string" && ISO_DATE_RE.test(v as string))
+    .map(([k, v]) => ({
+      label: camelToWords(k),
+      value: new Date((v as string) + "T00:00:00").toLocaleDateString("en-ZA", {
+        day: "numeric", month: "short", year: "numeric",
+      }),
+    }));
 }
 
 // ── Supporting Documents ───────────────────────────────────────────────────────
@@ -242,6 +264,7 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
 
   const requiresComment = pendingAction !== null && !comments.trim();
   const breakdown = (approval as any).commissionBreakdown as Breakdown | undefined;
+  const dateFields = extractDateFields((approval as any).eventDataJson ?? {});
 
   return (
     <Dialog open={!!approval} onOpenChange={onClose}>
@@ -279,6 +302,24 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
           {/* Commission breakdown */}
           {breakdown && (
             <CommissionBreakdown bd={breakdown} />
+          )}
+
+          {/* Key dates */}
+          {dateFields.length > 0 && (
+            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+              <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Key Dates
+              </h4>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                {dateFields.map((df) => (
+                  <div key={df.label}>
+                    <span className="text-muted-foreground text-xs">{df.label}</span>
+                    <p className="font-medium text-foreground">{df.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Supporting documents */}
