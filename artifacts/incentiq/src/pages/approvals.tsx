@@ -137,6 +137,7 @@ function camelToWords(key: string) {
 function extractDateFields(data: Record<string, unknown>) {
   return Object.entries(data)
     .filter(([, v]) => typeof v === "string" && ISO_DATE_RE.test(v as string))
+    .sort(([, a], [, b]) => (a as string).localeCompare(b as string))
     .map(([k, v]) => ({
       label: camelToWords(k),
       value: new Date((v as string) + "T00:00:00").toLocaleDateString("en-ZA", {
