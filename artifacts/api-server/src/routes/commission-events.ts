@@ -514,8 +514,8 @@ router.post("/:id/submit", requireAuth, async (req: Request, res: Response) => {
       include: { industryTemplate: { select: { code: true } } },
     });
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (existing.approvalStatus !== "DRAFT") {
-      res.status(400).json({ error: "Only DRAFT events can be submitted" });
+    if (existing.approvalStatus !== "DRAFT" && existing.approvalStatus !== "CHANGES_REQUESTED") {
+      res.status(400).json({ error: "Only DRAFT or CHANGES_REQUESTED events can be submitted" });
       return;
     }
 
