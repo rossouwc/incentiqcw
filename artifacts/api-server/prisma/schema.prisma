@@ -139,6 +139,16 @@ enum RecoveryMethod {
   MANUAL
 }
 
+enum ClawbackMethod {
+  NONE
+  FULL
+  PRO_RATA_BY_TERM
+  SLIDING_SCALE
+  COMPONENT_BASED
+  FIXED_AMOUNT
+  MANUAL
+}
+
 enum AdjustmentType {
   CLAWBACK
   CHARGEBACK
@@ -254,6 +264,7 @@ model Tenant {
   commissionAdjustments    CommissionAdjustment[]
   recoveryTransactions     CommissionRecoveryTransaction[]
   commissionComponents     CommissionComponent[]
+  clawbackPolicies         ClawbackPolicy[]
 }
 
 model User {
@@ -564,6 +575,7 @@ model IndustryTemplate {
   commissionFormulas       CommissionFormulaTemplate[]
   approvalWorkflowTemplates ApprovalWorkflowTemplate[]
   commissionEvents         CommissionEvent[]
+  clawbackPolicies         ClawbackPolicy[]
 }
 
 model TenantIndustryConfig {
@@ -936,4 +948,29 @@ model CommissionComponent {
 
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   commissionEvent CommissionEvent @relation(fields: [commissionEventId], references: [id], onDelete: Cascade)
+}
+
+// ─── Clawback Policies ────────────────────────────────────────────────────────
+
+model ClawbackPolicy {
+  id                        String         @id @default(cuid())
+  tenantId                  String?
+  industryTemplateId        String?
+  policyName                String
+  appliesToEventType        String?
+  clawbackMethod            ClawbackMethod
+  clawbackWindowDays        Int?
+  noClawbackAfterDays       Int?
+  recoveryMethodPriorityJson Json?
+  allowPartialRecovery      Boolean        @default(true)
+  allowWaiver               Boolean        @default(true)
+  requiresApproval          Boolean        @default(true)
+  approvalWorkflowJson      Json?
+  isDefault                 Boolean        @default(false)
+  isActive                  Boolean        @default(true)
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  industryTemplate IndustryTemplate? @relation(fields: [industryTemplateId], references: [id])
 }

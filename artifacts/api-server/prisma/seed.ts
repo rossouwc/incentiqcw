@@ -788,6 +788,224 @@ async function main() {
   }
   console.log("✅ Deal field definitions created:", fieldCount);
 
+  // ─── Default Clawback Policies by Industry ─────────────────────────────────
+  const clawbackPolicies = [
+    // ── IT Consulting ──────────────────────────────────────────────────────────
+    {
+      id: "cb-pol-001",
+      industryTemplateId: "ind-tmpl-001",
+      policyName: "IT Consulting — Pro-Rata by Contract Term",
+      appliesToEventType: null,
+      clawbackMethod: "PRO_RATA_BY_TERM" as const,
+      clawbackWindowDays: null,         // window = contract term (from event dates)
+      noClawbackAfterDays: null,        // no hard cutoff — full term applies
+      recoveryMethodPriorityJson: ["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET"],
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Recruitment — Permanent ────────────────────────────────────────────────
+    {
+      id: "cb-pol-002",
+      industryTemplateId: "ind-tmpl-002",
+      policyName: "Recruitment — Permanent Placement Sliding Scale",
+      appliesToEventType: "PERMANENT",
+      clawbackMethod: "SLIDING_SCALE" as const,
+      clawbackWindowDays: 90,
+      noClawbackAfterDays: 90,
+      recoveryMethodPriorityJson: {
+        method: "SLIDING_SCALE",
+        brackets: [
+          { fromDay: 0,  toDay: 30,  percentage: 100 },
+          { fromDay: 31, toDay: 60,  percentage: 50  },
+          { fromDay: 61, toDay: 90,  percentage: 25  },
+          { fromDay: 91, toDay: null, percentage: 0  },
+        ],
+        recoveryPriority: ["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET"],
+      },
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Recruitment — Contract ─────────────────────────────────────────────────
+    {
+      id: "cb-pol-003",
+      industryTemplateId: "ind-tmpl-002",
+      policyName: "Recruitment — Contract Placement (Monthly Earned)",
+      appliesToEventType: "CONTRACT",
+      clawbackMethod: "NONE" as const,
+      clawbackWindowDays: null,
+      noClawbackAfterDays: null,
+      recoveryMethodPriorityJson: {
+        note: "Commission is earned monthly as contractor works. Manual clawback available for unpaid invoices only.",
+        recoveryPriority: ["MANUAL_PAYMENT", "FUTURE_COMMISSION_OFFSET"],
+      },
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: false,
+    },
+    // ── Insurance ──────────────────────────────────────────────────────────────
+    {
+      id: "cb-pol-004",
+      industryTemplateId: "ind-tmpl-003",
+      policyName: "Insurance — Pro-Rata or Full (First Premium Not Collected)",
+      appliesToEventType: null,
+      clawbackMethod: "PRO_RATA_BY_TERM" as const,
+      clawbackWindowDays: 365,
+      noClawbackAfterDays: 365,
+      recoveryMethodPriorityJson: {
+        method: "PRO_RATA_BY_TERM",
+        fullClawbackCondition: "FIRST_PREMIUM_NOT_COLLECTED",
+        recoveryPriority: ["FUTURE_COMMISSION_OFFSET", "WALLET_DEDUCTION"],
+      },
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Vehicle Dealership ─────────────────────────────────────────────────────
+    {
+      id: "cb-pol-005",
+      industryTemplateId: "ind-tmpl-004",
+      policyName: "Vehicle Dealership — Component-Based Clawback",
+      appliesToEventType: null,
+      clawbackMethod: "COMPONENT_BASED" as const,
+      clawbackWindowDays: 90,
+      noClawbackAfterDays: 180,
+      recoveryMethodPriorityJson: {
+        method: "COMPONENT_BASED",
+        components: [
+          { key: "vehicle_gp",           label: "Vehicle GP Commission",        clawbackEligible: true  },
+          { key: "finance_commission",    label: "Finance Commission",           clawbackEligible: true  },
+          { key: "insurance_commission",  label: "Insurance Product Commission", clawbackEligible: true  },
+          { key: "warranty_commission",   label: "Warranty Commission",          clawbackEligible: true  },
+          { key: "service_plan",          label: "Service Plan Commission",      clawbackEligible: true  },
+        ],
+        recoveryPriority: ["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET"],
+      },
+      allowPartialRecovery: true,
+      allowWaiver: false,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Property Sales ─────────────────────────────────────────────────────────
+    {
+      id: "cb-pol-006",
+      industryTemplateId: "ind-tmpl-005",
+      policyName: "Property Sales — Manual Reversal Only",
+      appliesToEventType: null,
+      clawbackMethod: "NONE" as const,
+      clawbackWindowDays: null,
+      noClawbackAfterDays: null,
+      recoveryMethodPriorityJson: {
+        note: "Commission only becomes available after transfer registration. Manual reversal permitted if paid in error.",
+        recoveryPriority: ["MANUAL_PAYMENT", "WALLET_DEDUCTION"],
+      },
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Rental Management ──────────────────────────────────────────────────────
+    {
+      id: "cb-pol-007",
+      industryTemplateId: "ind-tmpl-006",
+      policyName: "Rental Management — Pro-Rata by Lease Term",
+      appliesToEventType: null,
+      clawbackMethod: "PRO_RATA_BY_TERM" as const,
+      clawbackWindowDays: null,         // window = lease term (from event dates)
+      noClawbackAfterDays: null,
+      recoveryMethodPriorityJson: ["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET"],
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Telecom ────────────────────────────────────────────────────────────────
+    {
+      id: "cb-pol-008",
+      industryTemplateId: "ind-tmpl-007",
+      policyName: "Telecom — Pro-Rata by Contract Term (max 180 days)",
+      appliesToEventType: null,
+      clawbackMethod: "PRO_RATA_BY_TERM" as const,
+      clawbackWindowDays: 180,
+      noClawbackAfterDays: 180,
+      recoveryMethodPriorityJson: ["FUTURE_COMMISSION_OFFSET", "WALLET_DEDUCTION"],
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── SaaS ───────────────────────────────────────────────────────────────────
+    {
+      id: "cb-pol-009",
+      industryTemplateId: "ind-tmpl-008",
+      policyName: "SaaS — Pro-Rata by Contract Term (max 12 months)",
+      appliesToEventType: null,
+      clawbackMethod: "PRO_RATA_BY_TERM" as const,
+      clawbackWindowDays: 365,
+      noClawbackAfterDays: 365,
+      recoveryMethodPriorityJson: ["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET"],
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+    // ── Custom ─────────────────────────────────────────────────────────────────
+    {
+      id: "cb-pol-010",
+      industryTemplateId: "ind-tmpl-009",
+      policyName: "Custom — Manual Adjustment",
+      appliesToEventType: null,
+      clawbackMethod: "MANUAL" as const,
+      clawbackWindowDays: null,
+      noClawbackAfterDays: null,
+      recoveryMethodPriorityJson: ["WALLET_DEDUCTION", "FUTURE_COMMISSION_OFFSET", "MANUAL_PAYMENT"],
+      allowPartialRecovery: true,
+      allowWaiver: true,
+      requiresApproval: true,
+      isDefault: true,
+    },
+  ];
+
+  for (const policy of clawbackPolicies) {
+    await prisma.clawbackPolicy.upsert({
+      where: { id: policy.id },
+      update: {
+        policyName:                policy.policyName,
+        appliesToEventType:        policy.appliesToEventType,
+        clawbackMethod:            policy.clawbackMethod,
+        clawbackWindowDays:        policy.clawbackWindowDays,
+        noClawbackAfterDays:       policy.noClawbackAfterDays,
+        recoveryMethodPriorityJson: policy.recoveryMethodPriorityJson,
+        allowPartialRecovery:      policy.allowPartialRecovery,
+        allowWaiver:               policy.allowWaiver,
+        requiresApproval:          policy.requiresApproval,
+        isDefault:                 policy.isDefault,
+        isActive:                  true,
+      },
+      create: {
+        id:                        policy.id,
+        industryTemplateId:        policy.industryTemplateId,
+        policyName:                policy.policyName,
+        appliesToEventType:        policy.appliesToEventType,
+        clawbackMethod:            policy.clawbackMethod,
+        clawbackWindowDays:        policy.clawbackWindowDays,
+        noClawbackAfterDays:       policy.noClawbackAfterDays,
+        recoveryMethodPriorityJson: policy.recoveryMethodPriorityJson,
+        allowPartialRecovery:      policy.allowPartialRecovery,
+        allowWaiver:               policy.allowWaiver,
+        requiresApproval:          policy.requiresApproval,
+        isDefault:                 policy.isDefault,
+        isActive:                  true,
+      },
+    });
+  }
+  console.log("✅ Clawback policies seeded:", clawbackPolicies.length);
+
   console.log("\n🎉 Seed complete!");
   console.log("─────────────────────────────────────────────────────────────────");
   console.log("Demo login credentials (all use Password123!):");
