@@ -399,7 +399,7 @@ router.post("/:id/edit-save", requireAuth, async (req: Request, res: Response) =
     res.status(400).json({ error: "eventTitle and eventType are required" }); return;
   }
   const validSourceTypes = ["SELF", "INTERNAL", "EXTERNAL"];
-  const resolvedSourceType = validSourceTypes.includes(sourceType) ? sourceType : undefined;
+  const resolvedSourceType: "SELF" | "INTERNAL" | "EXTERNAL" = validSourceTypes.includes(sourceType) ? sourceType : "SELF";
   try {
     const event = await prisma.commissionEvent.findFirst({
       where: { id: req.params.id as string, tenantId: req.user!.tenantId, salesExecutiveId: req.user!.userId },
@@ -409,12 +409,22 @@ router.post("/:id/edit-save", requireAuth, async (req: Request, res: Response) =
       res.status(400).json({ error: "Deal is not in edit mode — call edit-start first" }); return;
     }
 
-    const [tc, commissionPct] = await Promise.all([
+    const [tc, commissionPct, splitCfg] = await Promise.all([
       loadTenantConfig(req.user!.tenantId),
       lookupCommissionPct(req.user!.tenantId, req.user!.userId),
+      prisma.commissionSplitConfig.findUnique({ where: { tenantId: req.user!.tenantId } }),
     ]);
     const dataMap: Record<string, any> = eventDataJson ?? {};
     const calcResult = calculateCommission(tc.industryCode, dataMap, commissionPct);
+
+    // Recalculate split deduction for the new sourceType
+    let newSplitDeductionAmount: number | null = null;
+    if (resolvedSourceType === "INTERNAL" && splitCfg?.isEnabled && (splitCfg.deductionValue ?? 0) > 0) {
+      const raw = splitCfg.deductionType === "PERCENTAGE"
+        ? calcResult.calculatedCommissionAmount * (Number(splitCfg.deductionValue) / 100)
+        : Number(splitCfg.deductionValue);
+      newSplitDeductionAmount = Math.min(raw, calcResult.calculatedCommissionAmount);
+    }
 
     // Adjust pending wallet balance for the delta
     const oldCommission = Number(event.calculatedCommissionAmount);
@@ -427,23 +437,18 @@ router.post("/:id/edit-save", requireAuth, async (req: Request, res: Response) =
         data: {
           eventTitle,
           eventType,
-          eventDataJson: dataMap,
+          eventDataJson:              dataMap,
           revenueAmount:              calcResult.revenueAmount,
           costAmount:                 calcResult.costAmount,
           grossProfitAmount:          calcResult.grossProfitAmount,
           commissionBaseAmount:       calcResult.commissionBaseAmount,
           commissionPercentage:       calcResult.commissionPercentage,
           calculatedCommissionAmount: calcResult.calculatedCommissionAmount,
-          editStatus: "NONE",
-          ...(resolvedSourceType && { sourceType: resolvedSourceType as any }),
-          ...(resolvedSourceType === "EXTERNAL" && externalProviderId
-            ? { externalProviderId }
-            : resolvedSourceType && resolvedSourceType !== "EXTERNAL"
-              ? { externalProviderId: null }
-              : {}),
-          ...(splitReferrerName && resolvedSourceType !== "SELF"
-            ? { splitReferrerName: splitReferrerName.trim() }
-            : resolvedSourceType === "SELF" ? { splitReferrerName: null } : {}),
+          editStatus:                 "NONE",
+          sourceType:                 resolvedSourceType,
+          externalProviderId:         resolvedSourceType === "EXTERNAL" && externalProviderId ? externalProviderId : null,
+          splitReferrerName:          resolvedSourceType !== "SELF" && splitReferrerName ? splitReferrerName.trim() : null,
+          splitDeductionAmount:       newSplitDeductionAmount,
         },
       });
 
