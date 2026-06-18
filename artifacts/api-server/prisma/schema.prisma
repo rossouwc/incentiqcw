@@ -460,6 +460,10 @@ model TenantIndustryConfig {
   triggerEventName    String?
   salesPersonName     String?
   isCustomised        Boolean  @default(false)
+  terminologyJson     Json?
+  fieldConfigJson     Json?
+  formulaConfigJson   Json?
+  triggerConfigJson   Json?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

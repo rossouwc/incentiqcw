@@ -19,6 +19,7 @@ import { taxBracketsRouter } from "./tax-brackets";
 import { customersRouter } from "./customers";
 import { commissionEventsRouter } from "./commission-events";
 import { onboardingRouter } from "./onboarding";
+import { industryConfigRouter } from "./industry-config";
 
 const router: IRouter = Router();
 
@@ -43,5 +44,6 @@ router.use("/tax", taxBracketsRouter);
 router.use("/customers", customersRouter);
 router.use("/commission-events", commissionEventsRouter);
 router.use("/onboarding", onboardingRouter);
+router.use("/industry-config", industryConfigRouter);
 
 export default router;

@@ -42,6 +42,7 @@ import FinalApprovals from "@/pages/final-approvals";
 import ApprovedPayouts from "@/pages/approved-payouts";
 import PayoutHistory from "@/pages/payout-history";
 import OnboardingWizard from "@/pages/onboarding";
+import IndustryConfig from "@/pages/industry-config";
 
 const queryClient = new QueryClient();
 
@@ -82,6 +83,7 @@ function Router() {
       <Route path="/commission-rules"><P component={CommissionRules} /></Route>
       <Route path="/approval-workflow"><P component={ApprovalWorkflow} /></Route>
       <Route path="/company-settings"><P component={CompanySettings} /></Route>
+      <Route path="/industry-config"><P component={IndustryConfig} /></Route>
 
       {/* Sales Executive */}
       <Route path="/tax-profile"><P component={TaxProfile} /></Route>
