@@ -1276,7 +1276,6 @@ export default function Deals() {
           eventType,
           eventDataJson: formValues,
           sourceType,
-          ...(sourceType === "INTERNAL" && internalReferrerId && { internalReferrerId }),
           ...(sourceType === "EXTERNAL" && externalProviderId && { externalProviderId }),
           ...((sourceType === "INTERNAL" || sourceType === "EXTERNAL") && splitReferrerName && { splitReferrerName }),
         }),
@@ -1869,41 +1868,12 @@ export default function Deals() {
                         ))}
                       </div>
 
-                      {sourceType === "INTERNAL" && (
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Select Referrer <span className="text-muted-foreground">(optional)</span></Label>
-                          <Select
-                            value={internalReferrerId}
-                            onValueChange={(v) => {
-                              setInternalReferrerId(v);
-                              const u = tenantUsers.find((u) => u.id === v);
-                              if (u) setSplitReferrerName(`${u.firstName} ${u.lastName}`);
-                            }}
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder="Select team member…" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {tenantUsers
-                                .filter((u) => u.id !== (currentUser as any)?.id)
-                                .map((u) => (
-                                  <SelectItem key={u.id} value={u.id}>
-                                    {u.firstName} {u.lastName}
-                                    <span className="ml-1.5 text-muted-foreground text-xs">
-                                      {u.role.replace(/_/g, " ")}
-                                    </span>
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                          {splitConfig.deductionValue > 0 && (
-                            <p className="text-xs text-amber-600 dark:text-amber-400">
-                              A {splitConfig.deductionType === "PERCENTAGE"
-                                ? `${splitConfig.deductionValue}%`
-                                : `R${splitConfig.deductionValue.toLocaleString()}`} split will be deducted from your commission on approval.
-                            </p>
-                          )}
-                        </div>
+                      {sourceType === "INTERNAL" && splitConfig.deductionValue > 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          A {splitConfig.deductionType === "PERCENTAGE"
+                            ? `${splitConfig.deductionValue}%`
+                            : `R${splitConfig.deductionValue.toLocaleString()}`} split will be deducted from your commission on approval per the internal talent team rule.
+                        </p>
                       )}
 
                       {sourceType === "EXTERNAL" && (
