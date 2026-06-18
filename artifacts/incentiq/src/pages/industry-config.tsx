@@ -1,4 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListApprovalConfigs,
+  useCreateApprovalConfig,
+  useUpdateApprovalConfig,
+  useDeleteApprovalConfig,
+  useListUsers,
+  getListApprovalConfigsQueryKey,
+  type ApprovalConfig,
+  type ApprovalConfigInput,
+  type ApprovalConfigUpdate,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +21,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Factory, Languages, ListChecks, Calculator, GitBranch, Zap,
   Lock, ChevronUp, ChevronDown, Plus, Trash2, Save, Loader2, AlertCircle, Info,
+  ArrowRight, Pencil, CheckCircle2, Settings, UserCheck, DollarSign,
+  Briefcase, BadgeCheck, Clock, Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -433,75 +452,363 @@ function FormulaTab({ formula, onChange, onSave, saving }: { formula: FormulaCon
 
 // ─── Workflow Tab ─────────────────────────────────────────────────────────────
 
-function WorkflowTab({ steps, setSteps, onSave, saving }: { steps: ApprovalStep[]; setSteps: (s: ApprovalStep[]) => void; onSave: () => void; saving: boolean }) {
-  const canDelete = steps.length > 1;
+const WF_ROLE_OPTIONS = [
+  { value: "MANAGER",         label: "Sales Manager" },
+  { value: "FINANCE",         label: "Finance" },
+  { value: "EXECUTIVE",       label: "Executive" },
+  { value: "SALES_EXECUTIVE", label: "Sales Exec Confirmation" },
+  { value: "ADMIN",           label: "Admin" },
+  { value: "PAYROLL",         label: "Payroll" },
+];
 
-  const addStep = () => {
-    const id = `new-${Date.now()}`;
-    setSteps([...steps, { id, stepOrder: steps.length + 1, stepName: "New Approval Step", approverRole: "MANAGER" }]);
+const WF_ROLE_ICONS: Record<string, React.ElementType> = {
+  MANAGER:         UserCheck,
+  FINANCE:         DollarSign,
+  EXECUTIVE:       BadgeCheck,
+  SALES_EXECUTIVE: Wallet,
+  ADMIN:           Settings,
+  PAYROLL:         Briefcase,
+};
+
+const WF_ROLE_COLORS: Record<string, string> = {
+  MANAGER:         "bg-amber-100 text-amber-700 border-amber-200",
+  FINANCE:         "bg-cyan-100 text-cyan-700 border-cyan-200",
+  EXECUTIVE:       "bg-purple-100 text-purple-700 border-purple-200",
+  SALES_EXECUTIVE: "bg-teal-100 text-teal-700 border-teal-200",
+  ADMIN:           "bg-indigo-100 text-indigo-700 border-indigo-200",
+  PAYROLL:         "bg-pink-100 text-pink-700 border-pink-200",
+};
+
+const WF_DEFAULT_STEPS = [
+  { stepOrder: 1, stepName: "Sales Manager Approval", approverRole: "MANAGER" },
+  { stepOrder: 2, stepName: "Finance Approval",        approverRole: "FINANCE" },
+  { stepOrder: 3, stepName: "Executive Approval",      approverRole: "EXECUTIVE" },
+  { stepOrder: 4, stepName: "Payroll Ready",            approverRole: "PAYROLL" },
+];
+
+interface WFStepForm { stepName: string; approverRole: string; approverUserId: string; isActive: boolean; }
+const WF_EMPTY_FORM: WFStepForm = { stepName: "", approverRole: "MANAGER", approverUserId: "", isActive: true };
+
+function WorkflowTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: getListApprovalConfigsQueryKey() });
+
+  const { data: configs, isLoading, isFetching, isError } = useListApprovalConfigs();
+  const createConfig = useCreateApprovalConfig();
+  const updateConfig = useUpdateApprovalConfig();
+  const deleteConfig = useDeleteApprovalConfig();
+
+  const list: ApprovalConfig[] = Array.isArray(configs) ? configs : [];
+  const sorted = [...list].sort((a, b) => a.stepOrder - b.stepOrder);
+
+  const [showDialog, setShowDialog] = useState(false);
+  const [editStep, setEditStep] = useState<ApprovalConfig | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ApprovalConfig | null>(null);
+  const [form, setForm] = useState<WFStepForm>(WF_EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+
+  const { data: usersData } = useListUsers({});
+  const users = Array.isArray(usersData) ? usersData : (usersData as any)?.data ?? [];
+  const roleUsers = users.filter((u: any) => u.role === form.approverRole && u.status === "ACTIVE");
+
+  useEffect(() => {
+    if (editStep) {
+      setForm({ stepName: editStep.stepName, approverRole: editStep.approverRole, approverUserId: editStep.approverUserId ?? "", isActive: editStep.isActive });
+    } else {
+      setForm(WF_EMPTY_FORM);
+    }
+  }, [editStep, showDialog]);
+
+  const openAdd  = () => { setEditStep(null); setShowDialog(true); };
+  const openEdit = (c: ApprovalConfig) => { setEditStep(c); setShowDialog(true); };
+  const closeDialog = () => { setShowDialog(false); setEditStep(null); };
+
+  const handleSave = async () => {
+    if (!form.stepName.trim() || !form.approverRole) return;
+    setSaving(true);
+    try {
+      const payload = { stepName: form.stepName.trim(), approverRole: form.approverRole, approverUserId: form.approverUserId || null, isActive: form.isActive };
+      if (editStep) {
+        await updateConfig.mutateAsync({ configId: editStep.id, data: payload as ApprovalConfigUpdate });
+        toast({ title: "Step updated" });
+      } else {
+        await createConfig.mutateAsync({ data: payload as ApprovalConfigInput });
+        toast({ title: "Step added" });
+      }
+      closeDialog(); invalidate();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message ?? "Something went wrong", variant: "destructive" });
+    } finally { setSaving(false); }
   };
 
-  const updateStep = (i: number, patch: Partial<ApprovalStep>) => setSteps(steps.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteConfig.mutateAsync({ configId: deleteTarget.id });
+      toast({ title: "Step deleted" }); setDeleteTarget(null); invalidate();
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err?.message, variant: "destructive" });
+    }
+  };
 
-  const moveStep = (i: number, dir: "up" | "down") => {
-    const j = dir === "up" ? i - 1 : i + 1;
-    const copy = [...steps];
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-    setSteps(copy.map((s, idx) => ({ ...s, stepOrder: idx + 1 })));
+  const handleMove = async (config: ApprovalConfig, direction: "up" | "down") => {
+    const idx = sorted.findIndex((c) => c.id === config.id);
+    if (direction === "up" && idx === 0) return;
+    if (direction === "down" && idx === sorted.length - 1) return;
+    const swapWith = sorted[direction === "up" ? idx - 1 : idx + 1];
+    try {
+      await updateConfig.mutateAsync({ configId: config.id, data: { stepOrder: swapWith.stepOrder } });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Reorder failed", description: err?.message, variant: "destructive" });
+    }
+  };
+
+  const handleSeedDefaults = async () => {
+    setSaving(true);
+    try {
+      for (const existing of list) { await deleteConfig.mutateAsync({ configId: existing.id }); }
+      for (const step of WF_DEFAULT_STEPS) { await createConfig.mutateAsync({ data: { ...step, isActive: true } as ApprovalConfigInput }); }
+      toast({ title: "Default workflow loaded", description: "4 approval steps have been configured." });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Error loading defaults", description: err?.message ?? "Something went wrong", variant: "destructive" });
+      invalidate();
+    } finally { setSaving(false); }
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Approval Workflow</CardTitle>
-        <CardDescription>Define the approval chain for commission events — at least one step is required</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {steps.map((step, i) => (
-          <div key={step.id} className="flex items-start gap-3 p-4 rounded-lg border border-border bg-card">
-            <div className="flex flex-col gap-0.5 shrink-0 mt-1">
-              <button onClick={() => moveStep(i, "up")} disabled={i === 0} className="p-0.5 rounded hover:bg-muted disabled:opacity-20"><ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /></button>
-              <button onClick={() => moveStep(i, "down")} disabled={i === steps.length - 1} className="p-0.5 rounded hover:bg-muted disabled:opacity-20"><ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /></button>
-            </div>
-            <div className="w-7 h-7 rounded-full bg-primary/15 text-primary text-sm font-semibold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</div>
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Step Name</Label>
-                <Input value={step.stepName} onChange={(e) => updateStep(i, { stepName: e.target.value })} className="h-8" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Approver Role</Label>
-                <Select value={step.approverRole} onValueChange={(v) => updateStep(i, { approverRole: v })}>
-                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                  <SelectContent>{USER_ROLES.map((r) => <SelectItem key={r} value={r}>{r.replace("_", " ")}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <button onClick={() => setSteps(steps.filter((_, idx) => idx !== i).map((s, idx) => ({ ...s, stepOrder: idx + 1 })))} disabled={!canDelete} className="p-1.5 rounded hover:bg-destructive/10 text-destructive disabled:opacity-30 disabled:cursor-not-allowed mt-0.5 shrink-0" title={canDelete ? "Remove step" : "Cannot remove — minimum 1 step required"}>
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
-
-        {!canDelete && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>At least one approval step is required.</AlertDescription>
-          </Alert>
-        )}
-
-        <Button variant="outline" className="w-full gap-2" onClick={addStep}>
-          <Plus className="h-4 w-4" /> Add Approval Step
-        </Button>
-
-        <div className="flex justify-end pt-2">
-          <Button onClick={onSave} disabled={saving || steps.length === 0}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save Workflow
-          </Button>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Approval Workflow</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Configure the commission approval pipeline for your company</p>
         </div>
-      </CardContent>
-    </Card>
+        <div className="flex gap-2">
+          {list.length === 0 && (
+            <Button variant="outline" size="sm" onClick={handleSeedDefaults} disabled={saving}>Load Defaults</Button>
+          )}
+          <Button size="sm" onClick={openAdd} className="gap-2"><Plus className="h-4 w-4" /> Add Step</Button>
+        </div>
+      </div>
+
+      {/* Visual Pipeline */}
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Approval Pipeline</CardTitle>
+          <CardDescription>
+            {list.length > 0
+              ? `${sorted.filter(s => s.isActive).length} active step${sorted.filter(s => s.isActive).length !== 1 ? "s" : ""} — deals flow through these in order`
+              : "No steps configured yet — add steps or load the default workflow"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading || (isFetching && sorted.length === 0) ? (
+            <div className="flex gap-4">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-32" />)}</div>
+          ) : isError ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Settings className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-destructive">Failed to load workflow</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={invalidate}>Retry</Button>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Settings className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No approval steps yet</p>
+              <p className="text-sm mt-1">Add steps above or click "Load Defaults"</p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-0 overflow-x-auto pb-2">
+              <div className="flex flex-col md:flex-row items-center gap-0">
+                <div className="flex flex-col items-center">
+                  <div className="w-14 h-14 rounded-2xl border-2 flex items-center justify-center bg-blue-50 text-blue-600 border-blue-200">
+                    <Briefcase className="h-6 w-6" />
+                  </div>
+                  <div className="mt-2 text-center max-w-[100px]">
+                    <div className="text-xs font-semibold text-foreground">Deal Submission</div>
+                    <div className="text-xs text-muted-foreground">Sales Exec</div>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground mx-2 my-3 md:my-0 rotate-90 md:rotate-0 shrink-0" />
+              </div>
+              {sorted.map((step, idx) => {
+                const Icon = WF_ROLE_ICONS[step.approverRole] ?? Settings;
+                const colorCls = step.isActive ? (WF_ROLE_COLORS[step.approverRole] ?? "bg-gray-100 text-gray-600 border-gray-200") : "bg-gray-100 text-gray-400 border-gray-200 opacity-50";
+                return (
+                  <div key={step.id} className="flex flex-col md:flex-row items-center gap-0">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center ${colorCls}`}>
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <div className="mt-2 text-center max-w-[100px]">
+                        <div className="text-xs font-semibold text-foreground leading-tight">{step.stepName}</div>
+                        {step.approverName
+                          ? <div className="text-xs text-primary mt-0.5 truncate max-w-[100px]">{step.approverName}</div>
+                          : <div className="text-xs text-muted-foreground">{WF_ROLE_OPTIONS.find(r => r.value === step.approverRole)?.label ?? step.approverRole}</div>}
+                        {!step.isActive && <Badge variant="secondary" className="text-xs mt-0.5">Inactive</Badge>}
+                      </div>
+                    </div>
+                    {idx < sorted.length - 1 && <ArrowRight className="h-4 w-4 text-muted-foreground mx-2 my-3 md:my-0 rotate-90 md:rotate-0 shrink-0" />}
+                  </div>
+                );
+              })}
+              <div className="flex flex-col md:flex-row items-center gap-0">
+                <ArrowRight className="h-4 w-4 text-muted-foreground mx-2 my-3 md:my-0 rotate-90 md:rotate-0 shrink-0" />
+                <div className="flex flex-col items-center">
+                  <div className="w-14 h-14 rounded-2xl border-2 flex items-center justify-center bg-green-50 text-green-600 border-green-200">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                  <div className="mt-2 text-center max-w-[100px]">
+                    <div className="text-xs font-semibold text-foreground">Commission Paid</div>
+                    <div className="text-xs text-muted-foreground">Automatic</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Step Management Table */}
+      {sorted.length > 0 && (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Manage Steps</CardTitle>
+            <CardDescription>Edit, reorder, or remove individual approval steps</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="px-6 py-4 font-medium w-16">Order</th>
+                    <th className="px-6 py-4 font-medium">Step Name</th>
+                    <th className="px-6 py-4 font-medium">Approver Role</th>
+                    <th className="px-6 py-4 font-medium">Assigned User</th>
+                    <th className="px-6 py-4 font-medium">Active</th>
+                    <th className="px-6 py-4 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((step, idx) => {
+                    const Icon = WF_ROLE_ICONS[step.approverRole] ?? Settings;
+                    return (
+                      <tr key={step.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-0.5">
+                            <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground disabled:opacity-30" disabled={idx === 0} onClick={() => handleMove(step, "up")} title="Move up"><ChevronUp className="h-3.5 w-3.5" /></button>
+                            <span className="text-center text-xs font-mono text-muted-foreground">{step.stepOrder}</span>
+                            <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground disabled:opacity-30" disabled={idx === sorted.length - 1} onClick={() => handleMove(step, "down")} title="Move down"><ChevronDown className="h-3.5 w-3.5" /></button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${WF_ROLE_COLORS[step.approverRole] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+                              <Icon className="h-3.5 w-3.5" />
+                            </div>
+                            <span className="font-medium text-foreground">{step.stepName}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <Badge variant="outline" className="text-xs">{WF_ROLE_OPTIONS.find(r => r.value === step.approverRole)?.label ?? step.approverRole}</Badge>
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground">
+                          {step.approverName
+                            ? <span className="text-foreground font-medium">{step.approverName}</span>
+                            : <span className="text-muted-foreground italic text-xs">Any {WF_ROLE_OPTIONS.find(r => r.value === step.approverRole)?.label ?? step.approverRole}</span>}
+                        </td>
+                        <td className="px-6 py-4">
+                          <Switch checked={step.isActive} onCheckedChange={async (val) => { await updateConfig.mutateAsync({ configId: step.id, data: { isActive: val } }); invalidate(); }} />
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => openEdit(step)}><Pencil className="h-3.5 w-3.5" /> Edit</Button>
+                            <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteTarget(step)}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Info box */}
+      <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 shadow-sm">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex gap-3 items-start">
+            <Clock className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-800 dark:text-blue-300">
+              <strong>How it works:</strong> When a deal is submitted for approval, the system creates one pending approval task per active step, in order. Each approver can <strong>Approve</strong>, <strong>Request Changes</strong>, or <strong>Reject</strong>. Commission moves to the sales exec's wallet only after the final step is approved.
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={showDialog} onOpenChange={(o) => { if (!o) closeDialog(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editStep ? "Edit Approval Step" : "Add Approval Step"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="wf-stepName">Step Name</Label>
+              <Input id="wf-stepName" value={form.stepName} onChange={(e) => setForm({ ...form, stepName: e.target.value })} placeholder="e.g. Sales Manager Approval" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Approver Role</Label>
+              <Select value={form.approverRole} onValueChange={(v) => setForm({ ...form, approverRole: v, approverUserId: "" })}>
+                <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+                <SelectContent>{WF_ROLE_OPTIONS.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">All users with this role can action this step unless a specific user is assigned.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Assign Specific User <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Select value={form.approverUserId || "__any__"} onValueChange={(v) => setForm({ ...form, approverUserId: v === "__any__" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Any user with this role" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__any__"><span className="text-muted-foreground">Any {WF_ROLE_OPTIONS.find(r => r.value === form.approverRole)?.label ?? form.approverRole}</span></SelectItem>
+                  {roleUsers.map((u: any) => (
+                    <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} <span className="text-muted-foreground text-xs ml-1">({u.email})</span></SelectItem>
+                  ))}
+                  {roleUsers.length === 0 && <SelectItem value="__none__" disabled>No active users with this role</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3 py-1">
+              <Switch id="wf-isActive" checked={form.isActive} onCheckedChange={(v) => setForm({ ...form, isActive: v })} />
+              <Label htmlFor="wf-isActive" className="cursor-pointer">Active (include in workflow)</Label>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1" onClick={handleSave} disabled={saving || !form.stepName.trim()}>
+                {saving ? "Saving…" : editStep ? "Save Changes" : "Add Step"}
+              </Button>
+              <Button variant="outline" onClick={closeDialog} disabled={saving}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteTarget?.stepName}"?</AlertDialogTitle>
+            <AlertDialogDescription>This approval step will be removed from the workflow. Existing in-progress approvals for this step are not affected.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
@@ -635,13 +942,11 @@ export default function IndustryConfigPage() {
   const [systemFields, setSystemFields] = useState<FieldDef[]>([]);
   const [customFields, setCustomFields] = useState<FieldDef[]>([]);
   const [formula, setFormula] = useState<FormulaConfig>({ calculationType: "", baseField: "", defaultCommissionPct: 10, description: "" });
-  const [approvalSteps, setApprovalSteps] = useState<ApprovalStep[]>([]);
   const [triggerRules, setTriggerRules] = useState<TriggerRule[]>([]);
 
   const [savingTerminology, setSavingTerminology] = useState(false);
   const [savingFields, setSavingFields] = useState(false);
   const [savingFormula, setSavingFormula] = useState(false);
-  const [savingWorkflow, setSavingWorkflow] = useState(false);
   const [savingTriggers, setSavingTriggers] = useState(false);
 
   const fetchConfig = useCallback(async () => {
@@ -655,7 +960,6 @@ export default function IndustryConfigPage() {
       setSystemFields(data.systemFields);
       setCustomFields(data.customFields);
       setFormula(data.formulaConfig);
-      setApprovalSteps(data.approvalSteps);
       setTriggerRules(data.triggerRules);
     } catch {
       toast({ title: "Failed to load configuration", variant: "destructive" });
@@ -727,7 +1031,7 @@ export default function IndustryConfigPage() {
         </TabsList>
 
         <TabsContent value="overview">
-          <OverviewTab config={{ ...config, terminology, systemFields, customFields, formulaConfig: formula, approvalSteps, triggerRules }} />
+          <OverviewTab config={{ ...config, terminology, systemFields, customFields, formulaConfig: formula, approvalSteps: config.approvalSteps, triggerRules }} />
         </TabsContent>
 
         <TabsContent value="terminology">
@@ -758,11 +1062,7 @@ export default function IndustryConfigPage() {
         </TabsContent>
 
         <TabsContent value="workflow">
-          <WorkflowTab
-            steps={approvalSteps} setSteps={setApprovalSteps}
-            onSave={() => putConfig({ approvalSteps }, setSavingWorkflow, "Workflow")}
-            saving={savingWorkflow}
-          />
+          <WorkflowTab />
         </TabsContent>
 
         <TabsContent value="triggers">

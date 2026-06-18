@@ -40,7 +40,6 @@ function getNavGroups(role: string, dealsLabel = "My Deals", teamDealsLabel = "T
             { name: "Users",               path: "/users",            icon: Users },
             { name: "Customers",           path: "/customers",        icon: Building2 },
             { name: "Commission Rules",    path: "/commission-rules", icon: Sliders },
-            { name: "Approval Workflow",   path: "/approval-workflow",icon: ClipboardCheck },
             { name: "Industry Config",     path: "/industry-config",  icon: Factory },
             { name: "Company Settings",    path: "/company-settings", icon: Settings },
             { name: "Reports",             path: "/reports",          icon: BarChart },
