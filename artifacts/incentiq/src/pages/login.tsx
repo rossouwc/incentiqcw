@@ -213,6 +213,14 @@ export default function Login() {
                 <ShieldCheck className="h-4 w-4 text-teal-500 shrink-0" />
                 <span>Secure. Reliable. Built for Sales Performance.</span>
               </div>
+
+              {/* Register link */}
+              <p className="text-center text-sm text-gray-500 pt-1">
+                New to Incentiq?{" "}
+                <a href="/register" className="text-blue-600 hover:underline font-medium">
+                  Register your company
+                </a>
+              </p>
             </form>
           </Form>
 
