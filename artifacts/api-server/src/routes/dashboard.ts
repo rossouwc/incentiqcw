@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
@@ -42,24 +43,26 @@ router.get("/summary", requireAuth, async (req: Request, res: Response) => {
 router.get("/commission-trend", requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId;
   const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
   try {
     const months: { month: string; amount: number }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
       const start = new Date(d.getFullYear(), d.getMonth(), 1);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const agg = await prisma.deal.aggregate({
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+      const agg = await prisma.commissionEvent.aggregate({
         where: {
-          salesExecutiveId: userId, tenantId,
-          status: { in: ["EXECUTIVE_APPROVED"] },
+          tenantId,
+          ...(isSales && { salesExecutiveId: userId }),
+          approvalStatus: { in: ["EXECUTIVE_APPROVED", "APPROVED"] },
           updatedAt: { gte: start, lte: end },
         },
-        _sum: { calculatedCommission: true },
+        _sum: { calculatedCommissionAmount: true },
       });
       months.push({
         month: start.toLocaleString("en-ZA", { month: "short", year: "2-digit" }),
-        amount: agg._sum.calculatedCommission ?? 0,
+        amount: agg._sum.calculatedCommissionAmount ?? 0,
       });
     }
     res.json(months);
@@ -73,22 +76,38 @@ router.get("/commission-trend", requireAuth, async (req: Request, res: Response)
 router.get("/commission-by-type", requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId;
   const tenantId = req.user!.tenantId;
+  const isSales = req.user!.role === "SALES_EXECUTIVE";
   try {
-    const types = ["NET_NEW", "RENEWAL", "UPSELL", "CROSS_SELL"] as const;
-    const results = await Promise.all(
-      types.map(t =>
-        prisma.deal.aggregate({
-          where: { salesExecutiveId: userId, tenantId, dealType: t },
-          _sum: { calculatedCommission: true },
-        }).then(r => ({ dealType: t, amount: r._sum.calculatedCommission ?? 0 }))
-      )
-    );
-    const total = results.reduce((s, r) => s + r.amount, 0);
-    res.json(results.map(r => ({
-      dealType: r.dealType,
-      amount: r.amount,
-      percentage: total > 0 ? Math.round((r.amount / total) * 100) : 0,
-    })));
+    const events = await prisma.commissionEvent.findMany({
+      where: {
+        tenantId,
+        ...(isSales && { salesExecutiveId: userId }),
+      },
+      select: { eventType: true, calculatedCommissionAmount: true },
+    });
+
+    const byType: Record<string, number> = {};
+    for (const e of events) {
+      byType[e.eventType] = (byType[e.eventType] ?? 0) + e.calculatedCommissionAmount;
+    }
+
+    const total = Object.values(byType).reduce((s, n) => s + n, 0);
+    const results = Object.entries(byType).map(([dealType, amount]) => ({
+      dealType,
+      amount,
+      percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
+    })).sort((a, b) => b.amount - a.amount);
+
+    if (results.length === 0) {
+      res.json([
+        { dealType: "NET_NEW", amount: 0, percentage: 0 },
+        { dealType: "RENEWAL", amount: 0, percentage: 0 },
+        { dealType: "UPSELL", amount: 0, percentage: 0 },
+        { dealType: "CROSS_SELL", amount: 0, percentage: 0 },
+      ]);
+      return;
+    }
+    res.json(results);
   } catch (err) {
     logger.error({ err }, "CommissionByType error");
     res.status(500).json({ error: "Server error" });
@@ -155,7 +174,6 @@ router.get("/my-tasks", requireAuth, async (req: Request, res: Response) => {
   const role = req.user!.role;
 
   try {
-    // PAYROLL: tasks are payout requests needing action, not deal approval workflows
     if (role === "PAYROLL") {
       const [pendingApprovals, approvedForPayroll] = await Promise.all([
         prisma.payoutRequest.count({ where: { tenantId, status: "PENDING" } }),
@@ -164,23 +182,30 @@ router.get("/my-tasks", requireAuth, async (req: Request, res: Response) => {
       return res.json({ pendingApprovals, payoutRequests: 0, approvedForPayroll, informationRequired: 0 });
     }
 
-    // EXECUTIVE: query by approverRole since their level varies by ApprovalConfig
-    if (role === "EXECUTIVE") {
-      const [pendingApprovals, payoutRequests, approvedForPayroll] = await Promise.all([
-        prisma.approvalWorkflow.count({ where: { tenantId, approverRole: "EXECUTIVE", status: "PENDING" } }),
-        prisma.payoutRequest.count({ where: { userId, tenantId, status: "PENDING" } }),
-        prisma.payoutRequest.count({ where: { userId, tenantId, status: "FINANCE_APPROVED" } }),
-      ]);
-      return res.json({ pendingApprovals, payoutRequests, approvedForPayroll, informationRequired: 0 });
-    }
+    const roleToApproverRole: Record<string, UserRole> = {
+      MANAGER: UserRole.MANAGER,
+      FINANCE: UserRole.FINANCE,
+      EXECUTIVE: UserRole.EXECUTIVE,
+      ADMIN: UserRole.ADMIN,
+      SUPER_ADMIN: UserRole.ADMIN,
+    };
+    const approverRole = roleToApproverRole[role];
 
-    const roleToLevel: Record<string, number> = { MANAGER: 1, FINANCE: 2, ADMIN: 3, SUPER_ADMIN: 3 };
-    const level = roleToLevel[role];
     const [pendingApprovals, payoutRequests, approvedForPayroll, infoRequired] = await Promise.all([
-      level ? prisma.approvalWorkflow.count({ where: { tenantId, approvalLevel: level, status: "PENDING" } }) : Promise.resolve(0),
+      approverRole
+        ? prisma.commissionEventApproval.count({
+            where: {
+              status: "PENDING",
+              approverRole,
+              commissionEvent: { tenantId },
+            },
+          })
+        : Promise.resolve(0),
       prisma.payoutRequest.count({ where: { userId, tenantId, status: "PENDING" } }),
       prisma.payoutRequest.count({ where: { userId, tenantId, status: "FINANCE_APPROVED" } }),
-      prisma.deal.count({ where: { salesExecutiveId: userId, tenantId, status: "REJECTED" } }),
+      prisma.commissionEvent.count({
+        where: { salesExecutiveId: userId, tenantId, approvalStatus: "REJECTED" },
+      }),
     ]);
     return res.json({ pendingApprovals, payoutRequests, approvedForPayroll, informationRequired: infoRequired });
   } catch (err) {

@@ -35,26 +35,26 @@ router.get("/commission-by-month", requireAuth, async (req: Request, res: Respon
     tenantId,
     ...(isSales && { salesExecutiveId: req.user!.userId }),
     ...(!isSales && userId && { salesExecutiveId: userId }),
-    ...(dealType && dealType !== "ALL" && { dealType }),
-    ...(status  && status  !== "ALL" && { status }),
+    ...(dealType && dealType !== "ALL" && { eventType: dealType }),
+    ...(status   && status  !== "ALL" && { approvalStatus: status }),
     ...((from || to) && { createdAt: buildDateFilter(from, to) }),
   };
 
   try {
-    const deals = await prisma.deal.findMany({
+    const events = await prisma.commissionEvent.findMany({
       where,
-      select: { createdAt: true, calculatedCommission: true, grossProfit: true, revenue: true, dealType: true },
+      select: { createdAt: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true, eventType: true },
       orderBy: { createdAt: "asc" },
     });
 
     const byMonth: Record<string, { month: string; deals: number; commission: number; grossProfit: number; revenue: number }> = {};
-    for (const d of deals) {
-      const key = d.createdAt.toISOString().slice(0, 7);
+    for (const e of events) {
+      const key = e.createdAt.toISOString().slice(0, 7);
       if (!byMonth[key]) byMonth[key] = { month: key, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
       byMonth[key].deals++;
-      byMonth[key].commission += d.calculatedCommission;
-      byMonth[key].grossProfit += d.grossProfit;
-      byMonth[key].revenue += d.revenue;
+      byMonth[key].commission += e.calculatedCommissionAmount;
+      byMonth[key].grossProfit += e.grossProfitAmount ?? 0;
+      byMonth[key].revenue += e.revenueAmount ?? 0;
     }
 
     const rows = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
@@ -82,36 +82,36 @@ router.get("/commission-by-executive", requireAuth, async (req: Request, res: Re
     tenantId,
     ...(isSales && { salesExecutiveId: req.user!.userId }),
     ...(!isSales && userId && { salesExecutiveId: userId }),
-    ...(dealType && dealType !== "ALL" && { dealType }),
-    ...(status  && status  !== "ALL" && { status }),
+    ...(dealType && dealType !== "ALL" && { eventType: dealType }),
+    ...(status   && status  !== "ALL" && { approvalStatus: status }),
     ...((from || to) && { createdAt: buildDateFilter(from, to) }),
   };
 
   try {
-    const deals = await prisma.deal.findMany({
+    const events = await prisma.commissionEvent.findMany({
       where,
       select: {
         salesExecutiveId: true,
-        calculatedCommission: true,
-        grossProfit: true,
-        revenue: true,
+        calculatedCommissionAmount: true,
+        grossProfitAmount: true,
+        revenueAmount: true,
         salesExecutive: { select: { firstName: true, lastName: true, email: true } },
       },
     });
 
     const byExec: Record<string, { userId: string; name: string; email: string; deals: number; commission: number; grossProfit: number; revenue: number }> = {};
-    for (const d of deals) {
-      const id = d.salesExecutiveId;
+    for (const e of events) {
+      const id = e.salesExecutiveId;
       if (!byExec[id]) byExec[id] = {
         userId: id,
-        name: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`,
-        email: d.salesExecutive.email,
+        name: `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`,
+        email: e.salesExecutive.email,
         deals: 0, commission: 0, grossProfit: 0, revenue: 0,
       };
       byExec[id].deals++;
-      byExec[id].commission += d.calculatedCommission;
-      byExec[id].grossProfit += d.grossProfit;
-      byExec[id].revenue += d.revenue;
+      byExec[id].commission += e.calculatedCommissionAmount;
+      byExec[id].grossProfit += e.grossProfitAmount ?? 0;
+      byExec[id].revenue += e.revenueAmount ?? 0;
     }
 
     const rows = Object.values(byExec).sort((a, b) => b.commission - a.commission);
@@ -139,26 +139,26 @@ router.get("/commission-by-deal-type", requireAuth, async (req: Request, res: Re
     tenantId,
     ...(isSales && { salesExecutiveId: req.user!.userId }),
     ...(!isSales && userId && { salesExecutiveId: userId }),
-    ...(status && status !== "ALL" && { status }),
+    ...(status && status !== "ALL" && { approvalStatus: status }),
     ...((from || to) && { createdAt: buildDateFilter(from, to) }),
   };
 
   try {
-    const types = ["NET_NEW", "RENEWAL", "UPSELL", "CROSS_SELL"] as const;
-    const rows = await Promise.all(types.map(async (t) => {
-      const [agg, count] = await Promise.all([
-        prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true, grossProfit: true, revenue: true } }),
-        prisma.deal.count({ where: { ...where, dealType: t } }),
-      ]);
-      return {
-        dealType: t,
-        deals: count,
-        commission: agg._sum.calculatedCommission ?? 0,
-        grossProfit: agg._sum.grossProfit ?? 0,
-        revenue: agg._sum.revenue ?? 0,
-      };
-    }));
+    const events = await prisma.commissionEvent.findMany({
+      where,
+      select: { eventType: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true },
+    });
 
+    const byType: Record<string, { deals: number; commission: number; grossProfit: number; revenue: number }> = {};
+    for (const e of events) {
+      if (!byType[e.eventType]) byType[e.eventType] = { deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
+      byType[e.eventType].deals++;
+      byType[e.eventType].commission += e.calculatedCommissionAmount;
+      byType[e.eventType].grossProfit += e.grossProfitAmount ?? 0;
+      byType[e.eventType].revenue += e.revenueAmount ?? 0;
+    }
+
+    const rows = Object.entries(byType).map(([dealType, r]) => ({ dealType, ...r }));
     const totalComm = rows.reduce((s, r) => s + r.commission, 0);
     const rowsWithPct = rows.map(r => ({ ...r, percentage: totalComm > 0 ? Math.round((r.commission / totalComm) * 100) : 0 }));
     const totals = rows.reduce((s, r) => ({
@@ -180,34 +180,34 @@ router.get("/pending-approvals", requireAuth, async (req: Request, res: Response
 
   const where: any = {
     tenantId,
-    status: { in: ["SUBMITTED", "PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "CHANGES_REQUESTED"] },
+    approvalStatus: { in: ["PENDING_APPROVAL", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"] },
     ...(userId   && { salesExecutiveId: userId }),
-    ...(dealType && dealType !== "ALL" && { dealType }),
+    ...(dealType && dealType !== "ALL" && { eventType: dealType }),
     ...((from || to) && { createdAt: buildDateFilter(from, to) }),
   };
 
   try {
-    const deals = await prisma.deal.findMany({
+    const events = await prisma.commissionEvent.findMany({
       where,
       include: {
         salesExecutive: { select: { firstName: true, lastName: true } },
-        approvalWorkflows: { orderBy: { approvalLevel: "asc" } },
+        approvals: { orderBy: { approvalStep: "asc" } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    const rows = deals.map(d => ({
-      id: d.id,
-      dealName: d.dealName,
-      customerName: d.customerName,
-      dealType: d.dealType,
-      executiveName: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`,
-      revenue: d.revenue,
-      commission: d.calculatedCommission,
-      status: d.status,
-      submittedAt: d.submittedAt?.toISOString() ?? null,
-      createdAt: d.createdAt.toISOString(),
-      currentStep: d.approvalWorkflows.find(w => w.status === "PENDING")?.stepName ?? "—",
+    const rows = events.map(e => ({
+      id: e.id,
+      dealName: e.eventTitle,
+      customerName: (e.eventDataJson as any)?.customerName ?? (e.eventDataJson as any)?.clientName ?? "—",
+      dealType: e.eventType,
+      executiveName: `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`,
+      revenue: e.revenueAmount ?? 0,
+      commission: e.calculatedCommissionAmount,
+      status: e.approvalStatus,
+      submittedAt: e.submittedAt?.toISOString() ?? null,
+      createdAt: e.createdAt.toISOString(),
+      currentStep: e.approvals.find((a: any) => a.status === "PENDING")?.stepName ?? "—",
     }));
 
     res.json({ rows, total: rows.length, totalCommission: rows.reduce((s, r) => s + r.commission, 0) });
@@ -436,29 +436,36 @@ router.get("/deals", requireAuth, async (req: Request, res: Response) => {
     ...((from || to) && { createdAt: buildDateFilter(from, to) }),
   };
   try {
-    const [total, gpAgg, commAgg, revenueAgg] = await Promise.all([
-      prisma.deal.count({ where }),
-      prisma.deal.aggregate({ where, _sum: { grossProfit: true }, _avg: { grossProfitPercentage: true } }),
-      prisma.deal.aggregate({ where, _sum: { calculatedCommission: true } }),
-      prisma.deal.aggregate({ where, _sum: { revenue: true } }),
+    const [total, commAgg, revenueAgg, gpAgg] = await Promise.all([
+      prisma.commissionEvent.count({ where }),
+      prisma.commissionEvent.aggregate({ where, _sum: { calculatedCommissionAmount: true } }),
+      prisma.commissionEvent.aggregate({ where, _sum: { revenueAmount: true } }),
+      prisma.commissionEvent.aggregate({ where, _sum: { grossProfitAmount: true } }),
     ]);
-    const types = ["NET_NEW", "RENEWAL", "UPSELL", "CROSS_SELL"] as const;
-    const byType = await Promise.all(
-      types.map(t => prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true }, _count: true })
-        .then(r => ({ dealType: t, amount: r._sum.calculatedCommission ?? 0, count: r._count, percentage: 0 })))
-    );
-    const totalComm = byType.reduce((s, r) => s + r.amount, 0);
-    byType.forEach(r => { r.percentage = totalComm > 0 ? Math.round((r.amount / totalComm) * 100) : 0; });
-    const statuses = ["DRAFT", "SUBMITTED", "PENDING_APPROVAL", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "REJECTED", "CANCELLED"] as const;
+    const events = await prisma.commissionEvent.findMany({ where, select: { eventType: true, calculatedCommissionAmount: true } });
+    const byTypeMap: Record<string, { amount: number; count: number }> = {};
+    for (const e of events) {
+      if (!byTypeMap[e.eventType]) byTypeMap[e.eventType] = { amount: 0, count: 0 };
+      byTypeMap[e.eventType].amount += e.calculatedCommissionAmount;
+      byTypeMap[e.eventType].count++;
+    }
+    const totalComm = commAgg._sum.calculatedCommissionAmount ?? 0;
+    const byType = Object.entries(byTypeMap).map(([dealType, v]) => ({
+      dealType,
+      amount: v.amount,
+      count: v.count,
+      percentage: totalComm > 0 ? Math.round((v.amount / totalComm) * 100) : 0,
+    }));
+    const approvalStatuses = ["DRAFT", "PENDING_APPROVAL", "FINANCE_APPROVED", "EXECUTIVE_APPROVED", "APPROVED", "REJECTED", "CHANGES_REQUESTED"] as const;
     const byStatus = await Promise.all(
-      statuses.map(s => prisma.deal.count({ where: { ...where, status: s } }).then(c => ({ status: s, count: c })))
+      approvalStatuses.map(s => prisma.commissionEvent.count({ where: { ...where, approvalStatus: s } }).then(c => ({ status: s, count: c })))
     );
     res.json({
       totalDeals: total,
-      totalRevenue: revenueAgg._sum.revenue ?? 0,
-      totalGrossProfit: gpAgg._sum.grossProfit ?? 0,
-      avgGrossProfitPercentage: Math.round((gpAgg._avg.grossProfitPercentage ?? 0) * 100) / 100,
-      totalCommission: commAgg._sum.calculatedCommission ?? 0,
+      totalRevenue: revenueAgg._sum.revenueAmount ?? 0,
+      totalGrossProfit: gpAgg._sum.grossProfitAmount ?? 0,
+      avgGrossProfitPercentage: 0,
+      totalCommission: totalComm,
       byType, byStatus,
     });
   } catch (err) {
@@ -498,17 +505,17 @@ router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
       const where: any = { tenantId,
         ...(isSales && { salesExecutiveId: req.user!.userId }),
         ...(query.userId && !isSales && { salesExecutiveId: query.userId }),
-        ...(query.dealType && query.dealType !== "ALL" && { dealType: query.dealType }),
-        ...(query.status  && query.status  !== "ALL" && { status: query.status }),
+        ...(query.dealType && query.dealType !== "ALL" && { eventType: query.dealType }),
+        ...(query.status  && query.status  !== "ALL" && { approvalStatus: query.status }),
         ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
       };
-      const deals = await prisma.deal.findMany({ where, select: { createdAt: true, calculatedCommission: true, grossProfit: true, revenue: true } });
+      const events = await prisma.commissionEvent.findMany({ where, select: { createdAt: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true } });
       const byMonth: Record<string, any> = {};
-      for (const d of deals) {
-        const k = d.createdAt.toISOString().slice(0, 7);
+      for (const e of events) {
+        const k = e.createdAt.toISOString().slice(0, 7);
         if (!byMonth[k]) byMonth[k] = { month: k, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
-        byMonth[k].deals++; byMonth[k].commission += d.calculatedCommission;
-        byMonth[k].grossProfit += d.grossProfit; byMonth[k].revenue += d.revenue;
+        byMonth[k].deals++; byMonth[k].commission += e.calculatedCommissionAmount;
+        byMonth[k].grossProfit += e.grossProfitAmount ?? 0; byMonth[k].revenue += e.revenueAmount ?? 0;
       }
       const rows = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
       const ws = wb.addWorksheet("Commission by Month");
@@ -534,17 +541,17 @@ router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
       const where: any = { tenantId,
         ...(isSales && { salesExecutiveId: req.user!.userId }),
         ...(query.userId && !isSales && { salesExecutiveId: query.userId }),
-        ...(query.dealType && query.dealType !== "ALL" && { dealType: query.dealType }),
-        ...(query.status  && query.status  !== "ALL" && { status: query.status }),
+        ...(query.dealType && query.dealType !== "ALL" && { eventType: query.dealType }),
+        ...(query.status  && query.status  !== "ALL" && { approvalStatus: query.status }),
         ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
       };
-      const deals = await prisma.deal.findMany({ where, select: { salesExecutiveId: true, calculatedCommission: true, grossProfit: true, revenue: true, salesExecutive: { select: { firstName: true, lastName: true, email: true } } } });
+      const events = await prisma.commissionEvent.findMany({ where, select: { salesExecutiveId: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true, salesExecutive: { select: { firstName: true, lastName: true, email: true } } } });
       const byExec: Record<string, any> = {};
-      for (const d of deals) {
-        const id = d.salesExecutiveId;
-        if (!byExec[id]) byExec[id] = { name: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`, email: d.salesExecutive.email, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
-        byExec[id].deals++; byExec[id].commission += d.calculatedCommission;
-        byExec[id].grossProfit += d.grossProfit; byExec[id].revenue += d.revenue;
+      for (const e of events) {
+        const id = e.salesExecutiveId;
+        if (!byExec[id]) byExec[id] = { name: `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`, email: e.salesExecutive.email, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
+        byExec[id].deals++; byExec[id].commission += e.calculatedCommissionAmount;
+        byExec[id].grossProfit += e.grossProfitAmount ?? 0; byExec[id].revenue += e.revenueAmount ?? 0;
       }
       const rows = Object.values(byExec).sort((a, b) => b.commission - a.commission);
       const ws = wb.addWorksheet("Commission by Executive");
@@ -567,21 +574,21 @@ router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
       const where: any = { tenantId,
         ...(isSales && { salesExecutiveId: req.user!.userId }),
         ...(query.userId && !isSales && { salesExecutiveId: query.userId }),
-        ...(query.status && query.status !== "ALL" && { status: query.status }),
+        ...(query.status && query.status !== "ALL" && { approvalStatus: query.status }),
         ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
       };
-      const types = ["NET_NEW","RENEWAL","UPSELL","CROSS_SELL"] as const;
-      const rows = await Promise.all(types.map(async t => {
-        const [agg, count] = await Promise.all([
-          prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true, grossProfit: true, revenue: true } }),
-          prisma.deal.count({ where: { ...where, dealType: t } }),
-        ]);
-        return { dealType: t, deals: count, revenue: agg._sum.revenue??0, grossProfit: agg._sum.grossProfit??0, commission: agg._sum.calculatedCommission??0 };
-      }));
-      const ws = wb.addWorksheet("Commission by Deal Type");
+      const events = await prisma.commissionEvent.findMany({ where, select: { eventType: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true } });
+      const byType: Record<string, any> = {};
+      for (const e of events) {
+        if (!byType[e.eventType]) byType[e.eventType] = { dealType: e.eventType, deals: 0, commission: 0, grossProfit: 0, revenue: 0 };
+        byType[e.eventType].deals++; byType[e.eventType].commission += e.calculatedCommissionAmount;
+        byType[e.eventType].grossProfit += e.grossProfitAmount ?? 0; byType[e.eventType].revenue += e.revenueAmount ?? 0;
+      }
+      const rows = Object.values(byType).sort((a, b) => b.commission - a.commission);
+      const ws = wb.addWorksheet("Commission by Event Type");
       addHeader(ws, [
-        { header: "Deal Type", key: "dealType", width: 16 },
-        { header: "Deals", key: "deals", width: 10 },
+        { header: "Event Type", key: "dealType", width: 16 },
+        { header: "Events", key: "deals", width: 10 },
         { header: "Revenue", key: "revenue", width: 18, numFmt: currencyFmt },
         { header: "Gross Profit", key: "grossProfit", width: 18, numFmt: currencyFmt },
         { header: "Commission", key: "commission", width: 18, numFmt: currencyFmt },
@@ -594,25 +601,25 @@ router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
     }
 
     else if (type === "pending-approvals") {
-      const where: any = { tenantId, status: { in: ["SUBMITTED","PENDING_APPROVAL","MANAGER_APPROVED","FINANCE_APPROVED","EXECUTIVE_APPROVED","CHANGES_REQUESTED"] },
+      const where: any = { tenantId,
+        approvalStatus: { in: ["PENDING_APPROVAL","FINANCE_APPROVED","EXECUTIVE_APPROVED"] },
         ...(query.userId && { salesExecutiveId: query.userId }),
-        ...(query.dealType && query.dealType !== "ALL" && { dealType: query.dealType }),
+        ...(query.dealType && query.dealType !== "ALL" && { eventType: query.dealType }),
         ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
       };
-      const deals = await prisma.deal.findMany({ where, include: { salesExecutive: { select: { firstName: true, lastName: true } } }, orderBy: { createdAt: "desc" } });
+      const events = await prisma.commissionEvent.findMany({ where, include: { salesExecutive: { select: { firstName: true, lastName: true } } }, orderBy: { createdAt: "desc" } });
       const ws = wb.addWorksheet("Pending Approvals");
       addHeader(ws, [
-        { header: "Deal Name", key: "dealName", width: 30 },
-        { header: "Customer", key: "customerName", width: 25 },
+        { header: "Event Name", key: "eventTitle", width: 30 },
+        { header: "Event Type", key: "eventType", width: 14 },
         { header: "Executive", key: "exec", width: 22 },
-        { header: "Type", key: "dealType", width: 12 },
         { header: "Revenue", key: "revenue", width: 18, numFmt: currencyFmt },
         { header: "Commission", key: "commission", width: 18, numFmt: currencyFmt },
         { header: "Status", key: "status", width: 22 },
         { header: "Submitted", key: "submittedAt", width: 14 },
       ]);
-      deals.forEach((d, i) => {
-        const row = ws.addRow({ dealName: d.dealName, customerName: d.customerName, exec: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`, dealType: d.dealType, revenue: d.revenue, commission: d.calculatedCommission, status: d.status, submittedAt: d.submittedAt ? d.submittedAt.toISOString().slice(0,10) : "—" });
+      events.forEach((e, i) => {
+        const row = ws.addRow({ eventTitle: e.eventTitle, eventType: e.eventType, exec: `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`, revenue: e.revenueAmount ?? 0, commission: e.calculatedCommissionAmount, status: e.approvalStatus, submittedAt: e.submittedAt ? e.submittedAt.toISOString().slice(0,10) : "—" });
         if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
         ["revenue","commission"].forEach(k => { const c = row.getCell(k); c.numFmt = currencyFmt; });
       });
@@ -796,34 +803,36 @@ router.get("/:type/pdf", requireAuth, async (req: Request, res: Response) => {
 
     if (type === "commission-by-month") {
       const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
-      const deals = await prisma.deal.findMany({ where, select: { createdAt: true, calculatedCommission: true, grossProfit: true, revenue: true } });
+      const events = await prisma.commissionEvent.findMany({ where, select: { createdAt: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true } });
       const byMonth: Record<string, any> = {};
-      for (const d of deals) { const k = d.createdAt.toISOString().slice(0,7); if (!byMonth[k]) byMonth[k] = { month: k, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byMonth[k].deals++; byMonth[k].commission += d.calculatedCommission; byMonth[k].grossProfit += d.grossProfit; byMonth[k].revenue += d.revenue; }
+      for (const e of events) { const k = e.createdAt.toISOString().slice(0,7); if (!byMonth[k]) byMonth[k] = { month: k, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byMonth[k].deals++; byMonth[k].commission += e.calculatedCommissionAmount; byMonth[k].grossProfit += e.grossProfitAmount??0; byMonth[k].revenue += e.revenueAmount??0; }
       const rows = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
       const W = pageW; const cols = [W*0.15, W*0.1, W*0.25, W*0.25, W*0.25];
-      drawTable(["Month","Deals","Revenue","Gross Profit","Commission"], rows.map(r => [r.month, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
+      drawTable(["Month","Events","Revenue","Gross Profit","Commission"], rows.map(r => [r.month, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
       const tot = rows.reduce((s: any, r: any) => ({ deals: s.deals+r.deals, revenue: s.revenue+r.revenue, grossProfit: s.grossProfit+r.grossProfit, commission: s.commission+r.commission }), { deals:0,revenue:0,grossProfit:0,commission:0 });
       doc.rect(40, doc.y, pageW, 20).fill("#E8E8FF");
-      doc.fillColor("#1f2937").fontSize(9).font("Helvetica-Bold").text(`TOTAL  —  ${tot.deals} deals  |  ${fmtZAR(tot.revenue)} revenue  |  ${fmtZAR(tot.grossProfit)} GP  |  ${fmtZAR(tot.commission)} commission`, 44, doc.y + 6, { width: pageW - 8 });
+      doc.fillColor("#1f2937").fontSize(9).font("Helvetica-Bold").text(`TOTAL  —  ${tot.deals} events  |  ${fmtZAR(tot.revenue)} revenue  |  ${fmtZAR(tot.grossProfit)} GP  |  ${fmtZAR(tot.commission)} commission`, 44, doc.y + 6, { width: pageW - 8 });
       doc.y += 24;
     }
 
     else if (type === "commission-by-executive") {
       const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
-      const deals = await prisma.deal.findMany({ where, select: { salesExecutiveId: true, calculatedCommission: true, grossProfit: true, revenue: true, salesExecutive: { select: { firstName: true, lastName: true } } } });
+      const events = await prisma.commissionEvent.findMany({ where, select: { salesExecutiveId: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true, salesExecutive: { select: { firstName: true, lastName: true } } } });
       const byExec: Record<string, any> = {};
-      for (const d of deals) { const id = d.salesExecutiveId; if (!byExec[id]) byExec[id] = { name: `${d.salesExecutive.firstName} ${d.salesExecutive.lastName}`, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byExec[id].deals++; byExec[id].commission += d.calculatedCommission; byExec[id].grossProfit += d.grossProfit; byExec[id].revenue += d.revenue; }
+      for (const e of events) { const id = e.salesExecutiveId; if (!byExec[id]) byExec[id] = { name: `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byExec[id].deals++; byExec[id].commission += e.calculatedCommissionAmount; byExec[id].grossProfit += e.grossProfitAmount??0; byExec[id].revenue += e.revenueAmount??0; }
       const rows = Object.values(byExec).sort((a, b) => b.commission - a.commission);
       const W = pageW; const cols = [W*0.3, W*0.1, W*0.2, W*0.2, W*0.2];
-      drawTable(["Executive","Deals","Revenue","Gross Profit","Commission"], rows.map(r => [r.name, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
+      drawTable(["Executive","Events","Revenue","Gross Profit","Commission"], rows.map(r => [r.name, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
     }
 
     else if (type === "commission-by-deal-type") {
       const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
-      const types = ["NET_NEW","RENEWAL","UPSELL","CROSS_SELL"] as const;
-      const rows = await Promise.all(types.map(async t => { const [agg,count] = await Promise.all([prisma.deal.aggregate({ where: { ...where, dealType: t }, _sum: { calculatedCommission: true, grossProfit: true, revenue: true } }), prisma.deal.count({ where: { ...where, dealType: t } })]); return { dealType: t, deals: count, revenue: agg._sum.revenue??0, grossProfit: agg._sum.grossProfit??0, commission: agg._sum.calculatedCommission??0 }; }));
+      const events = await prisma.commissionEvent.findMany({ where, select: { eventType: true, calculatedCommissionAmount: true, grossProfitAmount: true, revenueAmount: true } });
+      const byType: Record<string, any> = {};
+      for (const e of events) { if (!byType[e.eventType]) byType[e.eventType] = { dealType: e.eventType, deals: 0, commission: 0, grossProfit: 0, revenue: 0 }; byType[e.eventType].deals++; byType[e.eventType].commission += e.calculatedCommissionAmount; byType[e.eventType].grossProfit += e.grossProfitAmount??0; byType[e.eventType].revenue += e.revenueAmount??0; }
+      const rows = Object.values(byType).sort((a, b) => b.commission - a.commission);
       const W = pageW; const cols = [W*0.2, W*0.1, W*0.23, W*0.23, W*0.24];
-      drawTable(["Deal Type","Deals","Revenue","Gross Profit","Commission"], rows.map(r => [r.dealType, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
+      drawTable(["Event Type","Events","Revenue","Gross Profit","Commission"], rows.map(r => [r.dealType, String(r.deals), fmtZAR(r.revenue), fmtZAR(r.grossProfit), fmtZAR(r.commission)]), cols);
     }
 
     else if (type === "payout-requests" || type === "payroll-export") {

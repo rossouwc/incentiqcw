@@ -136,9 +136,12 @@ router.get("/field-config", requireAuth, async (req: Request, res: Response) => 
 
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   const isSalesExec = req.user!.role === "SALES_EXECUTIVE";
+  const { approvalStatus, salesExecutiveId: execFilter } = req.query as Record<string, string | undefined>;
   const where: any = {
     tenantId: req.user!.tenantId,
     ...(isSalesExec && { salesExecutiveId: req.user!.userId }),
+    ...(!isSalesExec && execFilter && { salesExecutiveId: execFilter }),
+    ...(approvalStatus && { approvalStatus }),
   };
   try {
     const events = await prisma.commissionEvent.findMany({
