@@ -474,6 +474,256 @@ router.get("/deals", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ─── Clawback Reports (8 endpoints) ──────────────────────────────────────────
+
+function clawbackWhere(tenantId: string, isSales: boolean, execId: string, q: Record<string, string | undefined>): any {
+  return {
+    tenantId,
+    ...(isSales  && { salesExecutiveId: execId }),
+    ...(!isSales && q.userId && q.userId !== "ALL" && { salesExecutiveId: q.userId }),
+    ...(q.status         && q.status         !== "ALL" && { status:         q.status as any }),
+    ...(q.recoveryStatus && q.recoveryStatus !== "ALL" && { recoveryStatus: q.recoveryStatus as any }),
+    ...(q.reason         && q.reason         !== "ALL" && { reasonCategory: q.reason as any }),
+    ...((q.from || q.to) && { createdAt: buildDateFilter(q.from, q.to) }),
+  };
+}
+
+const cbInclude = {
+  salesExecutive:  { select: { firstName: true, lastName: true, email: true } },
+  commissionEvent: { select: { eventTitle: true } },
+};
+
+router.get("/clawback-summary", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  try {
+    const rows = await prisma.commissionClawback.findMany({
+      where:  clawbackWhere(tenantId, isSales, req.user!.userId, q),
+      select: { status: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true },
+    });
+    const byStatus: Record<string, { status: string; count: number; amount: number; recovered: number; outstanding: number }> = {};
+    for (const c of rows) {
+      if (!byStatus[c.status]) byStatus[c.status] = { status: c.status, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+      byStatus[c.status].count++;
+      byStatus[c.status].amount      += Number(c.clawbackAmount);
+      byStatus[c.status].recovered   += Number(c.recoveredAmount);
+      byStatus[c.status].outstanding += Number(c.outstandingAmount);
+    }
+    const statusRows = Object.values(byStatus);
+    const totals = statusRows.reduce((s, r) => ({ count: s.count + r.count, amount: s.amount + r.amount, recovered: s.recovered + r.recovered, outstanding: s.outstanding + r.outstanding }), { count: 0, amount: 0, recovered: 0, outstanding: 0 });
+    res.json({ rows: statusRows, totals });
+  } catch (err) { logger.error({ err }, "ClawbackSummary error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-outstanding", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  const where: any = {
+    tenantId,
+    outstandingAmount: { gt: 0 },
+    status: { in: ["APPROVED", "EXECUTED"] },
+    ...(isSales  && { salesExecutiveId: req.user!.userId }),
+    ...(!isSales && q.userId && q.userId !== "ALL" && { salesExecutiveId: q.userId }),
+    ...(q.reason && q.reason !== "ALL" && { reasonCategory: q.reason }),
+    ...((q.from || q.to) && { createdAt: buildDateFilter(q.from, q.to) }),
+  };
+  try {
+    const items = await prisma.commissionClawback.findMany({ where, include: cbInclude, orderBy: { outstandingAmount: "desc" } });
+    const rows = items.map(c => ({
+      id: c.id,
+      eventTitle:       (c.commissionEvent as any).eventTitle,
+      executiveName:    `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`,
+      executiveEmail:   c.salesExecutive.email,
+      reasonCategory:   c.reasonCategory,
+      clawbackType:     c.clawbackType,
+      clawbackAmount:   Number(c.clawbackAmount),
+      recoveredAmount:  Number(c.recoveredAmount),
+      outstandingAmount: Number(c.outstandingAmount),
+      recoveryStatus:   c.recoveryStatus ?? "PENDING",
+      status:           c.status,
+      executedAt:       c.executedAt?.toISOString().slice(0, 10) ?? null,
+    }));
+    const totals = rows.reduce((s, r) => ({ count: s.count + 1, clawbackAmount: s.clawbackAmount + r.clawbackAmount, recoveredAmount: s.recoveredAmount + r.recoveredAmount, outstandingAmount: s.outstandingAmount + r.outstandingAmount }), { count: 0, clawbackAmount: 0, recoveredAmount: 0, outstandingAmount: 0 });
+    res.json({ rows, totals });
+  } catch (err) { logger.error({ err }, "ClawbackOutstanding error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-transactions", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  const where: any = {
+    tenantId,
+    referenceType: "CLAWBACK",
+    ...((q.from || q.to) && { createdAt: buildDateFilter(q.from, q.to) }),
+    ...(isSales  && { wallet: { userId: req.user!.userId } }),
+    ...(!isSales && q.userId && q.userId !== "ALL" && { wallet: { userId: q.userId } }),
+  };
+  try {
+    const txns = await prisma.walletTransaction.findMany({
+      where,
+      include: { wallet: { include: { user: { select: { firstName: true, lastName: true, email: true } } } } },
+      orderBy: { createdAt: "desc" },
+      take: 2000,
+    });
+    const rows = txns.map(t => ({
+      id:              t.id,
+      date:            t.createdAt.toISOString().slice(0, 10),
+      transactionType: t.transactionType,
+      executiveName:   `${t.wallet.user.firstName} ${t.wallet.user.lastName}`,
+      executiveEmail:  t.wallet.user.email,
+      description:     t.description,
+      amount:          Number(t.amount),
+      referenceId:     t.referenceId ?? "",
+    }));
+    const totals = { count: rows.length, totalAmount: rows.reduce((s, r) => s + r.amount, 0) };
+    res.json({ rows, totals });
+  } catch (err) { logger.error({ err }, "ClawbackTransactions error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-by-executive", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  try {
+    const items: any[] = await prisma.commissionClawback.findMany({
+      where: clawbackWhere(tenantId, isSales, req.user!.userId, q),
+      include: { salesExecutive: { select: { firstName: true, lastName: true, email: true } } },
+    });
+    const byExec: Record<string, any> = {};
+    for (const c of items) {
+      const id = c.salesExecutiveId;
+      if (!byExec[id]) byExec[id] = { userId: id, name: `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`, email: c.salesExecutive.email, count: 0, amount: 0, recovered: 0, outstanding: 0, active: 0, waived: 0, disputed: 0 };
+      byExec[id].count++;
+      byExec[id].amount      += Number(c.clawbackAmount);
+      byExec[id].recovered   += Number(c.recoveredAmount);
+      byExec[id].outstanding += Number(c.outstandingAmount);
+      if (["APPROVED","EXECUTED","PENDING_APPROVAL"].includes(c.status)) byExec[id].active++;
+      if (c.status === "WAIVED")    byExec[id].waived++;
+      if (c.status === "DISPUTED")  byExec[id].disputed++;
+    }
+    const rows = Object.values(byExec).sort((a, b) => b.amount - a.amount);
+    const totals = rows.reduce((s: any, r: any) => ({ count: s.count + r.count, amount: s.amount + r.amount, recovered: s.recovered + r.recovered, outstanding: s.outstanding + r.outstanding }), { count: 0, amount: 0, recovered: 0, outstanding: 0 });
+    res.json({ rows, totals });
+  } catch (err) { logger.error({ err }, "ClawbackByExecutive error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-by-industry", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { industry: true, companyName: true } });
+    const items = await prisma.commissionClawback.findMany({
+      where: clawbackWhere(tenantId, isSales, req.user!.userId, q),
+      select: { clawbackType: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true, status: true },
+    });
+    const byType: Record<string, any> = {};
+    for (const c of items) {
+      const t = c.clawbackType;
+      if (!byType[t]) byType[t] = { clawbackType: t, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+      byType[t].count++;
+      byType[t].amount      += Number(c.clawbackAmount);
+      byType[t].recovered   += Number(c.recoveredAmount);
+      byType[t].outstanding += Number(c.outstandingAmount);
+    }
+    const rows = Object.values(byType).sort((a, b) => b.amount - a.amount);
+    const totalAmt = rows.reduce((s, r) => s + r.amount, 0);
+    const rowsWithPct = rows.map(r => ({ ...r, percentage: totalAmt > 0 ? Math.round((r.amount / totalAmt) * 100) : 0 }));
+    const totals = rows.reduce((s: any, r: any) => ({ count: s.count + r.count, amount: s.amount + r.amount, recovered: s.recovered + r.recovered, outstanding: s.outstanding + r.outstanding }), { count: 0, amount: 0, recovered: 0, outstanding: 0 });
+    res.json({ rows: rowsWithPct, totals, industry: tenant?.industry ?? "CUSTOM", tenantName: tenant?.companyName ?? "" });
+  } catch (err) { logger.error({ err }, "ClawbackByIndustry error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-by-reason", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  try {
+    const items = await prisma.commissionClawback.findMany({
+      where: clawbackWhere(tenantId, isSales, req.user!.userId, q),
+      select: { reasonCategory: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true },
+    });
+    const byReason: Record<string, any> = {};
+    for (const c of items) {
+      const r = c.reasonCategory;
+      if (!byReason[r]) byReason[r] = { reasonCategory: r, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+      byReason[r].count++;
+      byReason[r].amount      += Number(c.clawbackAmount);
+      byReason[r].recovered   += Number(c.recoveredAmount);
+      byReason[r].outstanding += Number(c.outstandingAmount);
+    }
+    const rows = Object.values(byReason).sort((a, b) => b.amount - a.amount);
+    const totalAmt = rows.reduce((s, r) => s + r.amount, 0);
+    const rowsWithPct = rows.map(r => ({ ...r, percentage: totalAmt > 0 ? Math.round((r.amount / totalAmt) * 100) : 0 }));
+    const totals = rows.reduce((s: any, r: any) => ({ count: s.count + r.count, amount: s.amount + r.amount, recovered: s.recovered + r.recovered, outstanding: s.outstanding + r.outstanding }), { count: 0, amount: 0, recovered: 0, outstanding: 0 });
+    res.json({ rows: rowsWithPct, totals });
+  } catch (err) { logger.error({ err }, "ClawbackByReason error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-waived", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  const where: any = {
+    tenantId,
+    status: "WAIVED",
+    ...(isSales  && { salesExecutiveId: req.user!.userId }),
+    ...(!isSales && q.userId && q.userId !== "ALL" && { salesExecutiveId: q.userId }),
+    ...(q.reason && q.reason !== "ALL" && { reasonCategory: q.reason }),
+    ...((q.from || q.to) && { createdAt: buildDateFilter(q.from, q.to) }),
+  };
+  try {
+    const items = await prisma.commissionClawback.findMany({ where, include: cbInclude, orderBy: { createdAt: "desc" } });
+    const rows = items.map(c => ({
+      id:             c.id,
+      eventTitle:     (c.commissionEvent as any).eventTitle,
+      executiveName:  `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`,
+      executiveEmail: c.salesExecutive.email,
+      reasonCategory: c.reasonCategory,
+      clawbackType:   c.clawbackType,
+      clawbackAmount: Number(c.clawbackAmount),
+      waiveReason:    c.waiveReason ?? "",
+      createdAt:      c.createdAt.toISOString().slice(0, 10),
+    }));
+    const totals = { count: rows.length, totalWaived: rows.reduce((s, r) => s + r.clawbackAmount, 0) };
+    res.json({ rows, totals });
+  } catch (err) { logger.error({ err }, "ClawbackWaived error"); res.status(500).json({ error: "Server error" }); }
+});
+
+router.get("/clawback-disputed", requireAuth, async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const tenantId = req.user!.tenantId;
+  const isSales  = req.user!.role === "SALES_EXECUTIVE";
+  const where: any = {
+    tenantId,
+    status: "DISPUTED",
+    ...(isSales  && { salesExecutiveId: req.user!.userId }),
+    ...(!isSales && q.userId && q.userId !== "ALL" && { salesExecutiveId: q.userId }),
+    ...(q.reason && q.reason !== "ALL" && { reasonCategory: q.reason }),
+    ...((q.from || q.to) && { createdAt: buildDateFilter(q.from, q.to) }),
+  };
+  try {
+    const items = await prisma.commissionClawback.findMany({ where, include: cbInclude, orderBy: { disputedAt: "desc" } });
+    const rows = items.map(c => ({
+      id:             c.id,
+      eventTitle:     (c.commissionEvent as any).eventTitle,
+      executiveName:  `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`,
+      executiveEmail: c.salesExecutive.email,
+      reasonCategory: c.reasonCategory,
+      clawbackType:   c.clawbackType,
+      clawbackAmount: Number(c.clawbackAmount),
+      disputeNote:    c.disputeNote ?? "",
+      disputedAt:     c.disputedAt?.toISOString().slice(0, 10) ?? "",
+      createdAt:      c.createdAt.toISOString().slice(0, 10),
+    }));
+    const totals = { count: rows.length, totalDisputed: rows.reduce((s, r) => s + r.clawbackAmount, 0) };
+    res.json({ rows, totals });
+  } catch (err) { logger.error({ err }, "ClawbackDisputed error"); res.status(500).json({ error: "Server error" }); }
+});
+
 // ─── Excel Export ─────────────────────────────────────────────────────────────
 router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
   const { type } = req.params;
@@ -714,6 +964,205 @@ router.get("/:type/excel", requireAuth, async (req: Request, res: Response) => {
       ]);
       txns.forEach((t, i) => {
         const row = ws.addRow({ createdAt: t.createdAt.toISOString().replace("T"," ").slice(0,19), transactionType: t.transactionType, actor: `${t.wallet.user.firstName} ${t.wallet.user.lastName}`, description: t.description, amount: t.amount, referenceId: t.referenceId ?? "" });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        row.getCell("amount").numFmt = currencyFmt;
+      });
+    }
+
+    else if (type === "clawback-summary") {
+      const where: any = {
+        tenantId,
+        ...(isSales && { salesExecutiveId: req.user!.userId }),
+        ...(!isSales && query.userId && query.userId !== "ALL" && { salesExecutiveId: query.userId }),
+        ...(query.status && query.status !== "ALL" && { status: query.status }),
+        ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }),
+      };
+      const rows = await prisma.commissionClawback.findMany({ where, select: { status: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true } });
+      const byStatus: Record<string, any> = {};
+      for (const c of rows) {
+        if (!byStatus[c.status]) byStatus[c.status] = { status: c.status, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+        byStatus[c.status].count++; byStatus[c.status].amount += Number(c.clawbackAmount); byStatus[c.status].recovered += Number(c.recoveredAmount); byStatus[c.status].outstanding += Number(c.outstandingAmount);
+      }
+      const statusRows = Object.values(byStatus);
+      const ws = wb.addWorksheet("Clawback Summary");
+      addHeader(ws, [
+        { header: "Status", key: "status", width: 22 },
+        { header: "Count", key: "count", width: 10 },
+        { header: "Clawback Amount", key: "amount", width: 20, numFmt: currencyFmt },
+        { header: "Recovered", key: "recovered", width: 20, numFmt: currencyFmt },
+        { header: "Outstanding", key: "outstanding", width: 20, numFmt: currencyFmt },
+      ]);
+      statusRows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["amount","recovered","outstanding"].forEach(k => { row.getCell(k).numFmt = currencyFmt; });
+      });
+      const tot = statusRows.reduce((s: any, r: any) => ({ count: s.count+r.count, amount: s.amount+r.amount, recovered: s.recovered+r.recovered, outstanding: s.outstanding+r.outstanding }), { count:0,amount:0,recovered:0,outstanding:0 });
+      const totRow = ws.addRow({ status: "TOTAL", ...tot });
+      totRow.font = { bold: true }; totRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE8E8" } };
+      ["amount","recovered","outstanding"].forEach(k => { totRow.getCell(k).numFmt = currencyFmt; });
+    }
+
+    else if (type === "clawback-outstanding") {
+      const where: any = { tenantId, outstandingAmount: { gt: 0 }, status: { in: ["APPROVED","EXECUTED"] }, ...(isSales && { salesExecutiveId: req.user!.userId }), ...(!isSales && query.userId && query.userId !== "ALL" && { salesExecutiveId: query.userId }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const items = await prisma.commissionClawback.findMany({ where, include: { salesExecutive: { select: { firstName: true, lastName: true, email: true } }, commissionEvent: { select: { eventTitle: true } } }, orderBy: { outstandingAmount: "desc" } });
+      const ws = wb.addWorksheet("Outstanding Recovery");
+      addHeader(ws, [
+        { header: "Event", key: "event", width: 30 },
+        { header: "Executive", key: "exec", width: 25 },
+        { header: "Reason", key: "reason", width: 20 },
+        { header: "Clawback Amount", key: "clawbackAmount", width: 18, numFmt: currencyFmt },
+        { header: "Recovered", key: "recoveredAmount", width: 18, numFmt: currencyFmt },
+        { header: "Outstanding", key: "outstandingAmount", width: 18, numFmt: currencyFmt },
+        { header: "Recovery Status", key: "recoveryStatus", width: 20 },
+        { header: "Status", key: "status", width: 16 },
+        { header: "Executed", key: "executedAt", width: 12 },
+      ]);
+      items.forEach((c, i) => {
+        const row = ws.addRow({ event: (c.commissionEvent as any).eventTitle, exec: `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`, reason: c.reasonCategory, clawbackAmount: Number(c.clawbackAmount), recoveredAmount: Number(c.recoveredAmount), outstandingAmount: Number(c.outstandingAmount), recoveryStatus: c.recoveryStatus ?? "PENDING", status: c.status, executedAt: c.executedAt ? c.executedAt.toISOString().slice(0,10) : "—" });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["clawbackAmount","recoveredAmount","outstandingAmount"].forEach(k => { row.getCell(k).numFmt = currencyFmt; });
+      });
+      const tot = items.reduce((s,c) => ({ clawbackAmount: s.clawbackAmount+Number(c.clawbackAmount), recoveredAmount: s.recoveredAmount+Number(c.recoveredAmount), outstandingAmount: s.outstandingAmount+Number(c.outstandingAmount) }), { clawbackAmount:0,recoveredAmount:0,outstandingAmount:0 });
+      const totRow = ws.addRow({ event: "TOTAL", clawbackAmount: tot.clawbackAmount, recoveredAmount: tot.recoveredAmount, outstandingAmount: tot.outstandingAmount });
+      totRow.font = { bold: true }; totRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE8E8" } };
+      ["clawbackAmount","recoveredAmount","outstandingAmount"].forEach(k => { totRow.getCell(k).numFmt = currencyFmt; });
+    }
+
+    else if (type === "clawback-transactions") {
+      const where: any = { tenantId, referenceType: "CLAWBACK", ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }), ...(isSales && { wallet: { userId: req.user!.userId } }), ...(!isSales && query.userId && query.userId !== "ALL" && { wallet: { userId: query.userId } }) };
+      const txns = await prisma.walletTransaction.findMany({ where, include: { wallet: { include: { user: { select: { firstName: true, lastName: true, email: true } } } } }, orderBy: { createdAt: "desc" }, take: 2000 });
+      const ws = wb.addWorksheet("Recovery Transactions");
+      addHeader(ws, [
+        { header: "Date", key: "date", width: 14 },
+        { header: "Type", key: "transactionType", width: 24 },
+        { header: "Executive", key: "exec", width: 25 },
+        { header: "Description", key: "description", width: 40 },
+        { header: "Amount", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "Reference", key: "referenceId", width: 34 },
+      ]);
+      txns.forEach((t, i) => {
+        const row = ws.addRow({ date: t.createdAt.toISOString().slice(0,10), transactionType: t.transactionType, exec: `${t.wallet.user.firstName} ${t.wallet.user.lastName}`, description: t.description, amount: Number(t.amount), referenceId: t.referenceId ?? "" });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        row.getCell("amount").numFmt = currencyFmt;
+      });
+    }
+
+    else if (type === "clawback-by-executive") {
+      const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...(!isSales && query.userId && query.userId !== "ALL" && { salesExecutiveId: query.userId }), ...(query.status && query.status !== "ALL" && { status: query.status }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const items = await prisma.commissionClawback.findMany({ where, select: { salesExecutiveId: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true, status: true, salesExecutive: { select: { firstName: true, lastName: true, email: true } } } });
+      const byExec: Record<string, any> = {};
+      for (const c of items) {
+        const id = c.salesExecutiveId;
+        if (!byExec[id]) byExec[id] = { name: `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`, email: c.salesExecutive.email, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+        byExec[id].count++; byExec[id].amount += Number(c.clawbackAmount); byExec[id].recovered += Number(c.recoveredAmount); byExec[id].outstanding += Number(c.outstandingAmount);
+      }
+      const rows = Object.values(byExec).sort((a, b) => b.amount - a.amount);
+      const ws = wb.addWorksheet("Clawback by Executive");
+      addHeader(ws, [
+        { header: "Executive", key: "name", width: 25 },
+        { header: "Email", key: "email", width: 30 },
+        { header: "Count", key: "count", width: 10 },
+        { header: "Total Amount", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "Recovered", key: "recovered", width: 18, numFmt: currencyFmt },
+        { header: "Outstanding", key: "outstanding", width: 18, numFmt: currencyFmt },
+      ]);
+      rows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["amount","recovered","outstanding"].forEach(k => { row.getCell(k).numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "clawback-by-industry") {
+      const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...(query.status && query.status !== "ALL" && { status: query.status }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const items = await prisma.commissionClawback.findMany({ where, select: { clawbackType: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true } });
+      const byType: Record<string, any> = {};
+      for (const c of items) {
+        const t = c.clawbackType;
+        if (!byType[t]) byType[t] = { clawbackType: t, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+        byType[t].count++; byType[t].amount += Number(c.clawbackAmount); byType[t].recovered += Number(c.recoveredAmount); byType[t].outstanding += Number(c.outstandingAmount);
+      }
+      const rows = Object.values(byType).sort((a, b) => b.amount - a.amount);
+      const ws = wb.addWorksheet("Clawback by Type");
+      addHeader(ws, [
+        { header: "Clawback Type", key: "clawbackType", width: 22 },
+        { header: "Count", key: "count", width: 10 },
+        { header: "Total Amount", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "Recovered", key: "recovered", width: 18, numFmt: currencyFmt },
+        { header: "Outstanding", key: "outstanding", width: 18, numFmt: currencyFmt },
+      ]);
+      rows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["amount","recovered","outstanding"].forEach(k => { row.getCell(k).numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "clawback-by-reason") {
+      const where: any = { tenantId, ...(isSales && { salesExecutiveId: req.user!.userId }), ...(query.status && query.status !== "ALL" && { status: query.status }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const items = await prisma.commissionClawback.findMany({ where, select: { reasonCategory: true, clawbackAmount: true, recoveredAmount: true, outstandingAmount: true } });
+      const byReason: Record<string, any> = {};
+      for (const c of items) {
+        const r = c.reasonCategory;
+        if (!byReason[r]) byReason[r] = { reasonCategory: r, count: 0, amount: 0, recovered: 0, outstanding: 0 };
+        byReason[r].count++; byReason[r].amount += Number(c.clawbackAmount); byReason[r].recovered += Number(c.recoveredAmount); byReason[r].outstanding += Number(c.outstandingAmount);
+      }
+      const totalAmt = Object.values(byReason).reduce((s: any, r: any) => s + r.amount, 0);
+      const rows = Object.values(byReason).sort((a, b) => b.amount - a.amount).map((r: any) => ({ ...r, pct: totalAmt > 0 ? `${Math.round((r.amount/totalAmt)*100)}%` : "0%" }));
+      const ws = wb.addWorksheet("Clawback by Reason");
+      addHeader(ws, [
+        { header: "Reason Category", key: "reasonCategory", width: 28 },
+        { header: "Count", key: "count", width: 10 },
+        { header: "Total Amount", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "% of Total", key: "pct", width: 12 },
+        { header: "Recovered", key: "recovered", width: 18, numFmt: currencyFmt },
+        { header: "Outstanding", key: "outstanding", width: 18, numFmt: currencyFmt },
+      ]);
+      rows.forEach((r, i) => {
+        const row = ws.addRow(r);
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        ["amount","recovered","outstanding"].forEach(k => { row.getCell(k).numFmt = currencyFmt; });
+      });
+    }
+
+    else if (type === "clawback-waived") {
+      const where: any = { tenantId, status: "WAIVED", ...(isSales && { salesExecutiveId: req.user!.userId }), ...(!isSales && query.userId && query.userId !== "ALL" && { salesExecutiveId: query.userId }), ...(query.reason && query.reason !== "ALL" && { reasonCategory: query.reason }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const items = await prisma.commissionClawback.findMany({ where, include: { salesExecutive: { select: { firstName: true, lastName: true, email: true } }, commissionEvent: { select: { eventTitle: true } } }, orderBy: { createdAt: "desc" } });
+      const ws = wb.addWorksheet("Waived Clawbacks");
+      addHeader(ws, [
+        { header: "Event", key: "event", width: 30 },
+        { header: "Executive", key: "exec", width: 25 },
+        { header: "Reason Category", key: "reason", width: 22 },
+        { header: "Amount Waived", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "Waive Reason", key: "waiveReason", width: 40 },
+        { header: "Date", key: "createdAt", width: 12 },
+      ]);
+      items.forEach((c, i) => {
+        const row = ws.addRow({ event: (c.commissionEvent as any).eventTitle, exec: `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`, reason: c.reasonCategory, amount: Number(c.clawbackAmount), waiveReason: c.waiveReason ?? "", createdAt: c.createdAt.toISOString().slice(0,10) });
+        if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
+        row.getCell("amount").numFmt = currencyFmt;
+      });
+      const totRow = ws.addRow({ event: "TOTAL", amount: items.reduce((s,c) => s + Number(c.clawbackAmount), 0) });
+      totRow.font = { bold: true }; totRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8FF" } };
+      totRow.getCell("amount").numFmt = currencyFmt;
+    }
+
+    else if (type === "clawback-disputed") {
+      const where: any = { tenantId, status: "DISPUTED", ...(isSales && { salesExecutiveId: req.user!.userId }), ...(!isSales && query.userId && query.userId !== "ALL" && { salesExecutiveId: query.userId }), ...(query.reason && query.reason !== "ALL" && { reasonCategory: query.reason }), ...((query.from || query.to) && { createdAt: buildDateFilter(query.from, query.to) }) };
+      const items = await prisma.commissionClawback.findMany({ where, include: { salesExecutive: { select: { firstName: true, lastName: true, email: true } }, commissionEvent: { select: { eventTitle: true } } }, orderBy: { disputedAt: "desc" } });
+      const ws = wb.addWorksheet("Disputed Clawbacks");
+      addHeader(ws, [
+        { header: "Event", key: "event", width: 30 },
+        { header: "Executive", key: "exec", width: 25 },
+        { header: "Reason Category", key: "reason", width: 22 },
+        { header: "Amount", key: "amount", width: 18, numFmt: currencyFmt },
+        { header: "Dispute Note", key: "disputeNote", width: 40 },
+        { header: "Disputed On", key: "disputedAt", width: 14 },
+        { header: "Created", key: "createdAt", width: 12 },
+      ]);
+      items.forEach((c, i) => {
+        const row = ws.addRow({ event: (c.commissionEvent as any).eventTitle, exec: `${c.salesExecutive.firstName} ${c.salesExecutive.lastName}`, reason: c.reasonCategory, amount: Number(c.clawbackAmount), disputeNote: c.disputeNote ?? "", disputedAt: c.disputedAt ? c.disputedAt.toISOString().slice(0,10) : "—", createdAt: c.createdAt.toISOString().slice(0,10) });
         if (i % 2 === 1) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F5FF" } };
         row.getCell("amount").numFmt = currencyFmt;
       });

@@ -44,6 +44,7 @@ import PayoutHistory from "@/pages/payout-history";
 import OnboardingWizard from "@/pages/onboarding";
 import IndustryConfig from "@/pages/industry-config";
 import Clawbacks from "@/pages/clawbacks";
+import ReportsClawbacks from "@/pages/reports-clawbacks";
 
 const queryClient = new QueryClient();
 
@@ -111,6 +112,7 @@ function Router() {
 
       {/* Clawbacks — role-aware, accessible to all authenticated users */}
       <Route path="/clawbacks"><P component={Clawbacks} /></Route>
+      <Route path="/reports-clawbacks"><P component={ReportsClawbacks} /></Route>
 
       <Route component={NotFound} />
     </Switch>

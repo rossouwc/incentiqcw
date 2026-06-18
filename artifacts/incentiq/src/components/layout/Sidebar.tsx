@@ -7,7 +7,7 @@ import {
   CheckSquare, Users, Settings, ShieldAlert, LogOut, Sliders, Building2,
   ClipboardCheck, DollarSign, Package, Receipt, CreditCard as PayCard,
   History, ListChecks, BadgeCheck, Star, UserCog, Percent, Factory,
-  TrendingDown,
+  TrendingDown, FileBarChart2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -41,10 +41,11 @@ function getNavGroups(role: string, dealsLabel = "My Deals", teamDealsLabel = "T
             { name: "Users",               path: "/users",            icon: Users },
             { name: "Customers",           path: "/customers",        icon: Building2 },
             { name: "Commission Rules",    path: "/commission-rules", icon: Sliders },
-            { name: "Clawbacks",           path: "/clawbacks",        icon: TrendingDown },
+            { name: "Clawbacks",           path: "/clawbacks",          icon: TrendingDown },
             { name: "Industry Config",     path: "/industry-config",  icon: Factory },
             { name: "Company Settings",    path: "/company-settings", icon: Settings },
             { name: "Reports",             path: "/reports",          icon: BarChart },
+            { name: "Recovery Reports",    path: "/reports-clawbacks",icon: FileBarChart2 },
             { name: "PAYE Tax Brackets",   path: "/tax-brackets",     icon: Percent },
           ],
         },
@@ -73,8 +74,9 @@ function getNavGroups(role: string, dealsLabel = "My Deals", teamDealsLabel = "T
             { name: "Dashboard",         path: "/dashboard",        icon: LayoutDashboard },
             { name: teamDealsLabel,      path: "/team-deals",       icon: Users },
             { name: "Pending Approvals", path: "/approvals",        icon: CheckSquare },
-            { name: "Clawbacks",         path: "/clawbacks",        icon: TrendingDown },
-            { name: "Reports",           path: "/reports",          icon: BarChart },
+            { name: "Clawbacks",         path: "/clawbacks",          icon: TrendingDown },
+            { name: "Reports",           path: "/reports",            icon: BarChart },
+            { name: "Recovery Reports",  path: "/reports-clawbacks",  icon: FileBarChart2 },
           ],
         },
       ];
@@ -89,6 +91,7 @@ function getNavGroups(role: string, dealsLabel = "My Deals", teamDealsLabel = "T
             { name: "Pending Finance Approvals",path: "/finance-approvals",    icon: ClipboardCheck },
             { name: "Payout Requests",          path: "/payouts",              icon: DollarSign },
             { name: "Clawbacks",                path: "/clawbacks",            icon: TrendingDown },
+            { name: "Recovery Reports",         path: "/reports-clawbacks",    icon: FileBarChart2 },
             { name: "Payroll Export",           path: "/payroll-export",       icon: Receipt },
           ],
         },
@@ -101,8 +104,9 @@ function getNavGroups(role: string, dealsLabel = "My Deals", teamDealsLabel = "T
           items: [
             { name: "Dashboard",       path: "/dashboard",      icon: LayoutDashboard },
             { name: "Final Approvals", path: "/final-approvals",icon: BadgeCheck },
-            { name: "Clawbacks",       path: "/clawbacks",      icon: TrendingDown },
-            { name: "Reports",         path: "/reports",        icon: BarChart },
+            { name: "Clawbacks",         path: "/clawbacks",          icon: TrendingDown },
+            { name: "Reports",           path: "/reports",            icon: BarChart },
+            { name: "Recovery Reports",  path: "/reports-clawbacks",  icon: FileBarChart2 },
           ],
         },
       ];
