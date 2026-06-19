@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPayouts,
@@ -36,6 +36,8 @@ export default function ApprovedPayouts() {
   const [reviewerComments, setReviewerComments] = useState("");
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [markPaidPayout, setMarkPaidPayout] = useState<any>(null);
+  const [trailData, setTrailData] = useState<any>(null);
+  const [trailLoading, setTrailLoading] = useState(false);
 
   const queryParams = filter === "ALL" ? { status: "ALL" } : { status: filter };
   const { data: payoutsData, isLoading } = useListPayouts(queryParams);
@@ -63,8 +65,22 @@ export default function ApprovedPayouts() {
 
   const openMarkPaid = (payout: any) => {
     setMarkPaidPayout(payout);
+    setTrailData(null);
     setMarkPaidOpen(true);
   };
+
+  useEffect(() => {
+    if (!markPaidOpen || !markPaidPayout) return;
+    setTrailLoading(true);
+    const token = localStorage.getItem("incentiq_token");
+    fetch(`/api/payouts/${markPaidPayout.id}/approval-trail`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((d) => setTrailData(d))
+      .catch(() => setTrailData(null))
+      .finally(() => setTrailLoading(false));
+  }, [markPaidOpen, markPaidPayout]);
 
   const handleReview = async () => {
     if (!selectedPayout) return;
@@ -383,62 +399,75 @@ export default function ApprovedPayouts() {
               {/* Approval trail */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Approval Trail</p>
-                <div className="space-y-0">
-                  {/* Step 1: Employee requested */}
-                  <div className="flex items-start gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center shrink-0">
-                        <User className="h-3.5 w-3.5 text-blue-400" />
+                {trailLoading ? (
+                  <div className="space-y-3">
+                    {[1,2,3].map((i) => (
+                      <div key={i} className="flex items-start gap-3">
+                        <div className="w-7 h-7 rounded-full bg-muted animate-pulse shrink-0" />
+                        <div className="flex-1 pt-1 space-y-1">
+                          <div className="h-3 bg-muted rounded animate-pulse w-32" />
+                          <div className="h-2.5 bg-muted rounded animate-pulse w-48" />
+                        </div>
                       </div>
-                      <div className="w-px flex-1 bg-border mt-1" />
-                    </div>
-                    <div className="pb-3 pt-0.5">
-                      <p className="text-sm font-medium text-foreground">Payout requested</p>
-                      <p className="text-xs text-muted-foreground">{markPaidPayout.userName} · {formatDate(markPaidPayout.requestedAt)}</p>
-                    </div>
+                    ))}
                   </div>
+                ) : (
+                  <div className="space-y-0">
+                    {/* Deal approval steps */}
+                    {(trailData?.dealSteps ?? []).map((step: any, i: number) => {
+                      const isLast = i === (trailData?.dealSteps?.length ?? 0) - 1 && true;
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className="flex flex-col items-center">
+                            <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                            </div>
+                            <div className="w-px flex-1 bg-border mt-1" />
+                          </div>
+                          <div className="pb-3 pt-0.5">
+                            <p className="text-sm font-medium text-foreground">{step.stepName}</p>
+                            <p className="text-xs text-emerald-400">
+                              {step.approverName ?? step.approverRole}
+                              {step.approvedAt && ` · ${formatDate(step.approvedAt)}`}
+                            </p>
+                            {step.eventTitle && i === 0 && (
+                              <p className="text-xs text-muted-foreground mt-0.5">Deal: {step.eventTitle}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
 
-                  {/* Step 2: Finance */}
-                  <div className="flex items-start gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                        markPaidPayout.financeApprovedByName
-                          ? "bg-emerald-500/20 border border-emerald-500/40"
-                          : "bg-muted border border-border"
-                      }`}>
-                        <ShieldCheck className={`h-3.5 w-3.5 ${markPaidPayout.financeApprovedByName ? "text-emerald-400" : "text-muted-foreground"}`} />
+                    {/* Payout requested */}
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center shrink-0">
+                          <User className="h-3.5 w-3.5 text-blue-400" />
+                        </div>
+                        <div className="w-px flex-1 bg-border mt-1" />
                       </div>
-                      <div className="w-px flex-1 bg-border mt-1" />
-                    </div>
-                    <div className="pb-3 pt-0.5">
-                      <p className="text-sm font-medium text-foreground">Finance pre-approval</p>
-                      {markPaidPayout.financeApprovedByName ? (
-                        <p className="text-xs text-emerald-400">
-                          Approved by {markPaidPayout.financeApprovedByName}
-                          {markPaidPayout.approvedAt && ` · ${formatDate(markPaidPayout.approvedAt)}`}
+                      <div className="pb-3 pt-0.5">
+                        <p className="text-sm font-medium text-foreground">Payout requested</p>
+                        <p className="text-xs text-muted-foreground">
+                          {markPaidPayout.userName} · {formatDate(markPaidPayout.requestedAt)}
                         </p>
-                      ) : (
-                        <p className="text-xs text-amber-400">Pending Finance review</p>
-                      )}
-                      {markPaidPayout.reviewerComments && (
-                        <p className="text-xs text-muted-foreground mt-0.5 italic">"{markPaidPayout.reviewerComments}"</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Step 3: Payroll (current) */}
-                  <div className="flex items-start gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 animate-pulse">
-                        <Banknote className="h-3.5 w-3.5 text-primary" />
                       </div>
                     </div>
-                    <div className="pt-0.5">
-                      <p className="text-sm font-medium text-foreground">Payroll processing</p>
-                      <p className="text-xs text-primary">Awaiting your confirmation</p>
+
+                    {/* Payroll — current step */}
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 animate-pulse">
+                          <Banknote className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                      </div>
+                      <div className="pt-0.5">
+                        <p className="text-sm font-medium text-foreground">Payroll processing</p>
+                        <p className="text-xs text-primary">Awaiting your confirmation</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="flex items-start gap-2 text-xs bg-emerald-500/10 border border-emerald-500/20 rounded-md p-2 text-emerald-400">

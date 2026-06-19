@@ -238,6 +238,70 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/payouts/:id/approval-trail
+router.get("/:id/approval-trail", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const payout = await prisma.payoutRequest.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
+      include: { user: { select: { firstName: true, lastName: true } } },
+    });
+    if (!payout) { res.status(404).json({ error: "Payout not found" }); return; }
+
+    // Find the wallet for this user
+    const wallet = await prisma.wallet.findUnique({ where: { userId: payout.userId } });
+
+    // Find commission event IDs via wallet transactions (COMMISSION_APPROVED credits)
+    let commissionEventIds: string[] = [];
+    if (wallet) {
+      const txns = await prisma.walletTransaction.findMany({
+        where: {
+          walletId: wallet.id,
+          transactionType: "COMMISSION_APPROVED",
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      });
+      commissionEventIds = txns.map((t) => t.referenceId).filter(Boolean) as string[];
+    }
+
+    // Fetch approval steps for those commission events
+    let dealSteps: any[] = [];
+    if (commissionEventIds.length > 0) {
+      const approvals = await prisma.commissionEventApproval.findMany({
+        where: {
+          commissionEventId: { in: commissionEventIds },
+          status: "APPROVED",
+        },
+        include: {
+          approver: { select: { firstName: true, lastName: true } },
+          commissionEvent: { select: { eventTitle: true } },
+        },
+        orderBy: [{ commissionEventId: "asc" }, { approvalStep: "asc" }],
+      });
+      dealSteps = approvals.map((a) => ({
+        kind: "deal_step" as const,
+        stepName: a.stepName ?? a.approverRole,
+        approverRole: a.approverRole,
+        approverName: a.approver ? `${a.approver.firstName} ${a.approver.lastName}` : null,
+        approvedAt: a.approvedAt?.toISOString() ?? null,
+        eventTitle: a.commissionEvent?.eventTitle ?? null,
+      }));
+    }
+
+    res.json({
+      dealSteps,
+      payout: {
+        userName: `${payout.user.firstName} ${payout.user.lastName}`,
+        requestedAt: payout.requestedAt.toISOString(),
+        status: payout.status,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "GetPayoutApprovalTrail error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // PATCH /api/payouts/:id — finance: approve or reject
 router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   const { status, reviewerComments } = req.body;
