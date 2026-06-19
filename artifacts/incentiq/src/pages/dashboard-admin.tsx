@@ -27,7 +27,7 @@ function adminAuthHeaders(): HeadersInit {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  CANCELLATION: "Cancellation", TERMINATION: "Termination", NON_PAYMENT: "Non-Payment",
+  CANCELLATION: "Cancellation", TERMINATION: "Early Termination / Cancellation", NON_PAYMENT: "Non-Payment",
   REVERSAL: "Reversal", RETURN: "Return/Refund", LAPSE: "Policy Lapse",
   NO_LONGER_QUALIFIES: "No Longer Qualifies", OTHER: "Other",
 };

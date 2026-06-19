@@ -112,7 +112,7 @@ const CLAWBACK_TYPE_LABELS: Record<string, string> = {
 
 const REASON_LABELS: Record<string, string> = {
   CANCELLATION:        "Cancellation",
-  TERMINATION:         "Termination",
+  TERMINATION:         "Early Termination / Cancellation",
   NON_PAYMENT:         "Non-Payment",
   REVERSAL:            "Reversal",
   RETURN:              "Return/Refund",
@@ -120,6 +120,17 @@ const REASON_LABELS: Record<string, string> = {
   NO_LONGER_QUALIFIES: "No Longer Qualifies",
   OTHER:               "Other",
 };
+
+// Dropdown only — CANCELLATION is kept in REASON_LABELS for historical display only
+const REASON_DROPDOWN: [string, string][] = [
+  ["TERMINATION",         "Early Termination / Cancellation"],
+  ["NON_PAYMENT",         "Non-Payment"],
+  ["REVERSAL",            "Reversal"],
+  ["RETURN",              "Return/Refund"],
+  ["LAPSE",               "Policy Lapse"],
+  ["NO_LONGER_QUALIFIES", "No Longer Qualifies"],
+  ["OTHER",               "Other"],
+];
 
 const RECOVERY_LABELS: Record<string, string> = {
   WALLET_DEDUCTION:        "Wallet Deduction",
@@ -210,7 +221,7 @@ function CreateClawbackModal({
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<CommissionEventOption | null>(null);
   const [clawbackType, setClawbackType] = useState("FULL");
-  const [reasonCategory, setReasonCategory] = useState("CANCELLATION");
+  const [reasonCategory, setReasonCategory] = useState("TERMINATION");
   const [reason, setReason] = useState("");
   const [clawbackAmount, setClawbackAmount] = useState("");
   const [proRataFactor, setProRataFactor] = useState("");
@@ -277,7 +288,7 @@ function CreateClawbackModal({
   useEffect(() => {
     if (!open) {
       setSelectedEventId(""); setSelectedEvent(null); setClawbackType("FULL");
-      setReasonCategory("CANCELLATION"); setReason(""); setClawbackAmount("");
+      setReasonCategory("TERMINATION"); setReason(""); setClawbackAmount("");
       setProRataFactor(""); setComponentDescription(""); setNotes("");
       setContractStart(""); setTerminationDate(""); setOriginalEnd("");
       setPickerOpen(false);
@@ -482,7 +493,7 @@ function CreateClawbackModal({
               <Select value={reasonCategory} onValueChange={setReasonCategory}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(REASON_LABELS).map(([v, l]) => (
+                  {REASON_DROPDOWN.map(([v, l]) => (
                     <SelectItem key={v} value={v}>{l}</SelectItem>
                   ))}
                 </SelectContent>
