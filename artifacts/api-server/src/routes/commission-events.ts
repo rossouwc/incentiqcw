@@ -170,6 +170,56 @@ router.get("/field-config", requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+// ── GET /api/commission-events/clawback-eligible ──────────────────────────────
+// Returns events where commission has already been wallet-credited (paid out)
+
+router.get("/clawback-eligible", requireAuth, async (req: Request, res: Response) => {
+  const isSalesExec = req.user!.role === "SALES_EXECUTIVE";
+  try {
+    const walletTxns = await prisma.walletTransaction.findMany({
+      where: {
+        transactionType: "COMMISSION_APPROVED",
+        wallet: {
+          user: {
+            tenantId: req.user!.tenantId,
+            ...(isSalesExec && { id: req.user!.userId }),
+          },
+        },
+      },
+      select: { referenceId: true },
+    });
+    const eventIds = [...new Set(
+      walletTxns.map((t) => t.referenceId).filter(Boolean) as string[]
+    )];
+    if (eventIds.length === 0) { res.json([]); return; }
+
+    const events = await prisma.commissionEvent.findMany({
+      where: { id: { in: eventIds }, tenantId: req.user!.tenantId },
+      include: { salesExecutive: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(events.map((e) => {
+      const data = (e.eventDataJson as any) ?? {};
+      return {
+        id:                         e.id,
+        eventTitle:                 e.eventTitle,
+        calculatedCommissionAmount: e.calculatedCommissionAmount,
+        approvalStatus:             e.approvalStatus,
+        salesExecutiveName:         e.salesExecutive
+          ? `${e.salesExecutive.firstName} ${e.salesExecutive.lastName}`
+          : "",
+        customerName:               data.customerName    ?? null,
+        projectStartDate:           data.projectStartDate ?? null,
+        projectEndDate:             data.projectEndDate   ?? null,
+      };
+    }));
+  } catch (err) {
+    logger.error({ err }, "ClawbackEligibleEvents error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // ── GET /api/commission-events ────────────────────────────────────────────────
 
 router.get("/", requireAuth, async (req: Request, res: Response) => {

@@ -24,7 +24,12 @@ import {
   RotateCcw, AlertTriangle, CheckCircle2, XCircle, Loader2, Plus,
   DollarSign, Clock, TrendingDown, Search, ChevronDown, ChevronUp,
   Eye, Trash2, Scale, MessageSquare, Wallet, ArrowRightLeft, CalendarRange,
+  Building2, ChevronsUpDown, Check, Calendar,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -84,6 +89,9 @@ interface CommissionEventOption {
   calculatedCommissionAmount: number;
   approvalStatus: string;
   salesExecutiveName: string;
+  customerName: string | null;
+  projectStartDate: string | null;
+  projectEndDate: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -198,7 +206,6 @@ function CreateClawbackModal({
   const { clawbackTerm } = useIndustryConfig();
   const [events, setEvents] = useState<CommissionEventOption[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const [search, setSearch] = useState("");
 
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<CommissionEventOption | null>(null);
@@ -210,6 +217,7 @@ function CreateClawbackModal({
   const [componentDescription, setComponentDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Early termination calculator
   const [contractStart, setContractStart] = useState("");
@@ -247,18 +255,19 @@ function CreateClawbackModal({
   useEffect(() => {
     if (!open) return;
     setEventsLoading(true);
-    fetch("/api/commission-events", { headers: getAuthHeaders() })
+    fetch("/api/commission-events/clawback-eligible", { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((d) => {
-        const evts = (Array.isArray(d) ? d : d.data ?? d.events ?? [])
-          .filter((e: any) => ["APPROVED", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"].includes(e.approvalStatus))
-          .map((e: any) => ({
-            id: e.id,
-            eventTitle: e.eventTitle,
-            calculatedCommissionAmount: e.calculatedCommissionAmount,
-            approvalStatus: e.approvalStatus,
-            salesExecutiveName: e.salesExecutiveName ?? "",
-          }));
+        const evts = (Array.isArray(d) ? d : d.data ?? []).map((e: any) => ({
+          id: e.id,
+          eventTitle: e.eventTitle,
+          calculatedCommissionAmount: e.calculatedCommissionAmount,
+          approvalStatus: e.approvalStatus,
+          salesExecutiveName: e.salesExecutiveName ?? "",
+          customerName: e.customerName ?? null,
+          projectStartDate: e.projectStartDate ?? null,
+          projectEndDate: e.projectEndDate ?? null,
+        }));
         setEvents(evts);
       })
       .catch(() => setEvents([]))
@@ -271,6 +280,7 @@ function CreateClawbackModal({
       setReasonCategory("CANCELLATION"); setReason(""); setClawbackAmount("");
       setProRataFactor(""); setComponentDescription(""); setNotes("");
       setContractStart(""); setTerminationDate(""); setOriginalEnd("");
+      setPickerOpen(false);
     }
   }, [open]);
 
@@ -282,6 +292,9 @@ function CreateClawbackModal({
       else if (clawbackType === "PRO_RATA" && proRataFactor) {
         setClawbackAmount((ev.calculatedCommissionAmount * parseFloat(proRataFactor || "0")).toFixed(2));
       }
+      // Auto-populate contract dates from event data
+      if (ev.projectStartDate) setContractStart(ev.projectStartDate);
+      if (ev.projectEndDate) setOriginalEnd(ev.projectEndDate);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEventId, events, clawbackType]);
@@ -292,11 +305,6 @@ function CreateClawbackModal({
       setClawbackAmount((selectedEvent.calculatedCommissionAmount * factor).toFixed(2));
     }
   }, [proRataFactor, clawbackType, selectedEvent]);
-
-  const filteredEvents = events.filter((e) =>
-    e.eventTitle.toLowerCase().includes(search.toLowerCase()) ||
-    (e.salesExecutiveName && e.salesExecutiveName.toLowerCase().includes(search.toLowerCase()))
-  );
 
   async function handleSubmit() {
     if (!selectedEventId || !reason.trim() || !clawbackAmount) return;
@@ -360,48 +368,100 @@ function CreateClawbackModal({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Event selection */}
-          <div className="space-y-2">
+          {/* Event selection — combobox */}
+          <div className="space-y-1.5">
             <Label className="text-sm font-medium">
               Commission Event <span className="text-destructive">*</span>
             </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                className="pl-8 text-sm"
-                placeholder="Search events…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            {eventsLoading ? (
-              <div className="space-y-1.5">{[1,2,3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-            ) : (
-              <div className="border border-border rounded-md max-h-44 overflow-y-auto divide-y divide-border">
-                {filteredEvents.length === 0 ? (
-                  <p className="px-3 py-3 text-sm text-muted-foreground text-center">No approved deals found.</p>
-                ) : filteredEvents.map((ev) => (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={() => setSelectedEventId(ev.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 text-sm text-left transition-colors ${
-                      selectedEventId === ev.id
-                        ? "bg-primary/10 text-primary"
-                        : "hover:bg-muted/50 text-foreground"
-                    }`}
-                  >
-                    <div>
-                      <p className="font-medium">{ev.eventTitle}</p>
-                      {!isSalesExec && <p className="text-xs text-muted-foreground">{ev.salesExecutiveName}</p>}
+            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={`w-full flex items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm text-left transition-colors bg-background hover:bg-muted/40 ${
+                    pickerOpen ? "border-primary ring-1 ring-primary/30" : "border-border"
+                  }`}
+                >
+                  {selectedEvent ? (
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{selectedEvent.eventTitle}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[selectedEvent.customerName, !isSalesExec && selectedEvent.salesExecutiveName].filter(Boolean).join(" · ")}
+                        {" · "}
+                        <span className="text-primary font-mono">{formatCurrency(selectedEvent.calculatedCommissionAmount)}</span>
+                      </p>
                     </div>
-                    <span className="text-xs font-mono text-right ml-4 shrink-0">
-                      {formatCurrency(ev.calculatedCommissionAmount)}
+                  ) : (
+                    <span className="text-muted-foreground flex-1">
+                      {eventsLoading ? "Loading deals…" : "Select a commission event…"}
                     </span>
-                  </button>
-                ))}
-              </div>
-            )}
+                  )}
+                  <ChevronsUpDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="p-0 w-[var(--radix-popover-trigger-width)]"
+                align="start"
+                sideOffset={4}
+              >
+                <Command>
+                  <CommandInput placeholder="Search by deal, customer, or rep…" className="h-9" />
+                  <CommandList className="max-h-72">
+                    {eventsLoading ? (
+                      <div className="p-3 space-y-2">
+                        {[1,2,3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+                      </div>
+                    ) : (
+                      <>
+                        <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                          No eligible deals found.
+                          <br />
+                          <span className="text-xs">Only deals with credited commission are eligible.</span>
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {events.map((ev) => (
+                            <CommandItem
+                              key={ev.id}
+                              value={`${ev.eventTitle} ${ev.customerName ?? ""} ${ev.salesExecutiveName}`}
+                              onSelect={() => {
+                                setSelectedEventId(ev.id);
+                                setPickerOpen(false);
+                              }}
+                              className="flex items-start gap-3 py-2.5 cursor-pointer"
+                            >
+                              <div className="mt-0.5 shrink-0">
+                                <Check className={`h-3.5 w-3.5 ${selectedEventId === ev.id ? "text-primary opacity-100" : "opacity-0"}`} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{ev.eventTitle}</p>
+                                <div className="flex flex-wrap gap-x-3 mt-0.5">
+                                  {ev.customerName && (
+                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <Building2 className="h-3 w-3 shrink-0" />{ev.customerName}
+                                    </span>
+                                  )}
+                                  {!isSalesExec && ev.salesExecutiveName && (
+                                    <span className="text-xs text-muted-foreground">{ev.salesExecutiveName}</span>
+                                  )}
+                                  {ev.projectStartDate && ev.projectEndDate && (
+                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <Calendar className="h-3 w-3 shrink-0" />
+                                      {ev.projectStartDate} → {ev.projectEndDate}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono text-primary shrink-0 mt-0.5">
+                                {formatCurrency(ev.calculatedCommissionAmount)}
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </>
+                    )}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Clawback type */}
