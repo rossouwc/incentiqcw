@@ -23,6 +23,13 @@ function payoutToResponse(p: any) {
     requestedAt: p.requestedAt.toISOString(),
     approvedAt: p.approvedAt?.toISOString() ?? null,
     paidAt: p.paidAt?.toISOString() ?? null,
+    financeApprovedByName: p.financeApprovedBy
+      ? `${p.financeApprovedBy.firstName} ${p.financeApprovedBy.lastName}`
+      : null,
+    payrollApprovedByName: p.payrollApprovedBy
+      ? `${p.payrollApprovedBy.firstName} ${p.payrollApprovedBy.lastName}`
+      : null,
+    payrollApprovedAt: p.payrollApprovedAt?.toISOString() ?? null,
   };
 }
 
@@ -42,7 +49,11 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const payouts = await prisma.payoutRequest.findMany({
       where,
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        financeApprovedBy: { select: { firstName: true, lastName: true } },
+        payrollApprovedBy: { select: { firstName: true, lastName: true } },
+      },
       orderBy: { requestedAt: "desc" },
     });
     res.json(payouts.map(payoutToResponse));
@@ -213,7 +224,11 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const payout = await prisma.payoutRequest.findFirst({
       where: { id: req.params.id as string, tenantId: req.user!.tenantId },
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        financeApprovedBy: { select: { firstName: true, lastName: true } },
+        payrollApprovedBy: { select: { firstName: true, lastName: true } },
+      },
     });
     if (!payout) { res.status(404).json({ error: "Payout not found" }); return; }
     res.json(payoutToResponse(payout));
@@ -246,9 +261,16 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
       data: {
         status,
         reviewerComments: reviewerComments ?? null,
-        ...(status === "FINANCE_APPROVED" && { approvedAt: new Date() }),
+        ...(status === "FINANCE_APPROVED" && {
+          approvedAt: new Date(),
+          financeApprovedById: req.user!.userId,
+        }),
       },
-      include: { user: { select: { firstName: true, lastName: true } } },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        financeApprovedBy: { select: { firstName: true, lastName: true } },
+        payrollApprovedBy: { select: { firstName: true, lastName: true } },
+      },
     });
 
     const wallet = await prisma.wallet.findUnique({ where: { userId: existing.userId } });
@@ -338,8 +360,17 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
 
     const payout = await prisma.payoutRequest.update({
       where: { id: req.params.id as string },
-      data: { status: newStatus, paidAt: isFinalPayment ? new Date() : undefined },
-      include: { user: { select: { firstName: true, lastName: true } } },
+      data: {
+        status: newStatus,
+        paidAt: isFinalPayment ? new Date() : undefined,
+        payrollApprovedById: req.user!.userId,
+        payrollApprovedAt: new Date(),
+      },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        financeApprovedBy: { select: { firstName: true, lastName: true } },
+        payrollApprovedBy: { select: { firstName: true, lastName: true } },
+      },
     });
 
     if (isFinalPayment) {

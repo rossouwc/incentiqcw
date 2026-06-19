@@ -16,7 +16,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { CheckCircle2, XCircle, Clock, AlertCircle, DollarSign, MessageSquare, Banknote } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, AlertCircle, DollarSign, MessageSquare, Banknote, ShieldCheck, User } from "lucide-react";
 
 type Filter = "ALL" | "PENDING" | "FINANCE_APPROVED" | "PAYROLL_APPROVED" | "REJECTED";
 
@@ -358,12 +358,13 @@ export default function ApprovedPayouts() {
 
       {/* Payroll mark-paid dialog */}
       <Dialog open={markPaidOpen} onOpenChange={setMarkPaidOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-emerald-500">Mark Payout as Paid</DialogTitle>
           </DialogHeader>
           {markPaidPayout && (
             <div className="space-y-4">
+              {/* Summary */}
               <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Employee</span>
@@ -376,6 +377,67 @@ export default function ApprovedPayouts() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Payout month</span>
                   <span>{markPaidPayout.payoutMonth}</span>
+                </div>
+              </div>
+
+              {/* Approval trail */}
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Approval Trail</p>
+                <div className="space-y-0">
+                  {/* Step 1: Employee requested */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center shrink-0">
+                        <User className="h-3.5 w-3.5 text-blue-400" />
+                      </div>
+                      <div className="w-px flex-1 bg-border mt-1" />
+                    </div>
+                    <div className="pb-3 pt-0.5">
+                      <p className="text-sm font-medium text-foreground">Payout requested</p>
+                      <p className="text-xs text-muted-foreground">{markPaidPayout.userName} · {formatDate(markPaidPayout.requestedAt)}</p>
+                    </div>
+                  </div>
+
+                  {/* Step 2: Finance */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                        markPaidPayout.financeApprovedByName
+                          ? "bg-emerald-500/20 border border-emerald-500/40"
+                          : "bg-muted border border-border"
+                      }`}>
+                        <ShieldCheck className={`h-3.5 w-3.5 ${markPaidPayout.financeApprovedByName ? "text-emerald-400" : "text-muted-foreground"}`} />
+                      </div>
+                      <div className="w-px flex-1 bg-border mt-1" />
+                    </div>
+                    <div className="pb-3 pt-0.5">
+                      <p className="text-sm font-medium text-foreground">Finance pre-approval</p>
+                      {markPaidPayout.financeApprovedByName ? (
+                        <p className="text-xs text-emerald-400">
+                          Approved by {markPaidPayout.financeApprovedByName}
+                          {markPaidPayout.approvedAt && ` · ${formatDate(markPaidPayout.approvedAt)}`}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-400">Pending Finance review</p>
+                      )}
+                      {markPaidPayout.reviewerComments && (
+                        <p className="text-xs text-muted-foreground mt-0.5 italic">"{markPaidPayout.reviewerComments}"</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Step 3: Payroll (current) */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 animate-pulse">
+                        <Banknote className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                    </div>
+                    <div className="pt-0.5">
+                      <p className="text-sm font-medium text-foreground">Payroll processing</p>
+                      <p className="text-xs text-primary">Awaiting your confirmation</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 

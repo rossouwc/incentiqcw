@@ -331,6 +331,8 @@ model User {
   adjustmentsApproved         CommissionAdjustment[]    @relation("AdjustmentApprovedBy")
   adjustmentsAsExecutive      CommissionAdjustment[]    @relation("AdjustmentSalesExecutive")
   clawbackStepsApproved       ClawbackApprovalStep[]    @relation("ClawbackStepApprovedBy")
+  payoutFinanceApprovals      PayoutRequest[]           @relation("PayoutFinanceApprover")
+  payoutPayrollApprovals      PayoutRequest[]           @relation("PayoutPayrollApprover")
 
   @@unique([tenantId, email])
 }
@@ -499,9 +501,14 @@ model PayoutRequest {
   requestedAt         DateTime     @default(now())
   approvedAt          DateTime?
   paidAt              DateTime?
+  financeApprovedById String?
+  payrollApprovedById String?
+  payrollApprovedAt   DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
+  tenant              Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                User    @relation(fields: [userId], references: [id])
+  financeApprovedBy   User?   @relation("PayoutFinanceApprover", fields: [financeApprovedById], references: [id])
+  payrollApprovedBy   User?   @relation("PayoutPayrollApprover", fields: [payrollApprovedById], references: [id])
 }
 
 model TaxProfile {
