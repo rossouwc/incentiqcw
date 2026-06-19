@@ -2,11 +2,12 @@ import { Sidebar } from "./Sidebar";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect, useLocation } from "wouter";
 import { useGetOnboardingStatus } from "@workspace/api-client-react";
-import { Bell, Search, ChevronDown } from "lucide-react";
+import { Bell, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { useTheme } from "@/hooks/use-theme";
 
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   SUPER_ADMIN:     { label: "Super Admin",    color: "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300" },
@@ -20,6 +21,7 @@ const ROLE_LABELS: Record<string, { label: string; color: string }> = {
 
 function TopHeader() {
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const role = user?.role ?? "";
   const roleInfo = ROLE_LABELS[role] ?? { label: role, color: "bg-muted text-muted-foreground" };
   const companyName = "Incentiq";
@@ -33,6 +35,16 @@ function TopHeader() {
 
       {/* Right side */}
       <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+
         <Button variant="ghost" size="icon" className="relative h-8 w-8 text-muted-foreground hover:text-foreground">
           <Bell className="h-4 w-4" />
           <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-primary rounded-full" />
