@@ -735,6 +735,19 @@ async function checkAndCreditWallet(commissionEventId: string, tenantId: string)
   if (ev.triggerStatus  !== "TRIGGERED") return;
   if (ev.walletStatus   === "CREDITED")  return; // already done
 
+  // Guard: if commission was already credited via the executive-approval step
+  // (COMMISSION_APPROVED tx), just mark walletStatus and skip double-credit.
+  const existingCredit = await prisma.walletTransaction.findFirst({
+    where: { referenceId: commissionEventId, transactionType: "COMMISSION_APPROVED" },
+  });
+  if (existingCredit) {
+    await prisma.commissionEvent.update({
+      where: { id: commissionEventId },
+      data:  { walletStatus: "CREDITED" },
+    });
+    return;
+  }
+
   const wallet = await prisma.wallet.findUnique({ where: { userId: ev.salesExecutiveId } });
   if (!wallet) return;
 
@@ -799,6 +812,57 @@ async function checkAndCreditWallet(commissionEventId: string, tenantId: string)
   });
 }
 
+// ── Auto-trigger helper ────────────────────────────────────────────────────────
+// Fires a specific trigger type for an event (system-side, bypasses role check).
+// Returns true if the trigger was found and fired, false if already resolved/absent.
+
+async function autoFireTrigger(
+  eventId:     string,
+  tenantId:    string,
+  triggerType: string,
+  notes:       string,
+  userId:      string | null = null
+): Promise<boolean> {
+  const trigger = await prisma.commissionEventTrigger.findFirst({
+    where: {
+      commissionEventId: eventId,
+      tenantId,
+      triggerEventType:  triggerType,
+      status:            TriggerStatus.NOT_TRIGGERED,
+    },
+  });
+  if (!trigger) return false;
+
+  await prisma.commissionEventTrigger.update({
+    where: { id: trigger.id },
+    data: {
+      status:        TriggerStatus.TRIGGERED,
+      notes,
+      triggeredById: userId,
+      triggeredAt:   new Date(),
+    },
+  });
+
+  const allTriggers = await prisma.commissionEventTrigger.findMany({
+    where: { commissionEventId: eventId },
+  });
+  const anyFailed   = allTriggers.some((t) => t.status === TriggerStatus.FAILED);
+  const allResolved = allTriggers.every(
+    (t) => t.status === TriggerStatus.TRIGGERED || t.status === TriggerStatus.WAIVED
+  );
+  if (anyFailed || allResolved) {
+    const newStatus = anyFailed ? "FAILED" : "TRIGGERED";
+    await prisma.commissionEvent.update({
+      where: { id: eventId },
+      data:  { triggerStatus: newStatus },
+    });
+    if (newStatus === "TRIGGERED") {
+      await checkAndCreditWallet(eventId, tenantId);
+    }
+  }
+  return true;
+}
+
 // ── GET /api/commission-events/:id/triggers ────────────────────────────────────
 
 router.get("/:id/triggers", requireAuth, async (req: Request, res: Response) => {
@@ -808,6 +872,25 @@ router.get("/:id/triggers", requireAuth, async (req: Request, res: Response) => 
     });
     if (!event) { res.status(404).json({ error: "Not found" }); return; }
 
+    // ── Auto-fire date-based CANDIDATE_STARTED if start date has passed ─────────
+    const eventData    = (event.eventDataJson as any) ?? {};
+    const startDateStr = eventData.projectStartDate ?? eventData.startDate ?? null;
+    if (startDateStr && event.triggerStatus === "NOT_TRIGGERED") {
+      const today = new Date().toISOString().split("T")[0];
+      if (startDateStr <= today) {
+        await autoFireTrigger(
+          event.id,
+          req.user!.tenantId,
+          "CANDIDATE_STARTED",
+          `Auto-triggered: project start date ${startDateStr} has been reached`,
+          null
+        );
+        // Re-fetch updated event status
+        const updated = await prisma.commissionEvent.findUnique({ where: { id: event.id } });
+        if (updated) (event as any).triggerStatus = updated.triggerStatus;
+      }
+    }
+
     const triggers = await prisma.commissionEventTrigger.findMany({
       where:   { commissionEventId: req.params.id as string },
       include: { triggeredBy: { select: { firstName: true, lastName: true } } },
@@ -815,7 +898,7 @@ router.get("/:id/triggers", requireAuth, async (req: Request, res: Response) => 
     });
 
     res.json({
-      triggerStatus: event.triggerStatus,
+      triggerStatus: (event as any).triggerStatus,
       triggers: triggers.map((t) => ({
         id:               t.id,
         triggerEventType: t.triggerEventType,
@@ -996,6 +1079,15 @@ router.post("/:id/documents", requireAuth, async (req: Request, res: Response) =
       },
       include: { uploadedBy: { select: { firstName: true, lastName: true } } },
     });
+
+    // ── Auto-fire CONTRACT_SIGNED trigger when first document is attached ────────
+    await autoFireTrigger(
+      req.params.id as string,
+      req.user!.tenantId,
+      "CONTRACT_SIGNED",
+      `Auto-triggered: document "${fileName}" attached to deal`,
+      req.user!.userId
+    );
 
     res.status(201).json({
       id:             doc.id,
