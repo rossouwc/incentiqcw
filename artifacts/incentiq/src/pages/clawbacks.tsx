@@ -250,7 +250,7 @@ function CreateClawbackModal({
     fetch("/api/commission-events", { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((d) => {
-        const evts = (Array.isArray(d) ? d : d.events ?? [])
+        const evts = (Array.isArray(d) ? d : d.data ?? d.events ?? [])
           .filter((e: any) => ["APPROVED", "MANAGER_APPROVED", "FINANCE_APPROVED", "EXECUTIVE_APPROVED"].includes(e.approvalStatus))
           .map((e: any) => ({
             id: e.id,
