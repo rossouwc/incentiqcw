@@ -109,9 +109,9 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
 // ── POST /api/clawbacks ────────────────────────────────────────────────────────
 
 router.post("/", requireAuth, async (req: Request, res: Response) => {
-  const allowed = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"];
+  const allowed = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE", "SALES_EXECUTIVE"];
   if (!allowed.includes(req.user!.role)) {
-    res.status(403).json({ error: "Only admins and managers can create clawbacks" }); return;
+    res.status(403).json({ error: "Forbidden" }); return;
   }
 
   const {
@@ -135,6 +135,11 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       where: { id: commissionEventId, tenantId: req.user!.tenantId },
     });
     if (!event) { res.status(404).json({ error: "Commission event not found" }); return; }
+
+    // Sales executives can only create clawbacks for their own events
+    if (req.user!.role === "SALES_EXECUTIVE" && event.salesExecutiveId !== req.user!.userId) {
+      res.status(403).json({ error: "You can only create clawbacks for your own commission events" }); return;
+    }
 
     const originalAmount = Number(event.calculatedCommissionAmount);
     const cbAmount       = Number(clawbackAmount);

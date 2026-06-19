@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
@@ -23,7 +23,7 @@ import {
 import {
   RotateCcw, AlertTriangle, CheckCircle2, XCircle, Loader2, Plus,
   DollarSign, Clock, TrendingDown, Search, ChevronDown, ChevronUp,
-  Eye, Trash2, Scale, MessageSquare, Wallet, ArrowRightLeft,
+  Eye, Trash2, Scale, MessageSquare, Wallet, ArrowRightLeft, CalendarRange,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -192,6 +192,8 @@ function CreateClawbackModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { user } = useAuth();
+  const isSalesExec = user?.role === "SALES_EXECUTIVE";
   const { toast } = useToast();
   const { clawbackTerm } = useIndustryConfig();
   const [events, setEvents] = useState<CommissionEventOption[]>([]);
@@ -208,6 +210,39 @@ function CreateClawbackModal({
   const [componentDescription, setComponentDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Early termination calculator
+  const [contractStart, setContractStart] = useState("");
+  const [terminationDate, setTerminationDate] = useState("");
+  const [originalEnd, setOriginalEnd] = useState("");
+
+  const termCalc = useMemo(() => {
+    if (reasonCategory !== "TERMINATION" || !contractStart || !terminationDate || !originalEnd) return null;
+    const s = new Date(contractStart);
+    const t = new Date(terminationDate);
+    const e = new Date(originalEnd);
+    if ([s, t, e].some((d) => isNaN(d.getTime()))) return null;
+    if (t >= e || s >= e) return null;
+    const msPerMonth = 1000 * 60 * 60 * 24 * 30.4375;
+    const totalMonths = Math.round((e.getTime() - s.getTime()) / msPerMonth);
+    const remainingMonths = Math.round((e.getTime() - t.getTime()) / msPerMonth);
+    if (totalMonths <= 0) return null;
+    const factor = Math.min(1, Math.max(0, remainingMonths / totalMonths));
+    return { totalMonths, remainingMonths, factor };
+  }, [reasonCategory, contractStart, terminationDate, originalEnd]);
+
+  // Auto-fill clawback amount when termination calculator has a result
+  useEffect(() => {
+    if (termCalc && selectedEvent) {
+      setProRataFactor(termCalc.factor.toFixed(4));
+      setClawbackAmount((selectedEvent.calculatedCommissionAmount * termCalc.factor).toFixed(2));
+    }
+  }, [termCalc, selectedEvent]);
+
+  // Auto-switch to PRO_RATA type when TERMINATION is selected
+  useEffect(() => {
+    if (reasonCategory === "TERMINATION") setClawbackType("PRO_RATA");
+  }, [reasonCategory]);
 
   useEffect(() => {
     if (!open) return;
@@ -235,6 +270,7 @@ function CreateClawbackModal({
       setSelectedEventId(""); setSelectedEvent(null); setClawbackType("FULL");
       setReasonCategory("CANCELLATION"); setReason(""); setClawbackAmount("");
       setProRataFactor(""); setComponentDescription(""); setNotes("");
+      setContractStart(""); setTerminationDate(""); setOriginalEnd("");
     }
   }, [open]);
 
@@ -266,13 +302,18 @@ function CreateClawbackModal({
     if (!selectedEventId || !reason.trim() || !clawbackAmount) return;
     setSubmitting(true);
     try {
+      let finalNotes = notes.trim();
+      if (termCalc && reasonCategory === "TERMINATION") {
+        const ctx = `[Early Termination] Contract: ${contractStart} → ${originalEnd} (${termCalc.totalMonths} months). Terminated: ${terminationDate} — ${termCalc.remainingMonths} months remaining (${(termCalc.factor * 100).toFixed(1)}% pro-rata factor).`;
+        finalNotes = finalNotes ? `${ctx}\n\n${finalNotes}` : ctx;
+      }
       const body: any = {
         commissionEventId: selectedEventId,
         clawbackType,
         reasonCategory,
         reason: reason.trim(),
         clawbackAmount: parseFloat(clawbackAmount),
-        notes: notes.trim() || undefined,
+        notes: finalNotes || undefined,
       };
       if (clawbackType === "PRO_RATA") body.proRataFactor = parseFloat(proRataFactor) || 0;
       if (clawbackType === "COMPONENT") body.componentDescription = componentDescription.trim();
@@ -286,7 +327,10 @@ function CreateClawbackModal({
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Failed to create clawback");
       }
-      toast({ title: "Clawback created", description: "The sales executive has been notified." });
+      toast({
+        title: "Clawback created",
+        description: isSalesExec ? "Finance has been notified and will review." : "The sales executive has been notified.",
+      });
       onCreated();
       onClose();
     } catch (err: any) {
@@ -349,7 +393,7 @@ function CreateClawbackModal({
                   >
                     <div>
                       <p className="font-medium">{ev.eventTitle}</p>
-                      <p className="text-xs text-muted-foreground">{ev.salesExecutiveName}</p>
+                      {!isSalesExec && <p className="text-xs text-muted-foreground">{ev.salesExecutiveName}</p>}
                     </div>
                     <span className="text-xs font-mono text-right ml-4 shrink-0">
                       {formatCurrency(ev.calculatedCommissionAmount)}
@@ -433,6 +477,53 @@ function CreateClawbackModal({
                 value={componentDescription}
                 onChange={(e) => setComponentDescription(e.target.value)}
               />
+            </div>
+          )}
+
+          {/* Early Termination Calculator */}
+          {reasonCategory === "TERMINATION" && (
+            <div className="rounded-lg border border-amber-200 dark:border-amber-700/40 bg-amber-50/50 dark:bg-amber-900/10 p-3.5 space-y-3">
+              <div className="flex items-center gap-2">
+                <CalendarRange className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                  Early Termination Calculator
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Enter the contract dates to auto-calculate the pro-rata clawback. This context is sent to Finance.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Contract Start <span className="text-destructive">*</span></Label>
+                  <Input type="date" value={contractStart} onChange={(e) => setContractStart(e.target.value)} className="text-xs h-8" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Termination Date <span className="text-destructive">*</span></Label>
+                  <Input type="date" value={terminationDate} onChange={(e) => setTerminationDate(e.target.value)} className="text-xs h-8" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Original End Date <span className="text-destructive">*</span></Label>
+                  <Input type="date" value={originalEnd} onChange={(e) => setOriginalEnd(e.target.value)} className="text-xs h-8" />
+                </div>
+              </div>
+              {termCalc ? (
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-md bg-background/60 border border-border px-2 py-2">
+                    <p className="text-[10px] text-muted-foreground">Total Duration</p>
+                    <p className="text-sm font-semibold">{termCalc.totalMonths} mo</p>
+                  </div>
+                  <div className="rounded-md bg-background/60 border border-border px-2 py-2">
+                    <p className="text-[10px] text-muted-foreground">Remaining Months</p>
+                    <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">{termCalc.remainingMonths} mo</p>
+                  </div>
+                  <div className="rounded-md bg-background/60 border border-border px-2 py-2">
+                    <p className="text-[10px] text-muted-foreground">Clawback Factor</p>
+                    <p className="text-sm font-semibold text-red-600 dark:text-red-400">{(termCalc.factor * 100).toFixed(1)}%</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">Enter all three dates — clawback amount will auto-calculate.</p>
+              )}
             </div>
           )}
 
@@ -978,6 +1069,8 @@ export default function Clawbacks() {
   const { clawbackTerm, clawbackTermPlural } = useIndustryConfig();
   const role = user?.role ?? "";
   const canManage = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"].includes(role);
+  const isSalesExec = role === "SALES_EXECUTIVE";
+  const canCreate = canManage || isSalesExec;
 
   const [clawbacks, setClawbacks] = useState<Clawback[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1046,7 +1139,7 @@ export default function Clawbacks() {
               : `View ${clawbackTermPlural.toLowerCase()} and reversals applied to your commission.`}
           </p>
         </div>
-        {canManage && (
+        {canCreate && (
           <Button onClick={() => setShowCreate(true)} className="gap-1.5 bg-red-600 hover:bg-red-700 text-white shrink-0">
             <Plus className="h-4 w-4" /> New {clawbackTerm}
           </Button>
