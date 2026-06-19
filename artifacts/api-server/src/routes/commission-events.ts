@@ -288,6 +288,31 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       },
     });
     if (!event) { res.status(404).json({ error: "Not found" }); return; }
+
+    // ── Dynamically resolve post-approval step statuses from wallet/payout ──
+    const commApprovedTx = await prisma.walletTransaction.findFirst({
+      where: { referenceId: event.id, transactionType: "COMMISSION_APPROVED" },
+      select: { walletId: true },
+    });
+    let payoutApproved = false;
+    if (commApprovedTx) {
+      const payoutTx = await prisma.walletTransaction.findFirst({
+        where: {
+          walletId: commApprovedTx.walletId,
+          transactionType: { in: ["PAYOUT_REQUESTED", "PAYOUT_PAID"] },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { referenceId: true },
+      });
+      if (payoutTx?.referenceId) {
+        const pr = await prisma.payoutRequest.findUnique({
+          where: { id: payoutTx.referenceId },
+          select: { status: true },
+        });
+        payoutApproved = ["PAYROLL_APPROVED", "PAID"].includes(pr?.status ?? "");
+      }
+    }
+
     res.json({
       id:                        event.id,
       eventTitle:                event.eventTitle,
@@ -311,15 +336,27 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
       splitReferrerName:    (event as any).splitReferrerName ?? null,
       splitDeductionAmount: (event as any).splitDeductionAmount ?? null,
       editStatus:           (event as any).editStatus ?? "NONE",
-      approvals: (event.approvals as any[]).map((a) => ({
-        id:            a.id,
-        approvalStep:  a.approvalStep,
-        stepName:      a.stepName ?? null,
-        approverRole:  a.approverRole,
-        status:        a.status,
-        comments:      a.comments,
-        approvedAt:    a.approvedAt?.toISOString() ?? null,
-      })),
+      approvals: (event.approvals as any[]).map((a) => {
+        let status = a.status as string;
+        // Commission paid to wallet → "Confirm Payout amount" (SALES_EXECUTIVE) = done
+        if (a.approverRole === "SALES_EXECUTIVE" && commApprovedTx) {
+          status = "APPROVED";
+        }
+        // Payroll step reflects actual payout state
+        if (a.approverRole === "PAYROLL") {
+          if (payoutApproved)     status = "APPROVED";
+          else if (commApprovedTx) status = "PENDING"; // wallet credited → step is now active
+        }
+        return {
+          id:            a.id,
+          approvalStep:  a.approvalStep,
+          stepName:      a.stepName ?? null,
+          approverRole:  a.approverRole,
+          status,
+          comments:      a.comments,
+          approvedAt:    a.approvedAt?.toISOString() ?? null,
+        };
+      }),
     });
   } catch (err) {
     logger.error({ err }, "GetCommissionEvent error");

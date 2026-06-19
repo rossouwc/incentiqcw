@@ -212,6 +212,31 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       },
     });
 
+    // ── Update commission event approval steps when payout is requested ───────
+    // Find all events whose commission was credited to this wallet and mark
+    // the SALES_EXECUTIVE step approved + activate the PAYROLL step.
+    if (!isDeferred) {
+      const commTxns = await prisma.walletTransaction.findMany({
+        where: { walletId: wallet.id, transactionType: "COMMISSION_APPROVED" },
+        select: { referenceId: true },
+      });
+      const eventIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
+      if (eventIds.length > 0) {
+        await prisma.commissionEventApproval.updateMany({
+          where: { commissionEventId: { in: eventIds }, approverRole: "SALES_EXECUTIVE", status: "PENDING" },
+          data: { status: "APPROVED", approvedAt: new Date() },
+        });
+        await prisma.commissionEventApproval.updateMany({
+          where: { commissionEventId: { in: eventIds }, approverRole: "PAYROLL", status: "WAITING" },
+          data: { status: "PENDING" },
+        });
+        await prisma.commissionEvent.updateMany({
+          where: { id: { in: eventIds } },
+          data: { walletStatus: "CREDITED" },
+        });
+      }
+    }
+
     res.status(201).json(payoutToResponse(payout));
   } catch (err) {
     logger.error({ err }, "CreatePayout error");
@@ -458,6 +483,18 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
             description: `Payout paid — ${existing.payoutMonth}`,
           },
         });
+        // ── Mark PAYROLL approval steps as APPROVED for all events on this wallet ──
+        const commTxns = await prisma.walletTransaction.findMany({
+          where: { walletId: wallet.id, transactionType: "COMMISSION_APPROVED" },
+          select: { referenceId: true },
+        });
+        const eventIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
+        if (eventIds.length > 0) {
+          await prisma.commissionEventApproval.updateMany({
+            where: { commissionEventId: { in: eventIds }, approverRole: "PAYROLL", status: { in: ["PENDING", "WAITING"] } },
+            data: { status: "APPROVED", approvedAt: new Date() },
+          });
+        }
       }
       await prisma.notification.create({
         data: {
