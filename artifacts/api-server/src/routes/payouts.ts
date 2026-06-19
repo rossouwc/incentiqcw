@@ -490,9 +490,18 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
         });
         const eventIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
         if (eventIds.length > 0) {
+          // Advance PAYROLL approval steps
           await prisma.commissionEventApproval.updateMany({
             where: { commissionEventId: { in: eventIds }, approverRole: "PAYROLL", status: { in: ["PENDING", "WAITING"] } },
             data: { status: "APPROVED", approvedAt: new Date() },
+          });
+          // Advance the overall CommissionEvent status to fully APPROVED
+          await prisma.commissionEvent.updateMany({
+            where: {
+              id:             { in: eventIds },
+              approvalStatus: { not: "APPROVED" },
+            },
+            data: { approvalStatus: "APPROVED" },
           });
         }
       }
