@@ -20,6 +20,9 @@ function extractCustomerName(eventDataJson: unknown): string {
 function ceaToResponse(cea: any) {
   const event = cea.commissionEvent ?? {};
   const exec = event.salesExecutive ?? {};
+  const financeApproved = (event.approvals ?? []).some(
+    (a: any) => a.approverRole === "FINANCE" && a.status === "APPROVED"
+  );
   return {
     id:                   cea.id,
     tenantId:             cea.tenantId,
@@ -52,6 +55,7 @@ function ceaToResponse(cea: any) {
     splitReferrerName:    event.splitReferrerName ?? null,
     splitDeductionAmount: event.splitDeductionAmount ? Number(event.splitDeductionAmount) : null,
     editStatus:           event.editStatus ?? "NONE",
+    financeApproved,
   };
 }
 
@@ -77,6 +81,7 @@ const ceaInclude = {
       editStatus:                 true,
       salesExecutive:             { select: { firstName: true, lastName: true } },
       internalReferrer:           { select: { firstName: true, lastName: true } },
+      approvals:                  { select: { approverRole: true, status: true } },
     },
   },
   approver: { select: { firstName: true, lastName: true } },

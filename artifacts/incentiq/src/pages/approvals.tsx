@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListApprovals,
@@ -854,10 +855,12 @@ function ConfirmPayoutDialog({ approval, onClose, onAction, submitting }: Action
 interface Props {
   title?: string;
   description?: string;
+  grouped?: boolean;
 }
 
-export default function Approvals({ title = "Pending Approvals", description }: Props) {
+export default function Approvals({ title = "Pending Approvals", description, grouped }: Props) {
   const indCfg = useIndustryConfig();
+  const { user } = useAuth();
   const resolvedDescription = description ?? `${indCfg.eventLabelPlural} awaiting your review and approval`;
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: getListApprovalsQueryKey({ status: "PENDING" }) });
@@ -867,10 +870,15 @@ export default function Approvals({ title = "Pending Approvals", description }: 
   const { toast } = useToast();
   const list: Approval[] = Array.isArray(approvals) ? approvals : (approvals as any)?.data ?? [];
 
+  const showGrouped = grouped || user?.role === "PAYROLL";
+
   const [selected, setSelected] = useState<Approval | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
   const [execFilter, setExecFilter] = useState("all");
+  const [bulkGroup, setBulkGroup] = useState<{ repName: string; approvals: Approval[]; totalCommission: number } | null>(null);
+  const [bulkComments, setBulkComments] = useState("");
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   // Unique sales execs for the filter dropdown
   const salesExecs = useMemo(() => {
@@ -900,6 +908,48 @@ export default function Approvals({ title = "Pending Approvals", description }: 
   const totalCommission = list.reduce((s, a) => s + ((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0)), 0);
   const salesExecConfirmations = applyFilters(list.filter((a) => a.approverRole === "SALES_EXECUTIVE"));
   const standardApprovals = applyFilters(list.filter((a) => a.approverRole !== "SALES_EXECUTIVE"));
+
+  const groupedByRep = useMemo(() => {
+    const groups = new Map<string, { repName: string; approvals: Approval[]; totalCommission: number }>();
+    for (const a of standardApprovals) {
+      const key = a.salesExecutiveName || "Unknown";
+      if (!groups.has(key)) groups.set(key, { repName: key, approvals: [], totalCommission: 0 });
+      const g = groups.get(key)!;
+      g.approvals.push(a);
+      g.totalCommission += (a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.repName.localeCompare(b.repName));
+  }, [standardApprovals]);
+
+  const handleApproveAll = async () => {
+    if (!bulkGroup) return;
+    setBulkSubmitting(true);
+    const repName = bulkGroup.repName;
+    const ids = bulkGroup.approvals.map((a) => a.id);
+    let succeeded = 0;
+    let failed = 0;
+    for (const approval of bulkGroup.approvals) {
+      try {
+        await actionApproval.mutateAsync({
+          approvalId: approval.id,
+          data: { action: "APPROVE", comments: bulkComments || undefined } as any,
+        });
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
+    setBulkSubmitting(false);
+    setBulkGroup(null);
+    setBulkComments("");
+    if (failed === 0) {
+      toast({ title: `${succeeded} deal${succeeded !== 1 ? "s" : ""} approved`, description: `All pending approvals for ${repName} have been approved.` });
+    } else {
+      toast({ title: `${succeeded} approved, ${failed} failed`, description: "Some approvals could not be processed.", variant: "destructive" });
+    }
+    invalidate();
+    void ids;
+  };
 
   const handleAction = async (action: ActionType, comments: string, payoutAmount?: number, allowResubmit?: boolean) => {
     if (!selected) return;
@@ -1109,68 +1159,222 @@ export default function Approvals({ title = "Pending Approvals", description }: 
         </Card>
       )}
 
-      {/* Standard approvals table */}
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle>{indCfg.eventLabelPlural} Pending Your Approval</CardTitle>
-          <CardDescription>Click "Review" to approve, reject, or request changes with comments</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      {/* Standard approvals — grouped by rep or flat table */}
+      {showGrouped ? (
+        <div className="space-y-4">
           {isLoading ? (
-            <div className="p-6 space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+            <div className="space-y-3">
+              {[1, 2].map((i) => <Skeleton key={i} className="h-48 w-full rounded-lg" />)}
             </div>
-          ) : standardApprovals.length === 0 ? (
-            <div className="px-6 py-16 text-center text-muted-foreground">
-              <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-500 opacity-60" />
-              <p className="font-medium">All caught up!</p>
-              <p className="text-sm mt-1">No pending approvals for your role.</p>
-            </div>
+          ) : groupedByRep.length === 0 ? (
+            <Card className="shadow-sm">
+              <CardContent className="py-16 text-center text-muted-foreground">
+                <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-500 opacity-60" />
+                <p className="font-medium">All caught up!</p>
+                <p className="text-sm mt-1">No pending approvals.</p>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
-                  <tr>
-                    <th className="px-6 py-4 font-medium">Deal</th>
-                    <th className="px-6 py-4 font-medium">Sales Rep</th>
-                    <th className="px-6 py-4 font-medium">Approval Step</th>
-                    <th className="px-6 py-4 font-medium text-right">Commission</th>
-                    <th className="px-6 py-4 font-medium">Submitted</th>
-                    <th className="px-6 py-4 font-medium">Status</th>
-                    <th className="px-6 py-4 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {standardApprovals.map((a) => (
-                    <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-foreground">{a.dealName}</div>
-                        <div className="text-xs text-muted-foreground">{a.customerName}</div>
-                      </td>
-                      <td className="px-6 py-4 text-muted-foreground">{a.salesExecutiveName}</td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium">{a.stepName ?? `Level ${a.approvalLevel}`}</div>
-                        <div className="text-xs text-muted-foreground">{a.approverRole}</div>
-                      </td>
-                      <td className="px-6 py-4 text-right font-semibold text-primary">
-                        {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
-                      </td>
-                      <td className="px-6 py-4 text-muted-foreground text-xs">{formatDate(a.createdAt)}</td>
-                      <td className="px-6 py-4"><StatusBadge status={a.status} /></td>
-                      <td className="px-6 py-4 text-right">
-                        <Button size="sm" className="h-8 gap-1.5" onClick={() => setSelected(a)}>
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          Review
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            groupedByRep.map((group) => (
+              <Card key={group.repName} className="shadow-sm overflow-hidden">
+                <CardHeader className="pb-3 border-b border-border">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <UserCircle className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">{group.repName}</CardTitle>
+                        <CardDescription className="text-xs mt-0.5">
+                          {group.approvals.length} deal{group.approvals.length !== 1 ? "s" : ""} · Total commission{" "}
+                          <span className="font-semibold text-foreground">{formatCurrency(group.totalCommission)}</span>
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="gap-1.5 bg-green-600 hover:bg-green-700 text-white shrink-0"
+                      onClick={() => { setBulkGroup(group); setBulkComments(""); }}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Approve All
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                        <tr>
+                          <th className="px-5 py-2.5 font-medium">Deal</th>
+                          <th className="px-5 py-2.5 font-medium">Approval Step</th>
+                          <th className="px-5 py-2.5 font-medium text-center">Finance ✓</th>
+                          <th className="px-5 py-2.5 font-medium text-right">Commission</th>
+                          <th className="px-5 py-2.5 font-medium">Submitted</th>
+                          <th className="px-5 py-2.5 font-medium text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.approvals.map((a) => (
+                          <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3">
+                              <div className="font-medium text-foreground">{a.dealName}</div>
+                              <div className="text-xs text-muted-foreground">{a.customerName}</div>
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="text-sm font-medium">{a.stepName ?? `Level ${a.approvalLevel}`}</div>
+                              <div className="text-xs text-muted-foreground">{a.approverRole}</div>
+                            </td>
+                            <td className="px-5 py-3 text-center">
+                              {(a as any).financeApproved ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
+                                  <CheckCircle2 className="h-3 w-3" /> Yes
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground border border-border">
+                                  <Clock className="h-3 w-3" /> Pending
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 text-right font-semibold text-primary">
+                              {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
+                            </td>
+                            <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(a.createdAt)}</td>
+                            <td className="px-5 py-3 text-right">
+                              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setSelected(a)}>
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                Review
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
-        </CardContent>
-      </Card>
+        </div>
+      ) : (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>{indCfg.eventLabelPlural} Pending Your Approval</CardTitle>
+            <CardDescription>Click "Review" to approve, reject, or request changes with comments</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-6 space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : standardApprovals.length === 0 ? (
+              <div className="px-6 py-16 text-center text-muted-foreground">
+                <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-500 opacity-60" />
+                <p className="font-medium">All caught up!</p>
+                <p className="text-sm mt-1">No pending approvals for your role.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                    <tr>
+                      <th className="px-6 py-4 font-medium">Deal</th>
+                      <th className="px-6 py-4 font-medium">Sales Rep</th>
+                      <th className="px-6 py-4 font-medium">Approval Step</th>
+                      <th className="px-6 py-4 font-medium text-right">Commission</th>
+                      <th className="px-6 py-4 font-medium">Submitted</th>
+                      <th className="px-6 py-4 font-medium">Status</th>
+                      <th className="px-6 py-4 font-medium text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {standardApprovals.map((a) => (
+                      <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-foreground">{a.dealName}</div>
+                          <div className="text-xs text-muted-foreground">{a.customerName}</div>
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground">{a.salesExecutiveName}</td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium">{a.stepName ?? `Level ${a.approvalLevel}`}</div>
+                          <div className="text-xs text-muted-foreground">{a.approverRole}</div>
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-primary">
+                          {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
+                        </td>
+                        <td className="px-6 py-4 text-muted-foreground text-xs">{formatDate(a.createdAt)}</td>
+                        <td className="px-6 py-4"><StatusBadge status={a.status} /></td>
+                        <td className="px-6 py-4 text-right">
+                          <Button size="sm" className="h-8 gap-1.5" onClick={() => setSelected(a)}>
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            Review
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Bulk Approve All confirmation dialog */}
+      {bulkGroup && (
+        <Dialog open={!!bulkGroup} onOpenChange={(open) => { if (!open && !bulkSubmitting) { setBulkGroup(null); setBulkComments(""); } }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Approve All — {bulkGroup.repName}</DialogTitle>
+              <DialogDescription>
+                You're about to approve {bulkGroup.approvals.length} deal{bulkGroup.approvals.length !== 1 ? "s" : ""} totalling{" "}
+                <span className="font-semibold text-foreground">{formatCurrency(bulkGroup.totalCommission)}</span> in commission.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-md border border-border divide-y divide-border max-h-52 overflow-y-auto">
+                {bulkGroup.approvals.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between px-3 py-2.5 text-sm">
+                    <div>
+                      <p className="font-medium text-foreground">{a.dealName}</p>
+                      <p className="text-xs text-muted-foreground">{a.customerName}</p>
+                    </div>
+                    <span className="text-primary font-semibold tabular-nums ml-3 shrink-0">
+                      {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Comments <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Textarea
+                  value={bulkComments}
+                  onChange={(e) => setBulkComments(e.target.value)}
+                  placeholder="Add a note applied to all approvals…"
+                  rows={2}
+                  disabled={bulkSubmitting}
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  className="flex-1 gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                  disabled={bulkSubmitting}
+                  onClick={handleApproveAll}
+                >
+                  {bulkSubmitting ? (
+                    <><Clock className="h-4 w-4 animate-spin" />Approving…</>
+                  ) : (
+                    <><CheckCircle2 className="h-4 w-4" />Approve {bulkGroup.approvals.length} Deal{bulkGroup.approvals.length !== 1 ? "s" : ""}</>
+                  )}
+                </Button>
+                <Button variant="outline" disabled={bulkSubmitting} onClick={() => { setBulkGroup(null); setBulkComments(""); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Render the correct dialog based on step type */}
       {selected?.approverRole === "SALES_EXECUTIVE" ? (

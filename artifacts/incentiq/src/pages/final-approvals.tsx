@@ -7,6 +7,7 @@ export default function FinalApprovals() {
     <Approvals
       title="Executive Approvals"
       description={`${indCfg.eventLabelPlural} requiring final executive sign-off before commission is credited`}
+      grouped
     />
   );
 }
