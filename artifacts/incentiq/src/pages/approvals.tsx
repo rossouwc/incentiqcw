@@ -925,30 +925,36 @@ export default function Approvals({ title = "Pending Approvals", description, gr
     if (!bulkGroup) return;
     setBulkSubmitting(true);
     const repName = bulkGroup.repName;
-    const ids = bulkGroup.approvals.map((a) => a.id);
-    let succeeded = 0;
-    let failed = 0;
-    for (const approval of bulkGroup.approvals) {
-      try {
-        await actionApproval.mutateAsync({
-          approvalId: approval.id,
-          data: { action: "APPROVE", comments: bulkComments || undefined } as any,
+    try {
+      const res = await fetch("/api/approvals/bulk-action", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          approvalIds: bulkGroup.approvals.map((a) => a.id),
+          action:      "APPROVE",
+          comments:    bulkComments || undefined,
+        }),
+      });
+      const payload: { succeeded: string[]; failed: string[]; errors: Record<string, string> } = await res.json();
+      const { succeeded, failed, errors } = payload;
+      if (failed.length === 0) {
+        toast({ title: `${succeeded.length} deal${succeeded.length !== 1 ? "s" : ""} approved`, description: `All pending approvals for ${repName} have been approved.` });
+      } else {
+        const firstErr = Object.values(errors)[0];
+        toast({
+          title:       `${succeeded.length} approved, ${failed.length} failed`,
+          description: firstErr ? `Error: ${firstErr}` : "Some approvals could not be processed.",
+          variant:     "destructive",
         });
-        succeeded++;
-      } catch {
-        failed++;
       }
+      setBulkGroup(null);
+      setBulkComments("");
+      invalidate();
+    } catch {
+      toast({ title: "Bulk approval failed", description: "Could not reach the server. Please try again.", variant: "destructive" });
+    } finally {
+      setBulkSubmitting(false);
     }
-    setBulkSubmitting(false);
-    setBulkGroup(null);
-    setBulkComments("");
-    if (failed === 0) {
-      toast({ title: `${succeeded} deal${succeeded !== 1 ? "s" : ""} approved`, description: `All pending approvals for ${repName} have been approved.` });
-    } else {
-      toast({ title: `${succeeded} approved, ${failed} failed`, description: "Some approvals could not be processed.", variant: "destructive" });
-    }
-    invalidate();
-    void ids;
   };
 
   const handleAction = async (action: ActionType, comments: string, payoutAmount?: number, allowResubmit?: boolean) => {

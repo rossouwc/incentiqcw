@@ -195,6 +195,373 @@ async function creditWalletForSalesExec(
   });
 }
 
+// ── Shared action-processing helper (used by single + bulk endpoints) ───────────
+
+async function executeApprovalAction(
+  approvalId: string,
+  action: string,
+  body: { comments?: string; payoutAmount?: number; allowResubmit?: boolean },
+  user: { userId: string; tenantId: string; role: string }
+): Promise<{ ok: true; data: any } | { ok: false; error: string; httpStatus: number }> {
+  const { comments, payoutAmount, allowResubmit } = body;
+
+  const cea: any = await prisma.commissionEventApproval.findUnique({
+    where:   { id: approvalId },
+    include: { commissionEvent: true },
+  });
+  if (!cea) return { ok: false, error: "Approval not found", httpStatus: 404 };
+  if (cea.tenantId !== user.tenantId) return { ok: false, error: "Forbidden", httpStatus: 403 };
+  if (cea.status !== "PENDING") return { ok: false, error: "This approval step has already been actioned", httpStatus: 400 };
+
+  const canAction =
+    ["SUPER_ADMIN", "ADMIN"].includes(user.role) ||
+    cea.approverUserId === user.userId ||
+    (!cea.approverUserId && cea.approverRole === user.role);
+  if (!canAction) return { ok: false, error: "You are not authorised to action this approval step", httpStatus: 403 };
+
+  if (action === "APPROVE" && cea.approverRole === "SALES_EXECUTIVE") {
+    const amt = Number(payoutAmount);
+    if (!payoutAmount || isNaN(amt) || amt <= 0) {
+      return { ok: false, error: "payoutAmount is required when a Sales Executive Confirmation step is approved", httpStatus: 400 };
+    }
+  }
+
+  const newStatus = action === "APPROVE" ? "APPROVED"
+    : action === "REJECT" ? "REJECTED"
+    : "CHANGES_REQUESTED";
+
+  const updateData: any = {
+    status:         newStatus,
+    approverUserId: user.userId,
+    comments:       comments ?? null,
+    approvedAt:     action === "APPROVE" ? new Date() : null,
+  };
+  if (action === "APPROVE" && cea.approverRole === "SALES_EXECUTIVE" && payoutAmount) {
+    updateData.payoutAmount = Number(payoutAmount);
+  }
+
+  const updated: any = await prisma.commissionEventApproval.update({
+    where:   { id: approvalId },
+    data:    updateData,
+    include: ceaInclude,
+  });
+
+  const event       = cea.commissionEvent;
+  const commission  = Number(event.calculatedCommissionAmount);
+  const salesExecId = event.salesExecutiveId as string;
+  const eventId     = event.id as string;
+  const eventTitle  = event.eventTitle as string;
+
+  if (action === "APPROVE") {
+    if (cea.approverRole === "SALES_EXECUTIVE") {
+      const amt    = Number(payoutAmount);
+      const tax    = amt * 0.25;
+      const net    = amt - tax;
+      const tenant = await prisma.tenant.findUnique({ where: { id: user.tenantId } });
+      const cutoffDay = tenant?.commissionCutoffDay ?? 20;
+      const now = new Date();
+      const isAfterCutoff = now.getDate() > cutoffDay;
+      const payoutDate  = isAfterCutoff ? new Date(now.getFullYear(), now.getMonth() + 1, 1) : now;
+      const payoutMonth = `${payoutDate.getFullYear()}-${String(payoutDate.getMonth() + 1).padStart(2, "0")}`;
+      await prisma.payoutRequest.create({
+        data: {
+          tenantId: user.tenantId,
+          userId:   salesExecId,
+          requestedAmount:    amt,
+          estimatedTax:       tax,
+          estimatedNetPayout: net,
+          payoutMonth,
+          status: "PENDING",
+        },
+      });
+      await prisma.notification.create({
+        data: {
+          tenantId: user.tenantId,
+          userId:   salesExecId,
+          title:    "Payout Request Created",
+          message:  `Your payout request of R${amt.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${eventTitle} has been sent to Payroll for processing.`,
+          type:     "PAYOUT_REQUESTED",
+          readStatus: false,
+        },
+      });
+    }
+
+    const nextStep: any = await prisma.commissionEventApproval.findFirst({
+      where: { commissionEventId: eventId, approvalStep: cea.approvalStep + 1 },
+    });
+
+    if (nextStep) {
+      const interimStatus: string =
+        cea.approverRole === "MANAGER"          ? "MANAGER_APPROVED"
+        : cea.approverRole === "FINANCE"        ? "FINANCE_APPROVED"
+        : cea.approverRole === "EXECUTIVE"      ? "EXECUTIVE_APPROVED"
+        : cea.approverRole === "SALES_EXECUTIVE"? "PENDING_PAYROLL"
+        : "PENDING_APPROVAL";
+
+      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: interimStatus } });
+
+      if (nextStep.approverRole === "SALES_EXECUTIVE") {
+        const netCommission1 = await computeAndApplySplit(user.tenantId, event, commission, eventId, eventTitle);
+        await creditWalletForSalesExec(user.tenantId, salesExecId, netCommission1, eventId, eventTitle);
+        await prisma.commissionEventApproval.update({
+          where: { id: nextStep.id },
+          data:  { approverUserId: salesExecId, status: "PENDING" },
+        });
+        await prisma.notification.create({
+          data: {
+            tenantId: user.tenantId,
+            userId:   salesExecId,
+            title:    "Commission Credited — Action Required",
+            message:  `R${netCommission1.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for ${eventTitle} has been credited to your wallet. Please go to Approvals to confirm your payout amount.`,
+            type:     "WALLET_CREDITED",
+            readStatus: false,
+          },
+        });
+      } else {
+        await prisma.commissionEventApproval.update({ where: { id: nextStep.id }, data: { status: "PENDING" } });
+
+        if (nextStep.approverUserId) {
+          await prisma.notification.create({
+            data: {
+              tenantId: user.tenantId,
+              userId:   nextStep.approverUserId,
+              title:    "Deal Approval Required",
+              message:  `${eventTitle} has been approved at step ${cea.approvalStep} and requires your review`,
+              type:     "DEAL_SUBMITTED",
+              readStatus: false,
+            },
+          });
+        } else {
+          const roleUsers = await prisma.user.findMany({
+            where: { tenantId: user.tenantId, role: nextStep.approverRole, status: "ACTIVE" },
+          });
+          if (roleUsers.length > 0) {
+            await prisma.notification.createMany({
+              data: roleUsers.map((u: any) => ({
+                tenantId:   user.tenantId,
+                userId:     u.id,
+                title:      "Deal Approval Required",
+                message:    `${eventTitle} is ready for ${nextStep.approverRole} review`,
+                type:       "DEAL_SUBMITTED" as const,
+                readStatus: false,
+              })),
+            });
+          }
+        }
+
+        if (nextStep.approverRole !== "SALES_EXECUTIVE") {
+          await prisma.notification.create({
+            data: {
+              tenantId: user.tenantId,
+              userId:   salesExecId,
+              title:    "Deal Progressed",
+              message:  `Your deal ${eventTitle} was approved at step ${cea.approvalStep} — moving to next stage`,
+              type:     "DEAL_APPROVED",
+              readStatus: false,
+            },
+          });
+        }
+      }
+
+      if (nextStep.approverRole === "PAYROLL") {
+        const salesExec: any = await prisma.user.findUnique({ where: { id: salesExecId }, select: { firstName: true, lastName: true } });
+        const confirmedAmount = cea.approverRole === "SALES_EXECUTIVE" ? Number(payoutAmount) : null;
+        const payrollUsers = await prisma.user.findMany({
+          where: { tenantId: user.tenantId, role: "PAYROLL", status: "ACTIVE" },
+        });
+        if (payrollUsers.length > 0) {
+          await prisma.notification.createMany({
+            data: payrollUsers.map((u: any) => ({
+              tenantId:   user.tenantId,
+              userId:     u.id,
+              title:      "Payout Ready for Processing",
+              message:    confirmedAmount
+                ? `${salesExec?.firstName ?? "Sales exec"} ${salesExec?.lastName ?? ""} confirmed a payout of R${confirmedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${eventTitle}. Please review and process.`
+                : `${eventTitle} is ready for Payroll processing.`,
+              type:       "PAYOUT_REQUESTED" as const,
+              readStatus: false,
+            })),
+          });
+        }
+      }
+    } else {
+      const alreadyCredited = await prisma.walletTransaction.findFirst({
+        where: { referenceId: eventId, transactionType: "COMMISSION_APPROVED" },
+      });
+      await prisma.commissionEvent.update({
+        where: { id: eventId },
+        data:  { approvalStatus: "APPROVED", approvedAt: new Date(), walletStatus: "CREDITED" },
+      });
+
+      if (!alreadyCredited) {
+        const netCommission2 = await computeAndApplySplit(user.tenantId, event, commission, eventId, eventTitle);
+        await creditWalletForSalesExec(user.tenantId, salesExecId, netCommission2, eventId, eventTitle);
+        await prisma.notification.create({
+          data: {
+            tenantId: user.tenantId,
+            userId:   salesExecId,
+            title:    "Commission Approved & Credited",
+            message:  `R${netCommission2.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} has been credited to your wallet for ${eventTitle}`,
+            type:     "WALLET_CREDITED",
+            readStatus: false,
+          },
+        });
+
+        try {
+          const pendingOffsets = await prisma.commissionClawback.findMany({
+            where: {
+              tenantId:          user.tenantId,
+              salesExecutiveId:  salesExecId,
+              status:            "EXECUTED",
+              outstandingAmount: { gt: 0 },
+            },
+            include: {
+              recoveries:      { where: { recoveryMethod: "FUTURE_COMMISSION_OFFSET" } },
+              commissionEvent: { select: { eventTitle: true } },
+            },
+            orderBy: { executedAt: "asc" },
+          });
+
+          for (const offset of pendingOffsets) {
+            if (offset.recoveries.length === 0) continue;
+            const outstanding = Number(offset.outstandingAmount);
+            if (outstanding <= 0) continue;
+            const offsetTitle = (offset as any).commissionEvent?.eventTitle ?? "prior event";
+
+            await prisma.$transaction(async (tx) => {
+              const freshWallet = await tx.wallet.findUnique({ where: { userId: salesExecId } });
+              if (!freshWallet) return;
+              const walletBalance  = Number(freshWallet.availableBalance);
+              if (walletBalance <= 0) return;
+              const deductNow      = Math.min(walletBalance, outstanding);
+              const newOutstanding = Math.max(0, outstanding - deductNow);
+              const newRecovered   = Number(offset.recoveredAmount) + deductNow;
+              const newRecovSt     = newOutstanding === 0 ? "FULLY_RECOVERED" : "PARTIALLY_RECOVERED";
+
+              await tx.wallet.update({ where: { id: freshWallet.id }, data: { availableBalance: walletBalance - deductNow } });
+              await tx.walletTransaction.create({
+                data: {
+                  tenantId:        user.tenantId,
+                  walletId:        freshWallet.id,
+                  transactionType: "FUTURE_OFFSET_APPLIED",
+                  amount:          deductNow,
+                  referenceType:   "CLAWBACK",
+                  referenceId:     offset.id,
+                  description:     `Future commission offset applied for "${offsetTitle}"`,
+                },
+              });
+              await tx.clawbackRecovery.create({
+                data: {
+                  tenantId:       user.tenantId,
+                  clawbackId:     offset.id,
+                  recoveryMethod: "FUTURE_COMMISSION_OFFSET",
+                  amount:         deductNow,
+                  description:    `Auto-applied offset on approval of commission event ${eventId}`,
+                  createdById:    user.userId,
+                },
+              });
+              await tx.commissionClawback.update({
+                where: { id: offset.id },
+                data: { recoveredAmount: newRecovered, outstandingAmount: newOutstanding, recoveryStatus: newRecovSt as any },
+              });
+            });
+
+            await prisma.notification.create({
+              data: {
+                tenantId:   user.tenantId,
+                userId:     salesExecId,
+                title:      "Clawback Offset Applied",
+                message:    `A clawback offset for "${offsetTitle}" has been applied from your latest commission.`,
+                type:       "CLAWBACK_EXECUTED",
+                readStatus: false,
+              },
+            }).catch(() => {});
+          }
+        } catch (offsetErr) {
+          logger.error({ err: offsetErr }, "FutureOffsetHook error — commission credit was not rolled back");
+        }
+      } else {
+        await prisma.notification.create({
+          data: {
+            tenantId: user.tenantId,
+            userId:   salesExecId,
+            title:    "Deal Fully Approved",
+            message:  `${eventTitle} has completed all approval stages and is fully approved.`,
+            type:     "DEAL_APPROVED",
+            readStatus: false,
+          },
+        });
+      }
+    }
+  } else if (action === "REJECT") {
+    const canResubmit = allowResubmit === true;
+    await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "REJECTED", allowResubmit: canResubmit } });
+    await deductPendingBalance(user.tenantId, salesExecId, commission, eventId, eventTitle);
+
+    const credited = await prisma.walletTransaction.findFirst({
+      where: { referenceId: eventId, transactionType: "COMMISSION_APPROVED" },
+    });
+    if (credited) {
+      const wallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
+      if (wallet) {
+        await prisma.wallet.update({
+          where: { id: wallet.id },
+          data:  { availableBalance: Math.max(0, Number(wallet.availableBalance) - commission) },
+        });
+        await prisma.walletTransaction.create({
+          data: {
+            tenantId:        user.tenantId,
+            walletId:        wallet.id,
+            transactionType: "PENDING_COMMISSION_REMOVED",
+            amount:          commission,
+            referenceType:   "DEAL",
+            referenceId:     eventId,
+            description:     `Commission reversed after rejection: ${eventTitle}`,
+          },
+        });
+      }
+    }
+
+    await prisma.notification.create({
+      data: {
+        tenantId: user.tenantId,
+        userId:   salesExecId,
+        title:    "Deal Rejected",
+        message:  `Your deal ${eventTitle} was rejected${comments ? `: ${comments}` : ""}${canResubmit ? " — you may resubmit after making changes." : ""}`,
+        type:     "DEAL_REJECTED",
+        readStatus: false,
+      },
+    });
+  } else {
+    await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "CHANGES_REQUESTED" } });
+    await deductPendingBalance(user.tenantId, salesExecId, commission, eventId, eventTitle);
+    await prisma.notification.create({
+      data: {
+        tenantId: user.tenantId,
+        userId:   salesExecId,
+        title:    "Changes Requested on Deal",
+        message:  `${eventTitle} has been sent back for changes${comments ? `: ${comments}` : ""}`,
+        type:     "DEAL_CHANGES_REQUESTED",
+        readStatus: false,
+      },
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      tenantId:   user.tenantId,
+      userId:     user.userId,
+      action,
+      entityType: "CommissionEventApproval",
+      entityId:   cea.id,
+      oldValue:   JSON.stringify({ status: cea.status }),
+      newValue:   JSON.stringify({ status: newStatus, comments, payoutAmount: payoutAmount ?? null }),
+    },
+  });
+
+  return { ok: true, data: ceaToResponse(updated) };
+}
+
 // ── GET /api/approvals ────────────────────────────────────────────────────────
 
 router.get("/", requireAuth, async (req: Request, res: Response) => {
@@ -241,424 +608,58 @@ router.get("/deal/:dealId", requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+// ── POST /api/approvals/bulk-action ──────────────────────────────────────────
+// Must be registered BEFORE /:id/action so Express doesn't treat "bulk-action" as an ID.
+
+router.post("/bulk-action", requireAuth, async (req: Request, res: Response) => {
+  const { approvalIds, action, comments, payoutAmount, allowResubmit } = req.body;
+
+  if (!Array.isArray(approvalIds) || approvalIds.length === 0) {
+    res.status(400).json({ error: "approvalIds must be a non-empty array" }); return;
+  }
+  if (!action || !["APPROVE", "REJECT", "REQUEST_CHANGES"].includes(action)) {
+    res.status(400).json({ error: "action must be APPROVE, REJECT, or REQUEST_CHANGES" }); return;
+  }
+  if (["REJECT", "REQUEST_CHANGES"].includes(action) && !comments?.trim()) {
+    res.status(400).json({ error: "comments are required when rejecting or requesting changes" }); return;
+  }
+
+  const succeeded: string[] = [];
+  const failed:    string[] = [];
+  const errors:    Record<string, string> = {};
+
+  for (const approvalId of approvalIds as string[]) {
+    try {
+      const result = await executeApprovalAction(
+        approvalId, action, { comments, payoutAmount, allowResubmit }, req.user!
+      );
+      if (result.ok) { succeeded.push(approvalId); }
+      else           { failed.push(approvalId); errors[approvalId] = result.error; }
+    } catch (err: any) {
+      failed.push(approvalId);
+      errors[approvalId] = err?.message ?? "Unknown error";
+    }
+  }
+
+  res.json({ succeeded, failed, errors });
+});
+
 // ── POST /api/approvals/:id/action ────────────────────────────────────────────
 
 router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
   const { action, comments, payoutAmount, allowResubmit } = req.body;
   if (!action || !["APPROVE", "REJECT", "REQUEST_CHANGES"].includes(action)) {
-    res.status(400).json({ error: "action must be APPROVE, REJECT, or REQUEST_CHANGES" });
-    return;
+    res.status(400).json({ error: "action must be APPROVE, REJECT, or REQUEST_CHANGES" }); return;
   }
   if (["REJECT", "REQUEST_CHANGES"].includes(action) && !comments?.trim()) {
-    res.status(400).json({ error: "comments are required when rejecting or requesting changes" });
-    return;
+    res.status(400).json({ error: "comments are required when rejecting or requesting changes" }); return;
   }
-
   try {
-    const cea: any = await prisma.commissionEventApproval.findUnique({
-      where:   { id: req.params.id as string },
-      include: { commissionEvent: true },
-    });
-    if (!cea) { res.status(404).json({ error: "Approval not found" }); return; }
-    if (cea.tenantId !== req.user!.tenantId) { res.status(403).json({ error: "Forbidden" }); return; }
-    if (cea.status !== "PENDING") {
-      res.status(400).json({ error: "This approval step has already been actioned" });
-      return;
-    }
-
-    const canAction =
-      ["SUPER_ADMIN", "ADMIN"].includes(req.user!.role) ||
-      cea.approverUserId === req.user!.userId ||
-      (!cea.approverUserId && cea.approverRole === req.user!.role);
-    if (!canAction) {
-      res.status(403).json({ error: "You are not authorised to action this approval step" });
-      return;
-    }
-
-    // SALES_EXECUTIVE confirmation step — payout amount required on approval
-    if (action === "APPROVE" && cea.approverRole === "SALES_EXECUTIVE") {
-      const amt = Number(payoutAmount);
-      if (!payoutAmount || isNaN(amt) || amt <= 0) {
-        res.status(400).json({ error: "payoutAmount is required when a Sales Executive Confirmation step is approved" });
-        return;
-      }
-    }
-
-    const newStatus = action === "APPROVE" ? "APPROVED"
-      : action === "REJECT" ? "REJECTED"
-      : "CHANGES_REQUESTED";
-
-    const updateData: any = {
-      status:        newStatus,
-      approverUserId: req.user!.userId,
-      comments:      comments ?? null,
-      approvedAt:    action === "APPROVE" ? new Date() : null,
-    };
-    if (action === "APPROVE" && cea.approverRole === "SALES_EXECUTIVE" && payoutAmount) {
-      updateData.payoutAmount = Number(payoutAmount);
-    }
-
-    const updated: any = await prisma.commissionEventApproval.update({
-      where:   { id: req.params.id as string },
-      data:    updateData,
-      include: ceaInclude,
-    });
-
-    const event       = cea.commissionEvent;
-    const commission  = Number(event.calculatedCommissionAmount);
-    const salesExecId = event.salesExecutiveId as string;
-    const eventId     = event.id as string;
-    const eventTitle  = event.eventTitle as string;
-
-    if (action === "APPROVE") {
-      // SALES_EXECUTIVE confirmation — create payout request
-      if (cea.approverRole === "SALES_EXECUTIVE") {
-        const amt    = Number(payoutAmount);
-        const tax    = amt * 0.25;
-        const net    = amt - tax;
-        const tenant = await prisma.tenant.findUnique({ where: { id: req.user!.tenantId } });
-        const cutoffDay = tenant?.commissionCutoffDay ?? 20;
-        const now = new Date();
-        const isAfterCutoff = now.getDate() > cutoffDay;
-        const payoutDate  = isAfterCutoff ? new Date(now.getFullYear(), now.getMonth() + 1, 1) : now;
-        const payoutMonth = `${payoutDate.getFullYear()}-${String(payoutDate.getMonth() + 1).padStart(2, "0")}`;
-        await prisma.payoutRequest.create({
-          data: {
-            tenantId: req.user!.tenantId,
-            userId:   salesExecId,
-            requestedAmount:     amt,
-            estimatedTax:        tax,
-            estimatedNetPayout:  net,
-            payoutMonth,
-            status: "PENDING",
-          },
-        });
-        await prisma.notification.create({
-          data: {
-            tenantId: req.user!.tenantId,
-            userId:   salesExecId,
-            title:    "Payout Request Created",
-            message:  `Your payout request of R${amt.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${eventTitle} has been sent to Payroll for processing.`,
-            type:     "PAYOUT_REQUESTED",
-            readStatus: false,
-          },
-        });
-      }
-
-      // Find next step
-      const nextStep: any = await prisma.commissionEventApproval.findFirst({
-        where: { commissionEventId: eventId, approvalStep: cea.approvalStep + 1 },
-      });
-
-      if (nextStep) {
-        // Determine interim CommissionEvent status
-        const interimStatus: string =
-          cea.approverRole === "MANAGER"         ? "MANAGER_APPROVED"
-          : cea.approverRole === "FINANCE"       ? "FINANCE_APPROVED"
-          : cea.approverRole === "EXECUTIVE"     ? "EXECUTIVE_APPROVED"
-          : cea.approverRole === "SALES_EXECUTIVE" ? "PENDING_PAYROLL"
-          : "PENDING_APPROVAL";
-
-        await prisma.commissionEvent.update({
-          where: { id: eventId },
-          data:  { approvalStatus: interimStatus },
-        });
-
-        // SALES_EXECUTIVE next step — credit wallet and assign step to this exec
-        if (nextStep.approverRole === "SALES_EXECUTIVE") {
-          const netCommission1 = await computeAndApplySplit(req.user!.tenantId, event, commission, eventId, eventTitle);
-          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, netCommission1, eventId, eventTitle);
-          await prisma.commissionEventApproval.update({
-            where: { id: nextStep.id },
-            data:  { approverUserId: salesExecId, status: "PENDING" },
-          });
-          await prisma.notification.create({
-            data: {
-              tenantId: req.user!.tenantId,
-              userId:   salesExecId,
-              title:    "Commission Credited — Action Required",
-              message:  `R${netCommission1.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} commission for ${eventTitle} has been credited to your wallet. Please go to Approvals to confirm your payout amount.`,
-              type:     "WALLET_CREDITED",
-              readStatus: false,
-            },
-          });
-        } else {
-          // Activate next step
-          await prisma.commissionEventApproval.update({
-            where: { id: nextStep.id },
-            data:  { status: "PENDING" },
-          });
-
-          // Notify next approver(s)
-          if (nextStep.approverUserId) {
-            await prisma.notification.create({
-              data: {
-                tenantId: req.user!.tenantId,
-                userId:   nextStep.approverUserId,
-                title:    "Deal Approval Required",
-                message:  `${eventTitle} has been approved at step ${cea.approvalStep} and requires your review`,
-                type:     "DEAL_SUBMITTED",
-                readStatus: false,
-              },
-            });
-          } else {
-            const roleUsers = await prisma.user.findMany({
-              where: { tenantId: req.user!.tenantId, role: nextStep.approverRole, status: "ACTIVE" },
-            });
-            if (roleUsers.length > 0) {
-              await prisma.notification.createMany({
-                data: roleUsers.map((u: any) => ({
-                  tenantId: req.user!.tenantId,
-                  userId:   u.id,
-                  title:    "Deal Approval Required",
-                  message:  `${eventTitle} is ready for ${nextStep.approverRole} review`,
-                  type:     "DEAL_SUBMITTED" as const,
-                  readStatus: false,
-                })),
-              });
-            }
-          }
-
-          // Notify sales exec of progress
-          if (nextStep.approverRole !== "SALES_EXECUTIVE") {
-            await prisma.notification.create({
-              data: {
-                tenantId: req.user!.tenantId,
-                userId:   salesExecId,
-                title:    "Deal Progressed",
-                message:  `Your deal ${eventTitle} was approved at step ${cea.approvalStep} — moving to next stage`,
-                type:     "DEAL_APPROVED",
-                readStatus: false,
-              },
-            });
-          }
-        }
-
-        // Notify payroll when it becomes their turn
-        if (nextStep.approverRole === "PAYROLL") {
-          const salesExec: any = await prisma.user.findUnique({ where: { id: salesExecId }, select: { firstName: true, lastName: true } });
-          const confirmedAmount = cea.approverRole === "SALES_EXECUTIVE" ? Number(payoutAmount) : null;
-          const payrollUsers = await prisma.user.findMany({
-            where: { tenantId: req.user!.tenantId, role: "PAYROLL", status: "ACTIVE" },
-          });
-          if (payrollUsers.length > 0) {
-            await prisma.notification.createMany({
-              data: payrollUsers.map((u: any) => ({
-                tenantId: req.user!.tenantId,
-                userId:   u.id,
-                title:    "Payout Ready for Processing",
-                message:  confirmedAmount
-                  ? `${salesExec?.firstName ?? "Sales exec"} ${salesExec?.lastName ?? ""} confirmed a payout of R${confirmedAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} for ${eventTitle}. Please review and process.`
-                  : `${eventTitle} is ready for Payroll processing.`,
-                type: "PAYOUT_REQUESTED" as const,
-                readStatus: false,
-              })),
-            });
-          }
-        }
-      } else {
-        // Final step approved — mark event as APPROVED
-        const alreadyCredited = await prisma.walletTransaction.findFirst({
-          where: { referenceId: eventId, transactionType: "COMMISSION_APPROVED" },
-        });
-
-        await prisma.commissionEvent.update({
-          where: { id: eventId },
-          data:  { approvalStatus: "APPROVED", approvedAt: new Date(), walletStatus: "CREDITED" },
-        });
-
-        if (!alreadyCredited) {
-          const netCommission2 = await computeAndApplySplit(req.user!.tenantId, event, commission, eventId, eventTitle);
-          await creditWalletForSalesExec(req.user!.tenantId, salesExecId, netCommission2, eventId, eventTitle);
-          await prisma.notification.create({
-            data: {
-              tenantId: req.user!.tenantId,
-              userId:   salesExecId,
-              title:    "Commission Approved & Credited",
-              message:  `R${netCommission2.toLocaleString("en-ZA", { minimumFractionDigits: 2 })} has been credited to your wallet for ${eventTitle}`,
-              type:     "WALLET_CREDITED",
-              readStatus: false,
-            },
-          });
-
-          // ── Future-offset clawback hook ───────────────────────────────────────
-          // Apply any pending FUTURE_COMMISSION_OFFSET clawbacks for this exec.
-          // Uses a per-clawback transaction so a failure on one doesn't block others.
-          // Caps deduction at the wallet's live available balance to prevent negatives.
-          // Handles partial coverage: outstandingAmount reduced by what was actually
-          // deducted, not forced to 0; recoveryStatus updated accordingly.
-          try {
-            const pendingOffsets = await prisma.commissionClawback.findMany({
-              where: {
-                tenantId:          req.user!.tenantId,
-                salesExecutiveId:  salesExecId,
-                status:            "EXECUTED",
-                outstandingAmount: { gt: 0 },
-              },
-              include: {
-                recoveries:      { where: { recoveryMethod: "FUTURE_COMMISSION_OFFSET" } },
-                commissionEvent: { select: { eventTitle: true } },
-              },
-              orderBy: { executedAt: "asc" }, // oldest debt first
-            });
-
-            for (const offset of pendingOffsets) {
-              if (offset.recoveries.length === 0) continue;
-              const outstanding = Number(offset.outstandingAmount);
-              if (outstanding <= 0) continue;
-
-              const offsetTitle = (offset as any).commissionEvent?.eventTitle ?? "prior event";
-
-              // Run inside a transaction so the wallet re-fetch and deduction are atomic
-              await prisma.$transaction(async (tx) => {
-                // Re-fetch wallet inside the transaction for the freshest balance
-                const freshWallet = await tx.wallet.findUnique({ where: { userId: salesExecId } });
-                if (!freshWallet) return;
-
-                const walletBalance = Number(freshWallet.availableBalance);
-                if (walletBalance <= 0) return;
-
-                // Cap deduction so the wallet can never go negative
-                const deductNow      = Math.min(walletBalance, outstanding);
-                const newOutstanding = Math.max(0, outstanding - deductNow);
-                const newRecovered   = Number(offset.recoveredAmount) + deductNow;
-                const newRecovSt     = newOutstanding === 0 ? "FULLY_RECOVERED" : "PARTIALLY_RECOVERED";
-
-                await tx.wallet.update({
-                  where: { id: freshWallet.id },
-                  data:  { availableBalance: walletBalance - deductNow },
-                });
-
-                await tx.walletTransaction.create({
-                  data: {
-                    tenantId:        req.user!.tenantId,
-                    walletId:        freshWallet.id,
-                    transactionType: "FUTURE_OFFSET_APPLIED",
-                    amount:          deductNow,
-                    referenceType:   "CLAWBACK",
-                    referenceId:     offset.id,
-                    description:     `Future commission offset applied for "${offsetTitle}"`,
-                  },
-                });
-
-                await tx.clawbackRecovery.create({
-                  data: {
-                    tenantId:       req.user!.tenantId,
-                    clawbackId:     offset.id,
-                    recoveryMethod: "FUTURE_COMMISSION_OFFSET",
-                    amount:         deductNow,
-                    description:    `Auto-applied offset on approval of commission event ${eventId}`,
-                    createdById:    req.user!.userId,
-                  },
-                });
-
-                await tx.commissionClawback.update({
-                  where: { id: offset.id },
-                  data: {
-                    recoveredAmount:   newRecovered,
-                    outstandingAmount: newOutstanding,
-                    recoveryStatus:    newRecovSt as any,
-                  },
-                });
-              });
-
-              await prisma.notification.create({
-                data: {
-                  tenantId:   req.user!.tenantId,
-                  userId:     salesExecId,
-                  title:      "Clawback Offset Applied",
-                  message:    `A clawback offset for "${offsetTitle}" has been applied from your latest commission.`,
-                  type:       "CLAWBACK_EXECUTED",
-                  readStatus: false,
-                },
-              }).catch(() => {});
-            }
-          } catch (offsetErr) {
-            logger.error({ err: offsetErr }, "FutureOffsetHook error — commission credit was not rolled back");
-          }
-        } else {
-          await prisma.notification.create({
-            data: {
-              tenantId: req.user!.tenantId,
-              userId:   salesExecId,
-              title:    "Deal Fully Approved",
-              message:  `${eventTitle} has completed all approval stages and is fully approved.`,
-              type:     "DEAL_APPROVED",
-              readStatus: false,
-            },
-          });
-        }
-      }
-    } else if (action === "REJECT") {
-      const canResubmit = allowResubmit === true;
-      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "REJECTED", allowResubmit: canResubmit } });
-      await deductPendingBalance(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
-
-      // Reverse any commission already credited
-      const credited = await prisma.walletTransaction.findFirst({
-        where: { referenceId: eventId, transactionType: "COMMISSION_APPROVED" },
-      });
-      if (credited) {
-        const wallet = await prisma.wallet.findUnique({ where: { userId: salesExecId } });
-        if (wallet) {
-          await prisma.wallet.update({
-            where: { id: wallet.id },
-            data:  { availableBalance: Math.max(0, Number(wallet.availableBalance) - commission) },
-          });
-          await prisma.walletTransaction.create({
-            data: {
-              tenantId: req.user!.tenantId,
-              walletId:        wallet.id,
-              transactionType: "PENDING_COMMISSION_REMOVED",
-              amount:          commission,
-              referenceType:   "DEAL",
-              referenceId:     eventId,
-              description:     `Commission reversed after rejection: ${eventTitle}`,
-            },
-          });
-        }
-      }
-
-      const canResubmit2 = allowResubmit === true;
-      await prisma.notification.create({
-        data: {
-          tenantId: req.user!.tenantId,
-          userId:   salesExecId,
-          title:    "Deal Rejected",
-          message:  `Your deal ${eventTitle} was rejected${comments ? `: ${comments}` : ""}${canResubmit2 ? " — you may resubmit after making changes." : ""}`,
-          type:     "DEAL_REJECTED",
-          readStatus: false,
-        },
-      });
-    } else {
-      // REQUEST_CHANGES — send back for revision
-      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "CHANGES_REQUESTED" } });
-      await deductPendingBalance(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
-      await prisma.notification.create({
-        data: {
-          tenantId: req.user!.tenantId,
-          userId:   salesExecId,
-          title:    "Changes Requested on Deal",
-          message:  `${eventTitle} has been sent back for changes${comments ? `: ${comments}` : ""}`,
-          type:     "DEAL_CHANGES_REQUESTED",
-          readStatus: false,
-        },
-      });
-    }
-
-    await prisma.auditLog.create({
-      data: {
-        tenantId:   req.user!.tenantId,
-        userId:     req.user!.userId,
-        action,
-        entityType: "CommissionEventApproval",
-        entityId:   cea.id,
-        oldValue:   JSON.stringify({ status: cea.status }),
-        newValue:   JSON.stringify({ status: newStatus, comments, payoutAmount: payoutAmount ?? null }),
-      },
-    });
-
-    res.json(ceaToResponse(updated));
+    const result = await executeApprovalAction(
+      req.params.id as string, action, { comments, payoutAmount, allowResubmit }, req.user!
+    );
+    if (!result.ok) { res.status(result.httpStatus).json({ error: result.error }); return; }
+    res.json(result.data);
   } catch (err) {
     logger.error({ err }, "ActionApproval error");
     res.status(500).json({ error: "Server error" });
