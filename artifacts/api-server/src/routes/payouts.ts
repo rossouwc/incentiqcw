@@ -513,6 +513,24 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
         },
       });
     } else {
+      // Reflect PAYROLL_APPROVED on the linked CommissionEvents
+      const userWallet = await prisma.wallet.findUnique({ where: { userId: existing.userId } });
+      if (userWallet) {
+        const commTxns = await prisma.walletTransaction.findMany({
+          where: { walletId: userWallet.id, transactionType: "COMMISSION_APPROVED" },
+          select: { referenceId: true },
+        });
+        const evtIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
+        if (evtIds.length > 0) {
+          await prisma.commissionEvent.updateMany({
+            where: {
+              id: { in: evtIds },
+              approvalStatus: { in: ["PENDING_PAYROLL", "EXECUTIVE_APPROVED", "FINANCE_APPROVED", "MANAGER_APPROVED"] },
+            },
+            data: { approvalStatus: "PAYROLL_APPROVED" },
+          });
+        }
+      }
       await prisma.notification.create({
         data: {
           tenantId: req.user!.tenantId,

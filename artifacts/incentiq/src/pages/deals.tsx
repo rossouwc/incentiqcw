@@ -260,11 +260,18 @@ function TriggerBadge({ status, onClick }: { status: string; onClick?: () => voi
 // ── Status display ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
-  DRAFT:            { label: "Draft",           cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",       Icon: CircleDot },
-  PENDING_APPROVAL: { label: "In Approval",     cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",   Icon: Clock },
-  APPROVED:         { label: "Approved",        cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",   Icon: CheckCircle2 },
-  REJECTED:         { label: "Rejected",        cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",           Icon: XCircle },
-  PAID:             { label: "Paid",            cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", Icon: CheckCircle2 },
+  DRAFT:              { label: "Draft",              cls: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",             Icon: CircleDot },
+  PENDING_APPROVAL:   { label: "In Approval",        cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",         Icon: Clock },
+  MANAGER_APPROVED:   { label: "Manager Approved",   cls: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",                 Icon: CheckCircle2 },
+  FINANCE_APPROVED:   { label: "Finance Approved",   cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",             Icon: CheckCircle2 },
+  EXECUTIVE_APPROVED: { label: "Exec Approved",      cls: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",     Icon: CheckCircle2 },
+  PENDING_PAYROLL:    { label: "Pending Payroll",    cls: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",     Icon: Clock },
+  PAYROLL_APPROVED:   { label: "Payroll Approved",   cls: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",             Icon: CheckCircle2 },
+  APPROVED:           { label: "Approved",           cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",         Icon: CheckCircle2 },
+  CHANGES_REQUESTED:  { label: "Changes Requested",  cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",     Icon: RotateCcw },
+  REJECTED:           { label: "Rejected",           cls: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",                 Icon: XCircle },
+  CANCELLED:          { label: "Cancelled",          cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",            Icon: Ban },
+  PAID:               { label: "Paid",               cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", Icon: CheckCircle2 },
 };
 
 function StatusBadge({ status }: { status: string }) {
