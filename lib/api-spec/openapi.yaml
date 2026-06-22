@@ -1983,6 +1983,17 @@ components:
           type: ["string", "null"]
         createdAt:
           type: string
+        submittedAt:
+          type: ["string", "null"]
+        splitDeductionAmount:
+          type: ["number", "null"]
+        editStatus:
+          type: string
+        sourceType:
+          type: string
+        financeApproved:
+          type: boolean
+          description: True when a Finance-role step on this event has been approved.
 
     ApprovalAction:
       type: object

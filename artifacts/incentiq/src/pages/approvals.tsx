@@ -879,6 +879,9 @@ export default function Approvals({ title = "Pending Approvals", description, gr
   const [bulkGroup, setBulkGroup] = useState<{ repName: string; approvals: Approval[]; totalCommission: number } | null>(null);
   const [bulkComments, setBulkComments] = useState("");
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (name: string) =>
+    setExpandedGroups((prev) => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
 
   // Unique sales execs for the filter dropdown
   const salesExecs = useMemo(() => {
@@ -1181,85 +1184,105 @@ export default function Approvals({ title = "Pending Approvals", description, gr
               </CardContent>
             </Card>
           ) : (
-            groupedByRep.map((group) => (
-              <Card key={group.repName} className="shadow-sm overflow-hidden">
-                <CardHeader className="pb-3 border-b border-border">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                        <UserCircle className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">{group.repName}</CardTitle>
-                        <CardDescription className="text-xs mt-0.5">
-                          {group.approvals.length} deal{group.approvals.length !== 1 ? "s" : ""} · Total commission{" "}
-                          <span className="font-semibold text-foreground">{formatCurrency(group.totalCommission)}</span>
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="gap-1.5 bg-green-600 hover:bg-green-700 text-white shrink-0"
-                      onClick={() => { setBulkGroup(group); setBulkComments(""); }}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Approve All
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
-                        <tr>
-                          <th className="px-5 py-2.5 font-medium">Deal</th>
-                          <th className="px-5 py-2.5 font-medium">Approval Step</th>
-                          <th className="px-5 py-2.5 font-medium text-center">Finance ✓</th>
-                          <th className="px-5 py-2.5 font-medium text-right">Commission</th>
-                          <th className="px-5 py-2.5 font-medium">Submitted</th>
-                          <th className="px-5 py-2.5 font-medium text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.approvals.map((a) => (
-                          <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                            <td className="px-5 py-3">
-                              <div className="font-medium text-foreground">{a.dealName}</div>
-                              <div className="text-xs text-muted-foreground">{a.customerName}</div>
-                            </td>
-                            <td className="px-5 py-3">
-                              <div className="text-sm font-medium">{a.stepName ?? `Level ${a.approvalLevel}`}</div>
-                              <div className="text-xs text-muted-foreground">{a.approverRole}</div>
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              {(a as any).financeApproved ? (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
-                                  <CheckCircle2 className="h-3 w-3" /> Yes
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground border border-border">
-                                  <Clock className="h-3 w-3" /> Pending
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-5 py-3 text-right font-semibold text-primary">
-                              {formatCurrency((a.calculatedCommission ?? 0) - ((a as any).splitDeductionAmount ?? 0))}
-                            </td>
-                            <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(a.createdAt)}</td>
-                            <td className="px-5 py-3 text-right">
-                              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setSelected(a)}>
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                Review
+            groupedByRep.map((group) => {
+              const isOpen = expandedGroups.has(group.repName);
+              const allFinanceApproved = group.approvals.every((a) => a.financeApproved);
+              return (
+                <Collapsible key={group.repName} open={isOpen} onOpenChange={() => toggleGroup(group.repName)}>
+                  <Card className="shadow-sm overflow-hidden">
+                    <CollapsibleTrigger asChild>
+                      <CardHeader className="pb-3 cursor-pointer select-none hover:bg-muted/30 transition-colors border-b border-border data-[state=closed]:border-b-0">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              <UserCircle className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base">{group.repName}</CardTitle>
+                              <CardDescription className="text-xs mt-0.5">
+                                {group.approvals.length} deal{group.approvals.length !== 1 ? "s" : ""} · Total commission{" "}
+                                <span className="font-semibold text-foreground">{formatCurrency(group.totalCommission)}</span>
+                                {allFinanceApproved && (
+                                  <span className="ml-2 inline-flex items-center gap-0.5 text-green-600 dark:text-green-400">
+                                    <CheckCircle2 className="h-3 w-3" /> Finance approved
+                                  </span>
+                                )}
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {isOpen && (
+                              <Button
+                                size="sm"
+                                className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                                onClick={(e) => { e.stopPropagation(); setBulkGroup(group); setBulkComments(""); }}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Approve All
                               </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                            )}
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
+                              <tr>
+                                <th className="px-5 py-2.5 font-medium">Deal</th>
+                                <th className="px-5 py-2.5 font-medium">Approval Step</th>
+                                <th className="px-5 py-2.5 font-medium text-center">Finance</th>
+                                <th className="px-5 py-2.5 font-medium text-right">Commission</th>
+                                <th className="px-5 py-2.5 font-medium">Submitted</th>
+                                <th className="px-5 py-2.5 font-medium text-right">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.approvals.map((a) => (
+                                <tr key={a.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                                  <td className="px-5 py-3">
+                                    <div className="font-medium text-foreground">{a.dealName}</div>
+                                    <div className="text-xs text-muted-foreground">{a.customerName}</div>
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <div className="text-sm font-medium">{a.stepName ?? `Level ${a.approvalLevel}`}</div>
+                                    <div className="text-xs text-muted-foreground">{a.approverRole}</div>
+                                  </td>
+                                  <td className="px-5 py-3 text-center">
+                                    {a.financeApproved ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
+                                        <CheckCircle2 className="h-3 w-3" /> Approved
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground border border-border">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-5 py-3 text-right font-semibold text-primary">
+                                    {formatCurrency((a.calculatedCommission ?? 0) - (a.splitDeductionAmount ?? 0))}
+                                  </td>
+                                  <td className="px-5 py-3 text-xs text-muted-foreground">{formatDate(a.createdAt)}</td>
+                                  <td className="px-5 py-3 text-right">
+                                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setSelected(a)}>
+                                      <MessageSquare className="h-3.5 w-3.5" />
+                                      Review
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              );
+            })
           )}
         </div>
       ) : (

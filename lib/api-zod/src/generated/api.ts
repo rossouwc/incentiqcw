@@ -936,7 +936,12 @@ export const ListApprovalsResponseItem = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'ESCALATED', 'CHANGES_REQUESTED']),
   "comments": zod.string().nullish(),
   "approvedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "submittedAt": zod.string().nullish(),
+  "splitDeductionAmount": zod.number().nullish(),
+  "editStatus": zod.string().optional(),
+  "sourceType": zod.string().optional(),
+  "financeApproved": zod.boolean().optional().describe('True when a Finance-role step on this event has been approved.')
 })
 export const ListApprovalsResponse = zod.array(ListApprovalsResponseItem)
 
@@ -964,7 +969,12 @@ export const GetDealApprovalsResponseItem = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'ESCALATED', 'CHANGES_REQUESTED']),
   "comments": zod.string().nullish(),
   "approvedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "submittedAt": zod.string().nullish(),
+  "splitDeductionAmount": zod.number().nullish(),
+  "editStatus": zod.string().optional(),
+  "sourceType": zod.string().optional(),
+  "financeApproved": zod.boolean().optional().describe('True when a Finance-role step on this event has been approved.')
 })
 export const GetDealApprovalsResponse = zod.array(GetDealApprovalsResponseItem)
 
@@ -998,7 +1008,12 @@ export const ActionApprovalResponse = zod.object({
   "status": zod.enum(['PENDING', 'APPROVED', 'REJECTED', 'ESCALATED', 'CHANGES_REQUESTED']),
   "comments": zod.string().nullish(),
   "approvedAt": zod.string().nullish(),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "submittedAt": zod.string().nullish(),
+  "splitDeductionAmount": zod.number().nullish(),
+  "editStatus": zod.string().optional(),
+  "sourceType": zod.string().optional(),
+  "financeApproved": zod.boolean().optional().describe('True when a Finance-role step on this event has been approved.')
 })
 
 

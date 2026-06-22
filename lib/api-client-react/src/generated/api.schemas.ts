@@ -558,6 +558,14 @@ export interface Approval {
   /** @nullable */
   approvedAt?: string | null;
   createdAt: string;
+  /** @nullable */
+  submittedAt?: string | null;
+  /** @nullable */
+  splitDeductionAmount?: number | null;
+  editStatus?: string;
+  sourceType?: string;
+  /** True when a Finance-role step on this event has been approved. */
+  financeApproved?: boolean;
 }
 
 export type ApprovalActionAction = typeof ApprovalActionAction[keyof typeof ApprovalActionAction];
