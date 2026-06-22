@@ -239,7 +239,7 @@ router.get("/deal/:dealId", requireAuth, async (req: Request, res: Response) => 
 // ── POST /api/approvals/:id/action ────────────────────────────────────────────
 
 router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
-  const { action, comments, payoutAmount } = req.body;
+  const { action, comments, payoutAmount, allowResubmit } = req.body;
   if (!action || !["APPROVE", "REJECT", "REQUEST_CHANGES"].includes(action)) {
     res.status(400).json({ error: "action must be APPROVE, REJECT, or REQUEST_CHANGES" });
     return;
@@ -585,7 +585,8 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         }
       }
     } else if (action === "REJECT") {
-      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "REJECTED" } });
+      const canResubmit = allowResubmit === true;
+      await prisma.commissionEvent.update({ where: { id: eventId }, data: { approvalStatus: "REJECTED", allowResubmit: canResubmit } });
       await deductPendingBalance(req.user!.tenantId, salesExecId, commission, eventId, eventTitle);
 
       // Reverse any commission already credited
@@ -613,12 +614,13 @@ router.post("/:id/action", requireAuth, async (req: Request, res: Response) => {
         }
       }
 
+      const canResubmit2 = allowResubmit === true;
       await prisma.notification.create({
         data: {
           tenantId: req.user!.tenantId,
           userId:   salesExecId,
           title:    "Deal Rejected",
-          message:  `Your deal ${eventTitle} was rejected${comments ? `: ${comments}` : ""}`,
+          message:  `Your deal ${eventTitle} was rejected${comments ? `: ${comments}` : ""}${canResubmit2 ? " — you may resubmit after making changes." : ""}`,
           type:     "DEAL_REJECTED",
           readStatus: false,
         },

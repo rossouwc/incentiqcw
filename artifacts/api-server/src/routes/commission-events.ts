@@ -262,6 +262,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
         splitReferrerName:   (e as any).splitReferrerName ?? null,
         splitDeductionAmount: (e as any).splitDeductionAmount ?? null,
         editStatus:          (e as any).editStatus ?? "NONE",
+        allowResubmit:       (e as any).allowResubmit ?? false,
         cancellationStatus:  (e as any).cancellationStatus ?? null,
         cancellationReason:  (e as any).cancellationReason ?? null,
         cancellationDate:    (e as any).cancellationDate?.toISOString() ?? null,
@@ -1133,6 +1134,58 @@ router.delete("/:id/documents/:docId", requireAuth, async (req: Request, res: Re
 
 // ── POST /api/commission-events/:id/cancel ────────────────────────────────────
 // Cancel / terminate a commission event, run the clawback engine, return preview.
+
+// ── POST /api/commission-events/:id/resubmit ──────────────────────────────────
+
+router.post("/:id/resubmit", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const event = await prisma.commissionEvent.findFirst({
+      where: {
+        id:               req.params.id as string,
+        tenantId:         req.user!.tenantId,
+        salesExecutiveId: req.user!.userId,
+      },
+    });
+    if (!event) { res.status(404).json({ error: "Not found" }); return; }
+    if (event.approvalStatus !== "REJECTED") {
+      res.status(400).json({ error: "Only REJECTED deals can be resubmitted" }); return;
+    }
+    if (!(event as any).allowResubmit) {
+      res.status(403).json({ error: "Resubmission is not permitted for this deal" }); return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.commissionEventApproval.deleteMany({ where: { commissionEventId: event.id } });
+      await tx.commissionEventTrigger.deleteMany({ where: { commissionEventId: event.id } });
+      await tx.commissionEvent.update({
+        where: { id: event.id },
+        data: {
+          approvalStatus: "DRAFT",
+          allowResubmit:  false,
+          editStatus:     "NONE",
+          triggerStatus:  "NOT_TRIGGERED",
+          submittedAt:    null,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId:   req.user!.tenantId,
+          userId:     req.user!.userId,
+          action:     "RESUBMIT_RESET",
+          entityType: "CommissionEvent",
+          entityId:   event.id,
+          oldValue:   JSON.stringify({ approvalStatus: "REJECTED" }),
+          newValue:   JSON.stringify({ approvalStatus: "DRAFT" }),
+        },
+      });
+    });
+
+    res.json({ message: "Deal reset to draft — make your changes and resubmit" });
+  } catch (err) {
+    logger.error({ err }, "ResubmitCommissionEvent error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 router.post("/:id/cancel", requireAuth, async (req: Request, res: Response) => {
   const allowedRoles = ["ADMIN", "SUPER_ADMIN", "MANAGER", "FINANCE", "EXECUTIVE"];

@@ -19,8 +19,9 @@ import {
   Search, X, User, ChevronDown, FileText, ExternalLink,
   Paperclip, TrendingUp, Calculator, CalendarDays,
   Users, Building2, UserCircle, Scissors,
-  AlertTriangle, GitPullRequestArrow, ThumbsUp, ThumbsDown,
+  AlertTriangle, GitPullRequestArrow, ThumbsUp, ThumbsDown, RefreshCw,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
 import {
@@ -41,7 +42,7 @@ type ActionType = "APPROVE" | "REJECT" | "REQUEST_CHANGES";
 interface ActionDialogProps {
   approval: Approval | null;
   onClose: () => void;
-  onAction: (action: ActionType, comments: string, payoutAmount?: number) => Promise<void>;
+  onAction: (action: ActionType, comments: string, payoutAmount?: number, allowResubmit?: boolean) => Promise<void>;
   submitting: boolean;
 }
 
@@ -494,6 +495,7 @@ function ApprovalChain({ dealId }: { dealId: string }) {
 function StandardActionDialog({ approval, onClose, onAction, submitting }: ActionDialogProps) {
   const [comments, setComments] = useState("");
   const [pendingAction, setPendingAction] = useState<ActionType | null>(null);
+  const [allowResubmit, setAllowResubmit] = useState(false);
 
   if (!approval) return null;
 
@@ -502,7 +504,7 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
       setPendingAction(action);
       return;
     }
-    await onAction(action, comments);
+    await onAction(action, comments, undefined, action === "REJECT" ? allowResubmit : undefined);
   };
 
   const requiresComment = pendingAction !== null && !comments.trim();
@@ -637,6 +639,25 @@ function StandardActionDialog({ approval, onClose, onAction, submitting }: Actio
               rows={3}
               className={requiresComment ? "border-red-400" : ""}
             />
+          </div>
+
+          {/* Allow resubmission — only shown when rejecting */}
+          <div className="flex items-start gap-3 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 px-4 py-3">
+            <Checkbox
+              id="allow-resubmit"
+              checked={allowResubmit}
+              onCheckedChange={(v) => setAllowResubmit(v === true)}
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <label htmlFor="allow-resubmit" className="text-sm font-medium text-foreground cursor-pointer leading-none">
+                Allow resubmission
+              </label>
+              <p className="text-xs text-muted-foreground">
+                If checked, the sales executive will be able to update the deal and resubmit it for approval again.
+                Leave unchecked for a final rejection.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -880,13 +901,18 @@ export default function Approvals({ title = "Pending Approvals", description }: 
   const salesExecConfirmations = applyFilters(list.filter((a) => a.approverRole === "SALES_EXECUTIVE"));
   const standardApprovals = applyFilters(list.filter((a) => a.approverRole !== "SALES_EXECUTIVE"));
 
-  const handleAction = async (action: ActionType, comments: string, payoutAmount?: number) => {
+  const handleAction = async (action: ActionType, comments: string, payoutAmount?: number, allowResubmit?: boolean) => {
     if (!selected) return;
     setSubmitting(true);
     try {
       await actionApproval.mutateAsync({
         approvalId: selected.id,
-        data: { action, comments, ...(payoutAmount ? { payoutAmount } : {}) },
+        data: {
+          action,
+          comments,
+          ...(payoutAmount ? { payoutAmount } : {}),
+          ...(action === "REJECT" ? { allowResubmit: allowResubmit ?? false } : {}),
+        },
       });
       toast({
         title:

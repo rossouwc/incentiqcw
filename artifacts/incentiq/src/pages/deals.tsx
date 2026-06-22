@@ -24,7 +24,7 @@ import {
   CheckCircle2, XCircle, TrendingUp, DollarSign, Loader2, CircleDot, Eye,
   Zap, ZapOff, CheckSquare, Paperclip, ExternalLink, FileText, Link2, Upload, X,
   UserCircle, Users, Building2, Pencil, GitPullRequestArrow, RotateCcw,
-  Ban, TrendingDown, Info, ArrowRight, CalendarX2,
+  Ban, TrendingDown, Info, ArrowRight, CalendarX2, RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -1826,6 +1826,27 @@ export default function Deals() {
     }
   }
 
+  async function handleResubmit(ev: CommEvent) {
+    try {
+      const res = await fetch(`/api/commission-events/${ev.id}/resubmit`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: err.error ?? "Cannot resubmit this deal", variant: "destructive" });
+        return;
+      }
+      toast({
+        title: "Deal reset to draft",
+        description: "Update the details based on the reviewer's comments, then submit again.",
+      });
+      refetch();
+    } catch {
+      toast({ title: "Error resetting deal", variant: "destructive" });
+    }
+  }
+
   async function handleSubmitExisting(ev: CommEvent) {
     try {
       const res = await fetch(`/api/commission-events/${ev.id}/submit`, {
@@ -2179,6 +2200,17 @@ export default function Deals() {
                                 title="Request an amendment from the approver"
                               >
                                 <GitPullRequestArrow className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {/* Resubmit — rejected deal where approver allowed it */}
+                            {ev.approvalStatus === "REJECTED" && (ev as any).allowResubmit && (
+                              <Button
+                                size="sm" variant="outline"
+                                className="h-8 gap-1 text-xs border-blue-400 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                                onClick={() => handleResubmit(ev)}
+                                title="Reset to draft so you can update and resubmit"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" /> Resubmit
                               </Button>
                             )}
                             {ev.approvalStatus === "CHANGES_REQUESTED" && (

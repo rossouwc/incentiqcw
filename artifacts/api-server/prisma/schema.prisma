@@ -730,6 +730,7 @@ model CommissionEvent {
   actualEndDate               DateTime?
   cancellationDate            DateTime?
   cancellationReason          String?
+  allowResubmit               Boolean         @default(false)
   cancellationStatus          String?
   clawbackStatus              String?
   totalClawbackAmount         Decimal?  @db.Decimal(15, 2)
