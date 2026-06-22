@@ -291,18 +291,26 @@ router.get("/:id", requireAuth, async (req: Request, res: Response) => {
     if (!event) { res.status(404).json({ error: "Not found" }); return; }
 
     // ── Dynamically resolve post-approval step statuses from wallet/payout ──
-    const commApprovedTx = await prisma.walletTransaction.findFirst({
-      where: { referenceId: event.id, transactionType: "COMMISSION_APPROVED" },
-      select: { walletId: true },
-    });
+    // Only consider commission credited when the event is fully APPROVED past the executive step.
+    // Without this gate, stale COMMISSION_APPROVED txs from prior test runs make steps 3+4
+    // show green for deals that are still in EXECUTIVE_APPROVED state.
+    const commApprovedTx = event.approvalStatus === "APPROVED"
+      ? await prisma.walletTransaction.findFirst({
+          where: { referenceId: event.id, transactionType: "COMMISSION_APPROVED" },
+          select: { walletId: true, createdAt: true },
+        })
+      : null;
     let payoutApproved = false;
     if (commApprovedTx) {
+      // Only find payouts that occurred after this commission was credited — avoids matching
+      // an unrelated earlier payout on the same wallet (e.g. a different deal's payout).
       const payoutTx = await prisma.walletTransaction.findFirst({
         where: {
           walletId: commApprovedTx.walletId,
           transactionType: { in: ["PAYOUT_REQUESTED", "PAYOUT_PAID"] },
+          createdAt: { gte: commApprovedTx.createdAt },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "asc" },
         select: { referenceId: true },
       });
       if (payoutTx?.referenceId) {
