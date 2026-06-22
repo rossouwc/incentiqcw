@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getIndustryConfig } from "@/lib/industry-config";
 import { calculateCommission, CalcResult } from "@/lib/commission-formula";
@@ -1646,6 +1647,27 @@ function CancelEventModal({
   );
 }
 
+// ── Commission-month helpers ───────────────────────────────────────────────────
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Returns "YYYY-MM" for the commission month a deal belongs to, honouring the
+ *  cutoff day.  A deal submitted AFTER the cutoff falls into the next month. */
+function getCommissionMonth(dateStr: string | null, cutoffDay: number): string {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  if (cutoffDay > 0 && d.getDate() > cutoffDay) {
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Formats "YYYY-MM" → "Jun '26" */
+function formatMonthKey(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1]} '${String(y).slice(2)}`;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Deals() {
@@ -1687,6 +1709,15 @@ export default function Deals() {
   // Filters
   const [search, setSearch]         = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [monthFilter, setMonthFilter]   = useState("all");
+
+  // Cutoff day from payroll config (defaults to 20)
+  const { data: payrollCfg } = useQuery<{ commissionCutoffDay: number }>({
+    queryKey: ["payrollConfig"],
+    queryFn: () => fetch("/api/tenant/payroll-config", { headers: getAuthHeaders() as any }).then((r) => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+  const cutoffDay = payrollCfg?.commissionCutoffDay ?? 20;
 
   // Industry config (frontend copy for labels + event types)
   const indCfg = fc ? getIndustryConfig(fc.industryCode) : null;
@@ -1725,11 +1756,24 @@ export default function Deals() {
     return { total, draft, pending, totalComm };
   }, [events]);
 
+  // ── Available commission months (derived from all events, sorted desc) ──
+  const availableMonths = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of events) {
+      seen.add(getCommissionMonth(e.submittedAt ?? e.createdAt, cutoffDay));
+    }
+    return Array.from(seen).sort((a, b) => b.localeCompare(a)); // newest first
+  }, [events, cutoffDay]);
+
   // ── Filtered list ──
   const filtered = useMemo(() => {
     return events.filter((e) => {
       const matchesStatus = statusFilter === "all" || e.approvalStatus === statusFilter;
       if (!matchesStatus) return false;
+      if (monthFilter !== "all") {
+        const commMonth = getCommissionMonth(e.submittedAt ?? e.createdAt, cutoffDay);
+        if (commMonth !== monthFilter) return false;
+      }
       if (!search) return true;
       const q = search.toLowerCase();
       const data = e.eventDataJson as Record<string, string> | null;
@@ -1739,7 +1783,7 @@ export default function Deals() {
         String(customer).toLowerCase().includes(q)
       );
     });
-  }, [events, search, statusFilter]);
+  }, [events, search, statusFilter, monthFilter, cutoffDay]);
 
   // ── Handlers ──
   function openForm() {
@@ -2009,7 +2053,42 @@ export default function Deals() {
 
       {/* ── Filters + table ── */}
       <Card className="shadow-sm">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 space-y-3">
+          {/* Month tabs */}
+          {availableMonths.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              <button
+                onClick={() => setMonthFilter("all")}
+                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  monthFilter === "all"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                }`}
+              >
+                All
+              </button>
+              {availableMonths.map((mk) => (
+                <button
+                  key={mk}
+                  onClick={() => setMonthFilter(mk)}
+                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    monthFilter === mk
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                  }`}
+                >
+                  {formatMonthKey(mk)}
+                </button>
+              ))}
+              {cutoffDay > 0 && (
+                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+                  Cut-off: {cutoffDay}th
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Search + status filter */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
