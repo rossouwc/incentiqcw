@@ -79,10 +79,19 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
       byStatus[row.status] = row._sum.requestedAmount ?? 0;
     }
 
+    // Outstanding approved-but-not-yet-executed clawbacks reduce the payable amount
+    const clawbackOutstanding = await prisma.commissionClawback.aggregate({
+      where: { salesExecutiveId: req.user!.userId, status: "APPROVED" },
+      _sum: { outstandingAmount: true },
+    });
+    const outstandingClawbackAmount = Number(clawbackOutstanding._sum.outstandingAmount ?? 0);
+
     const response = {
       ...walletToResponse(walletWithYtd),
       pendingApprovalAmount: (byStatus["PENDING"] ?? 0) + (byStatus["FINANCE_APPROVED"] ?? 0),
       payrollApprovedAmount: byStatus["PAYROLL_APPROVED"] ?? 0,
+      outstandingClawbackAmount,
+      payableBalance: Math.max(0, Number(walletWithYtd.availableBalance) - outstandingClawbackAmount),
     };
     res.json(response);
   } catch (err) {

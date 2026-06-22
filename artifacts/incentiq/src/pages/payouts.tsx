@@ -198,6 +198,9 @@ export default function Payouts() {
 
   const w = wallet as any;
   const availableBalance = wallet?.availableBalance ?? 0;
+  const outstandingClawbackAmount: number = w?.outstandingClawbackAmount ?? 0;
+  // Payable balance = available minus any approved-but-not-yet-executed clawback recoveries
+  const payableBalance: number = w?.payableBalance ?? availableBalance;
   const pendingBalance = (w?.pendingApprovalAmount ?? 0) + (w?.payrollApprovedAmount ?? 0);
   const paidOutBalance = wallet?.paidOutBalance ?? 0;
 
@@ -208,9 +211,9 @@ export default function Payouts() {
     : currentMonths[0]?.value ?? "";
 
   const effectiveAmount = useMemo(() => {
-    if (payoutType === "FULL") return availableBalance;
+    if (payoutType === "FULL") return payableBalance;
     return parseFloat(amount) || 0;
-  }, [payoutType, amount, availableBalance]);
+  }, [payoutType, amount, payableBalance]);
 
   // Debounced PAYE estimate whenever amount or profile changes
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -251,8 +254,8 @@ export default function Payouts() {
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     if (effectiveAmount <= 0) errs.amount = "Amount must be greater than zero";
-    if (effectiveAmount > availableBalance)
-      errs.amount = `Cannot exceed available balance of ${formatCurrency(availableBalance)}`;
+    if (effectiveAmount > payableBalance)
+      errs.amount = `Cannot exceed payable balance of ${formatCurrency(payableBalance)}`;
     if (payoutType === "DEFER" && !deferToMonth) errs.deferTo = "Please select a deferred month";
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -309,7 +312,7 @@ export default function Payouts() {
         {isSalesExec && (
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetDialog(); }}>
             <DialogTrigger asChild>
-              <Button className="gap-2" disabled={availableBalance <= 0 && !walletLoading}>
+              <Button className="gap-2" disabled={payableBalance <= 0 && !walletLoading}>
                 <Plus className="h-4 w-4" /> Request Payout
               </Button>
             </DialogTrigger>
@@ -319,10 +322,17 @@ export default function Payouts() {
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Available balance info */}
-                <div className="rounded-lg bg-muted/40 border border-border p-3 flex items-center gap-3 text-sm">
-                  <Wallet className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-muted-foreground">Available balance:</span>
-                  <span className="font-semibold text-foreground ml-auto">{formatCurrency(availableBalance)}</span>
+                <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-1.5 text-sm">
+                  <div className="flex items-center gap-3">
+                    <Wallet className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-muted-foreground">Payable balance:</span>
+                    <span className="font-semibold text-foreground ml-auto">{formatCurrency(payableBalance)}</span>
+                  </div>
+                  {outstandingClawbackAmount > 0 && (
+                    <div className="flex items-center gap-3 pl-7 text-amber-500">
+                      <span className="text-xs">Gross balance {formatCurrency(availableBalance)} — outstanding recovery {formatCurrency(outstandingClawbackAmount)} held back</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Payout type */}
@@ -351,9 +361,9 @@ export default function Payouts() {
                   <div className="space-y-1">
                     <Label>Amount (ZAR)</Label>
                     <div className="h-10 px-3 flex items-center rounded-md border border-border bg-muted/40 text-foreground font-semibold">
-                      {formatCurrency(availableBalance)}
+                      {formatCurrency(payableBalance)}
                     </div>
-                    <p className="text-xs text-muted-foreground">Full available balance will be requested</p>
+                    <p className="text-xs text-muted-foreground">Full payable balance will be requested</p>
                   </div>
                 ) : (
                   <div className="space-y-1">
@@ -362,15 +372,15 @@ export default function Payouts() {
                       type="number"
                       min="1"
                       step="0.01"
-                      max={availableBalance}
+                      max={payableBalance}
                       placeholder="e.g. 5000.00"
                       value={amount}
                       onChange={(e) => {
                           const val = e.target.value;
                           setAmount(val);
                           const parsed = parseFloat(val);
-                          if (!isNaN(parsed) && parsed > availableBalance) {
-                            setErrors((prev) => ({ ...prev, amount: `Cannot exceed available balance of ${formatCurrency(availableBalance)}` }));
+                          if (!isNaN(parsed) && parsed > payableBalance) {
+                            setErrors((prev) => ({ ...prev, amount: `Cannot exceed payable balance of ${formatCurrency(payableBalance)}` }));
                           } else {
                             setErrors((prev) => ({ ...prev, amount: "" }));
                           }
