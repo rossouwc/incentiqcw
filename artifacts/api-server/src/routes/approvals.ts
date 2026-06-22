@@ -624,24 +624,24 @@ router.post("/bulk-action", requireAuth, async (req: Request, res: Response) => 
     res.status(400).json({ error: "comments are required when rejecting or requesting changes" }); return;
   }
 
-  const succeeded: string[] = [];
-  const failed:    string[] = [];
-  const errors:    Record<string, string> = {};
+  let succeededCount = 0;
+  let failedCount    = 0;
+  const errors:      string[] = [];
 
   for (const approvalId of approvalIds as string[]) {
     try {
       const result = await executeApprovalAction(
         approvalId, action, { comments, payoutAmount, allowResubmit }, req.user!
       );
-      if (result.ok) { succeeded.push(approvalId); }
-      else           { failed.push(approvalId); errors[approvalId] = result.error; }
+      if (result.ok) { succeededCount++; }
+      else           { failedCount++; errors.push(result.error); }
     } catch (err: any) {
-      failed.push(approvalId);
-      errors[approvalId] = err?.message ?? "Unknown error";
+      failedCount++;
+      errors.push(err?.message ?? "Unknown error");
     }
   }
 
-  res.json({ succeeded, failed, errors });
+  res.json({ succeeded: succeededCount, failed: failedCount, errors });
 });
 
 // ── POST /api/approvals/:id/action ────────────────────────────────────────────

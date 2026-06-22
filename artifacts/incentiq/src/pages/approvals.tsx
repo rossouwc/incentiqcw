@@ -928,25 +928,28 @@ export default function Approvals({ title = "Pending Approvals", description, gr
     if (!bulkGroup) return;
     setBulkSubmitting(true);
     const repName = bulkGroup.repName;
+    const token = typeof window !== "undefined" ? localStorage.getItem("incentiq_token") : null;
     try {
       const res = await fetch("/api/approvals/bulk-action", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
           approvalIds: bulkGroup.approvals.map((a) => a.id),
           action:      "APPROVE",
           comments:    bulkComments || undefined,
         }),
       });
-      const payload: { succeeded: string[]; failed: string[]; errors: Record<string, string> } = await res.json();
+      const payload: { succeeded: number; failed: number; errors: string[] } = await res.json();
       const { succeeded, failed, errors } = payload;
-      if (failed.length === 0) {
-        toast({ title: `${succeeded.length} deal${succeeded.length !== 1 ? "s" : ""} approved`, description: `All pending approvals for ${repName} have been approved.` });
+      if (failed === 0) {
+        toast({ title: `${succeeded} deal${succeeded !== 1 ? "s" : ""} approved`, description: `All pending approvals for ${repName} have been approved.` });
       } else {
-        const firstErr = Object.values(errors)[0];
         toast({
-          title:       `${succeeded.length} approved, ${failed.length} failed`,
-          description: firstErr ? `Error: ${firstErr}` : "Some approvals could not be processed.",
+          title:       `${succeeded} approved, ${failed} failed`,
+          description: errors[0] ? `Error: ${errors[0]}` : "Some approvals could not be processed.",
           variant:     "destructive",
         });
       }
@@ -1235,6 +1238,7 @@ export default function Approvals({ title = "Pending Approvals", description, gr
                                 <th className="px-5 py-2.5 font-medium">Deal</th>
                                 <th className="px-5 py-2.5 font-medium">Approval Step</th>
                                 <th className="px-5 py-2.5 font-medium text-center">Finance</th>
+                                <th className="px-5 py-2.5 font-medium text-right">Contract Value</th>
                                 <th className="px-5 py-2.5 font-medium text-right">Commission</th>
                                 <th className="px-5 py-2.5 font-medium">Submitted</th>
                                 <th className="px-5 py-2.5 font-medium text-right">Action</th>
@@ -1257,10 +1261,13 @@ export default function Approvals({ title = "Pending Approvals", description, gr
                                         <CheckCircle2 className="h-3 w-3" /> Approved
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-muted text-muted-foreground border border-border">
-                                        —
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800">
+                                        <Clock className="h-3 w-3" /> Not yet
                                       </span>
                                     )}
+                                  </td>
+                                  <td className="px-5 py-3 text-right text-muted-foreground">
+                                    {formatCurrency((a as any).commissionBreakdown?.revenueAmount ?? 0)}
                                   </td>
                                   <td className="px-5 py-3 text-right font-semibold text-primary">
                                     {formatCurrency((a.calculatedCommission ?? 0) - (a.splitDeductionAmount ?? 0))}
