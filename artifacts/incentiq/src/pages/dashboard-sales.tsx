@@ -3,6 +3,7 @@ import {
   useGetMyTasks, useListDeals,
 } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useIndustryConfig } from "@/hooks/use-industry-config";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -34,6 +35,34 @@ export default function SalesDashboard() {
     queryKey: ["my-cb-dash"],
     queryFn: async () => { const r = await fetch("/api/clawbacks", { headers: salesAuthHeaders() }); return r.json(); },
   });
+
+  const { data: payrollConfig } = useQuery({
+    queryKey: ["payroll-config-dash"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/payroll-config", { headers: salesAuthHeaders() });
+      return r.json() as Promise<{ payrollDay: number; commissionCutoffDay: number }>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const payrollDates = useMemo(() => {
+    const cutoffDay = payrollConfig?.commissionCutoffDay ?? 20;
+    const payrollDay = payrollConfig?.payrollDay ?? 25;
+    const today = new Date();
+    let year = today.getFullYear();
+    let month = today.getMonth();
+    if (today.getDate() >= cutoffDay) {
+      month++;
+      if (month > 11) { month = 0; year++; }
+    }
+    const cutoffDate = new Date(year, month, cutoffDay);
+    let pYear = year, pMonth = month;
+    if (payrollDay <= cutoffDay) { pMonth++; if (pMonth > 11) { pMonth = 0; pYear++; } }
+    const payrollDate = new Date(pYear, pMonth, payrollDay);
+    const fmt = (d: Date) =>
+      d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
+    return { cutoff: fmt(cutoffDate), payroll: fmt(payrollDate) };
+  }, [payrollConfig]);
 
   const deals = dealsPage?.data ?? [];
   const myClawbacks = (Array.isArray(cbList) ? cbList : []) as any[];
@@ -156,7 +185,9 @@ export default function SalesDashboard() {
             <p className="font-semibold text-foreground">
               You have {formatCurrency(summary.available)} available to withdraw
             </p>
-            <p className="text-sm text-muted-foreground">Submit a payout request and get paid within 3–5 business days</p>
+            <p className="text-sm text-muted-foreground">
+              Submit a payout request before the <strong className="text-foreground">{payrollDates.cutoff}</strong> cut-off and get paid in your next payroll run on <strong className="text-foreground">{payrollDates.payroll}</strong>
+            </p>
           </div>
           <Button className="shrink-0 gap-2" asChild>
             <a href="/payouts">
