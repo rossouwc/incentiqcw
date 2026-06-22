@@ -7,3 +7,4 @@
 - [Industry config pattern](industry-config-pattern.md) — industry config duplicated in both backend (src/industry-config.ts) and frontend (src/lib/industry-config.ts); non-IT deals send dealType="NET_NEW" to DB, store real type in metadata.eventType; Deal.metadata Json? holds extra fields + industry id
 - [Deal Source & Commission Split](deal-source-split.md) — feature gated by CommissionSplitConfig.isEnabled; useAuth().user has .id (not .userId); new routes need server restart to register; ExternalProviderPicker uses blur+mouseDown pattern for autocomplete dropdown
 - [Clawback System](clawback-system.md) — full clawback lifecycle complete; FUTURE_OFFSET path leaves outstandingAmount >0 on EXECUTED status; approvals.ts hook applies offsets on next commission credit
+- [pendingBalance bug](pending-balance-bug.md) — payouts.ts was incorrectly adding to Wallet.pendingBalance on payout request; remove all pendingBalance mutations from payouts route

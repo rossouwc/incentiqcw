@@ -150,7 +150,7 @@ function BalanceCards({
     {
       label: "Pending Commission",
       value: wallet?.pendingBalance ?? 0,
-      description: "Awaiting approval in the workflow",
+      description: "Commissions pending deal approval",
       colorClass: "border-l-amber-400",
       valueClass: "text-amber-600",
       icon: Clock,

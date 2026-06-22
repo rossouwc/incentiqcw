@@ -165,7 +165,6 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
         where: { id: wallet.id },
         data: {
           availableBalance: Math.max(0, wallet.availableBalance - amount),
-          pendingBalance: wallet.pendingBalance + amount,
         },
       });
       await prisma.walletTransaction.create({
@@ -370,7 +369,6 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
         where: { id: wallet.id },
         data: {
           availableBalance: wallet.availableBalance + existing.requestedAmount,
-          pendingBalance: Math.max(0, wallet.pendingBalance - existing.requestedAmount),
         },
       });
       await prisma.walletTransaction.create({
@@ -468,7 +466,6 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
         await prisma.wallet.update({
           where: { id: wallet.id },
           data: {
-            pendingBalance: Math.max(0, wallet.pendingBalance - existing.requestedAmount),
             paidOutBalance: wallet.paidOutBalance + existing.requestedAmount,
           },
         });
@@ -565,7 +562,6 @@ router.post("/process-payroll", requireAuth, async (req: Request, res: Response)
           await prisma.wallet.update({
             where: { id: wallet.id },
             data: {
-              pendingBalance: Math.max(0, wallet.pendingBalance - p.requestedAmount),
               paidOutBalance: wallet.paidOutBalance + p.requestedAmount,
             },
           });

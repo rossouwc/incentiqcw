@@ -201,7 +201,8 @@ export default function Payouts() {
   const outstandingClawbackAmount: number = w?.outstandingClawbackAmount ?? 0;
   // Payable balance = available minus any approved-but-not-yet-executed clawback recoveries
   const payableBalance: number = w?.payableBalance ?? availableBalance;
-  const pendingBalance = (w?.pendingApprovalAmount ?? 0) + (w?.payrollApprovedAmount ?? 0);
+  const pendingReviewBalance = w?.pendingApprovalAmount ?? 0;
+  const payrollApprovedBalance = w?.payrollApprovedAmount ?? 0;
   const paidOutBalance = wallet?.paidOutBalance ?? 0;
 
   const currentMonths = getUpcomingMonths(12, pastCutoff);
@@ -511,10 +512,11 @@ export default function Payouts() {
 
       {/* Wallet summary (sales exec only) */}
       {isSalesExec && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
             { label: "Available Balance", value: availableBalance, icon: Wallet, color: "border-l-emerald-500" },
-            { label: "Pending Payout", value: pendingBalance, icon: Clock, color: "border-l-amber-400" },
+            { label: "Pending Review", value: pendingReviewBalance, icon: Clock, color: "border-l-amber-400" },
+            { label: "Payroll Approved", value: payrollApprovedBalance, icon: CheckCircle2, color: "border-l-emerald-400" },
             { label: "Paid Out (All Time)", value: paidOutBalance, icon: CheckCircle2, color: "border-l-blue-400" },
             { label: "Deferred", value: wallet?.deferredBalance ?? 0, icon: ArrowRightCircle, color: "border-l-purple-400" },
           ].map(({ label, value, icon: Icon, color }) => (
