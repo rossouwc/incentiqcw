@@ -212,11 +212,15 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     });
 
     // ── Update commission event approval steps when payout is requested ───────
-    // Find all events whose commission was credited to this wallet and mark
-    // the SALES_EXECUTIVE step approved + activate the PAYROLL step.
+    // Scoped to events whose COMMISSION_APPROVED wallet-credit was created in
+    // the same payout month, so prior-month events already in a later status
+    // are never accidentally re-advanced.
     if (!isDeferred) {
+      const [pYr, pMo] = payoutMonth.split("-").map(Number);
+      const monthStart = new Date(pYr, pMo - 1, 1);
+      const monthEnd   = new Date(pYr, pMo, 1);
       const commTxns = await prisma.walletTransaction.findMany({
-        where: { walletId: wallet.id, transactionType: "COMMISSION_APPROVED" },
+        where: { walletId: wallet.id, transactionType: "COMMISSION_APPROVED", createdAt: { gte: monthStart, lt: monthEnd } },
         select: { referenceId: true },
       });
       const eventIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
@@ -480,24 +484,22 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
             description: `Payout paid — ${existing.payoutMonth}`,
           },
         });
-        // ── Mark PAYROLL approval steps as APPROVED for all events on this wallet ──
+        // ── Mark PAYROLL approval steps as APPROVED — scoped to this payout month ──
+        const [fYr, fMo] = existing.payoutMonth.split("-").map(Number);
+        const fMonthStart = new Date(fYr, fMo - 1, 1);
+        const fMonthEnd   = new Date(fYr, fMo, 1);
         const commTxns = await prisma.walletTransaction.findMany({
-          where: { walletId: wallet.id, transactionType: "COMMISSION_APPROVED" },
+          where: { walletId: wallet.id, transactionType: "COMMISSION_APPROVED", createdAt: { gte: fMonthStart, lt: fMonthEnd } },
           select: { referenceId: true },
         });
         const eventIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
         if (eventIds.length > 0) {
-          // Advance PAYROLL approval steps
           await prisma.commissionEventApproval.updateMany({
             where: { commissionEventId: { in: eventIds }, approverRole: "PAYROLL", status: { in: ["PENDING", "WAITING"] } },
             data: { status: "APPROVED", approvedAt: new Date() },
           });
-          // Advance the overall CommissionEvent status to fully APPROVED
           await prisma.commissionEvent.updateMany({
-            where: {
-              id:             { in: eventIds },
-              approvalStatus: { not: "APPROVED" },
-            },
+            where: { id: { in: eventIds }, approvalStatus: { not: "APPROVED" } },
             data: { approvalStatus: "APPROVED" },
           });
         }
@@ -513,11 +515,14 @@ router.post("/:id/mark-paid", requireAuth, async (req: Request, res: Response) =
         },
       });
     } else {
-      // Reflect PAYROLL_APPROVED on the linked CommissionEvents
+      // Reflect PAYROLL_APPROVED on the linked CommissionEvents — scoped to this payout month
+      const [nYr, nMo] = existing.payoutMonth.split("-").map(Number);
+      const nMonthStart = new Date(nYr, nMo - 1, 1);
+      const nMonthEnd   = new Date(nYr, nMo, 1);
       const userWallet = await prisma.wallet.findUnique({ where: { userId: existing.userId } });
       if (userWallet) {
         const commTxns = await prisma.walletTransaction.findMany({
-          where: { walletId: userWallet.id, transactionType: "COMMISSION_APPROVED" },
+          where: { walletId: userWallet.id, transactionType: "COMMISSION_APPROVED", createdAt: { gte: nMonthStart, lt: nMonthEnd } },
           select: { referenceId: true },
         });
         const evtIds = commTxns.map((t) => t.referenceId).filter(Boolean) as string[];
