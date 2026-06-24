@@ -113,6 +113,29 @@ router.patch("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Reque
   }
 });
 
+// PATCH /api/users/:id/retention-bonus — ADMIN+ only
+router.patch("/:id/retention-bonus", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== "boolean") { res.status(400).json({ error: "enabled must be a boolean" }); return; }
+  try {
+    const existing = await prisma.user.findFirst({
+      where: { id: req.params.id as string, tenantId: req.user!.tenantId },
+    });
+    if (!existing) { res.status(404).json({ error: "User not found" }); return; }
+    const user = await prisma.user.update({
+      where: { id: req.params.id as string },
+      data:  { retentionBonusEnabled: enabled },
+    });
+    await prisma.auditLog.create({
+      data: { tenantId: req.user!.tenantId, userId: req.user!.userId, action: "UPDATE", entityType: "User", entityId: user.id, newValue: JSON.stringify({ retentionBonusEnabled: enabled }) },
+    });
+    res.json({ id: user.id, retentionBonusEnabled: user.retentionBonusEnabled });
+  } catch (err) {
+    logger.error({ err }, "UpdateUserRetentionBonus error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // DELETE /api/users/:id — ADMIN+ only
 router.delete("/:id", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
   try {

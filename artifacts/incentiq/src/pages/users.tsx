@@ -20,6 +20,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Search, Plus, MoreHorizontal, Pencil, Trash2, UserCheck, UserX, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/format";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -225,13 +227,44 @@ function EditUserDialog({ user, onOpenChange, onSuccess }: EditUserDialogProps) 
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState({ firstName: "", lastName: "", role: "", status: "" });
+  const [rbEnabled, setRbEnabled] = useState(false);
+  const [rbSaving, setRbSaving] = useState(false);
+  const [tenantRbEnabled, setTenantRbEnabled] = useState(false);
 
   useEffect(() => {
     if (user) {
       setForm({ firstName: user.firstName, lastName: user.lastName, role: user.role, status: user.status });
+      setRbEnabled(user.retentionBonusEnabled ?? false);
       setErrors({});
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    fetch("/api/tenant/retention-bonus", { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTenantRbEnabled(d.enabled ?? false); })
+      .catch(() => {});
+  }, []);
+
+  async function toggleRetentionBonus(enabled: boolean) {
+    if (!user) return;
+    setRbSaving(true);
+    try {
+      const res = await fetch(`/api/users/${user.id}/retention-bonus`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setRbEnabled(enabled);
+      toast({ title: enabled ? "Retention bonus enabled" : "Retention bonus disabled", description: `${user.firstName} ${user.lastName}'s retention bonus has been updated.` });
+      onSuccess();
+    } catch {
+      toast({ title: "Failed to update retention bonus", variant: "destructive" });
+    } finally {
+      setRbSaving(false);
+    }
+  }
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }));
@@ -308,6 +341,19 @@ function EditUserDialog({ user, onOpenChange, onSuccess }: EditUserDialogProps) 
               </SelectContent>
             </Select>
           </Field>
+          {tenantRbEnabled && form.role === "SALES_EXECUTIVE" && (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between gap-4">
+              <div>
+                <Label className="text-sm font-medium">Retention Bonus</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Credit a monthly balance reward to this rep's wallet</p>
+              </div>
+              <Switch
+                checked={rbEnabled}
+                onCheckedChange={toggleRetentionBonus}
+                disabled={rbSaving}
+              />
+            </div>
+          )}
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
             <Button type="submit" disabled={saving} className="gap-2">

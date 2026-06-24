@@ -108,6 +108,7 @@ const TX_META: Record<string, TxMeta> = {
   // Splits / misc
   COMMISSION_SPLIT_DEDUCTION: { label: "Commission Split Deduction",    icon: ArrowUpRight,   colorClass: "text-orange-600", bgClass: "bg-orange-50",   isCredit: false },
   COMMISSION_SPLIT_CREDIT:    { label: "Commission Split Credit",       icon: ArrowDownLeft,  colorClass: "text-teal-600",   bgClass: "bg-teal-50",     isCredit: true  },
+  BALANCE_REWARD:             { label: "Retention Bonus",               icon: TrendingUp,     colorClass: "text-violet-600", bgClass: "bg-violet-50",   isCredit: true  },
   MANUAL_ADJUSTMENT:          { label: "Manual Adjustment",             icon: Sliders,        colorClass: "text-gray-600",   bgClass: "bg-gray-100",    isCredit: true  },
   CREDIT:                     { label: "Credit",                        icon: ArrowDownLeft,  colorClass: "text-green-600",  bgClass: "bg-green-50",    isCredit: true  },
   DEBIT:                      { label: "Debit",                         icon: ArrowUpRight,   colorClass: "text-red-600",    bgClass: "bg-red-50",      isCredit: false },
@@ -930,6 +931,16 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
   });
   const cutoffDay = payrollCfg?.commissionCutoffDay ?? 0;
 
+  const { data: rbPreview } = useQuery<{
+    eligible: boolean; projected: number; alreadyCreditedThisMonth: boolean;
+    creditedAmount: number; annualRate: number; availableBalance: number;
+  }>({
+    queryKey: ["retention-bonus-preview"],
+    queryFn: () => fetch("/api/retention-bonus/preview", { headers: getAuthHeaders() }).then(r => r.ok ? r.json() : null),
+    staleTime: 60 * 1000,
+    enabled: isSalesExec,
+  });
+
   const w = wallet as Wallet | undefined;
   const transactions: Transaction[] = Array.isArray((txPage as any)?.data) ? (txPage as any).data : [];
   const deals: WalletDeal[] = Array.isArray(dealsData) ? dealsData as any : [];
@@ -945,6 +956,29 @@ function OwnWalletView({ isSalesExec }: { isSalesExec: boolean }) {
       />
       {w && !walletLoading && (
         <p className="text-xs text-muted-foreground text-right -mt-2">Last updated: {formatDateTime(w.updatedAt)}</p>
+      )}
+      {isSalesExec && rbPreview && (
+        rbPreview.alreadyCreditedThisMonth ? (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 dark:bg-violet-950/30 dark:border-violet-800 px-4 py-3 flex items-start gap-3">
+            <TrendingUp className="h-4 w-4 text-violet-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-violet-800 dark:text-violet-300">Retention bonus credited this month</p>
+              <p className="text-xs text-violet-600 dark:text-violet-400">
+                R{Number(rbPreview.creditedAmount).toLocaleString("en-ZA", { minimumFractionDigits: 2 })} was added to your wallet for {CURRENT_MONTH} ({rbPreview.annualRate}% p.a.)
+              </p>
+            </div>
+          </div>
+        ) : rbPreview.eligible ? (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 dark:bg-violet-950/30 dark:border-violet-800 px-4 py-3 flex items-start gap-3">
+            <TrendingUp className="h-4 w-4 text-violet-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-violet-800 dark:text-violet-300">Retention bonus eligible this month</p>
+              <p className="text-xs text-violet-600 dark:text-violet-400">
+                Projected credit: <span className="font-semibold">R{Number(rbPreview.projected).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</span> — based on R{Number(rbPreview.availableBalance).toLocaleString("en-ZA", { minimumFractionDigits: 2 })} available balance at {rbPreview.annualRate}% p.a. Credited by your admin at month-end.
+              </p>
+            </div>
+          </div>
+        ) : null
       )}
       {isSalesExec && (
         <div className="flex justify-end">

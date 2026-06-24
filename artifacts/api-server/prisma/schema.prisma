@@ -296,6 +296,7 @@ model Tenant {
   clawbackPolicies         ClawbackPolicy[]
   clawbackApprovalSteps    ClawbackApprovalStep[]
   clawbackApprovalConfigs  ClawbackApprovalConfig[]
+  retentionBonusLedger     RetentionBonusLedger[]
 }
 
 model User {
@@ -339,6 +340,7 @@ model User {
   clawbackStepsApproved       ClawbackApprovalStep[]    @relation("ClawbackStepApprovedBy")
   payoutFinanceApprovals      PayoutRequest[]           @relation("PayoutFinanceApprover")
   payoutPayrollApprovals      PayoutRequest[]           @relation("PayoutPayrollApprover")
+  retentionBonusLedger        RetentionBonusLedger[]
 
   @@unique([tenantId, email])
 }
@@ -1055,4 +1057,20 @@ model ClawbackPolicy {
 
   tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   industryTemplate IndustryTemplate? @relation(fields: [industryTemplateId], references: [id])
+}
+
+model RetentionBonusLedger {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  month      String
+  amount     Float
+  rate       Float
+  basis      Float
+  creditedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month])
 }

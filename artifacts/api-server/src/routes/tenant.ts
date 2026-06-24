@@ -199,4 +199,55 @@ router.delete("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req:
   }
 });
 
+// GET /api/tenant/retention-bonus
+router.get("/retention-bonus", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const tenant = await prisma.tenant.findUnique({ where: { id: req.user!.tenantId } });
+    if (!tenant) { res.status(404).json({ error: "Tenant not found" }); return; }
+    res.json({
+      enabled:    tenant.retentionBonusEnabled,
+      annualRate: tenant.retentionBonusAnnualRate,
+      minBalance: tenant.retentionBonusMinBalance,
+      maxBalance: tenant.retentionBonusMaxBalance ?? null,
+    });
+  } catch (err) {
+    logger.error({ err }, "GetRetentionBonus error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// PATCH /api/tenant/retention-bonus — ADMIN+ only
+router.patch("/retention-bonus", requireAuth, requireRole(...ADMIN_ROLES), async (req: Request, res: Response) => {
+  const { enabled, annualRate, minBalance, maxBalance } = req.body;
+  if (annualRate !== undefined && (Number(annualRate) < 0 || Number(annualRate) > 100)) {
+    res.status(400).json({ error: "annualRate must be between 0 and 100" }); return;
+  }
+  if (minBalance !== undefined && Number(minBalance) < 0) {
+    res.status(400).json({ error: "minBalance must be >= 0" }); return;
+  }
+  try {
+    const tenant = await prisma.tenant.update({
+      where: { id: req.user!.tenantId },
+      data: {
+        ...(enabled    !== undefined && { retentionBonusEnabled:    Boolean(enabled) }),
+        ...(annualRate !== undefined && { retentionBonusAnnualRate: Number(annualRate) }),
+        ...(minBalance !== undefined && { retentionBonusMinBalance: Number(minBalance) }),
+        ...(maxBalance !== undefined && { retentionBonusMaxBalance: maxBalance === null ? null : Number(maxBalance) }),
+      },
+    });
+    await prisma.auditLog.create({
+      data: { tenantId: req.user!.tenantId, userId: req.user!.userId, action: "UPDATE", entityType: "Tenant", entityId: tenant.id, newValue: JSON.stringify({ retentionBonusEnabled: tenant.retentionBonusEnabled, retentionBonusAnnualRate: tenant.retentionBonusAnnualRate }) },
+    });
+    res.json({
+      enabled:    tenant.retentionBonusEnabled,
+      annualRate: tenant.retentionBonusAnnualRate,
+      minBalance: tenant.retentionBonusMinBalance,
+      maxBalance: tenant.retentionBonusMaxBalance ?? null,
+    });
+  } catch (err) {
+    logger.error({ err }, "UpdateRetentionBonus error");
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export { router as tenantRouter };

@@ -45,6 +45,14 @@ export default function CompanySettings() {
   const [loadingPayroll, setLoadingPayroll] = useState(true);
   const [savingPayroll, setSavingPayroll] = useState(false);
 
+  // ── Retention Bonus state ────────────────────────────────────────────────
+  const [rbEnabled,    setRbEnabled]    = useState(false);
+  const [rbAnnualRate, setRbAnnualRate] = useState<number>(5);
+  const [rbMinBalance, setRbMinBalance] = useState<number>(0);
+  const [rbMaxBalance, setRbMaxBalance] = useState<string>("");
+  const [loadingRB,    setLoadingRB]    = useState(true);
+  const [savingRB,     setSavingRB]     = useState(false);
+
   // ── Industry state ───────────────────────────────────────────────────────
   const [industry, setIndustry] = useState<string>("");
   const [savingIndustry, setSavingIndustry] = useState(false);
@@ -102,6 +110,20 @@ export default function CompanySettings() {
       })
       .catch(() => {})
       .finally(() => setLoadingPayroll(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/tenant/retention-bonus", { headers: authHeaders() as any })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        setRbEnabled(d.enabled ?? false);
+        setRbAnnualRate(d.annualRate ?? 5);
+        setRbMinBalance(d.minBalance ?? 0);
+        setRbMaxBalance(d.maxBalance !== null && d.maxBalance !== undefined ? String(d.maxBalance) : "");
+      })
+      .catch(() => {})
+      .finally(() => setLoadingRB(false));
   }, []);
 
   useEffect(() => {
@@ -281,6 +303,32 @@ export default function CompanySettings() {
       toast({ title: "Failed to save", variant: "destructive" });
     } finally {
       setSavingPayroll(false);
+    }
+  };
+
+  const saveRetentionBonus = async () => {
+    const rate = Number(rbAnnualRate);
+    const min  = Number(rbMinBalance);
+    const max  = rbMaxBalance.trim() === "" ? null : Number(rbMaxBalance);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      toast({ title: "Invalid rate", description: "Annual rate must be 0–100%", variant: "destructive" }); return;
+    }
+    if (isNaN(min) || min < 0) {
+      toast({ title: "Invalid minimum balance", description: "Must be 0 or greater", variant: "destructive" }); return;
+    }
+    setSavingRB(true);
+    try {
+      const res = await fetch("/api/tenant/retention-bonus", {
+        method: "PATCH",
+        headers: authHeaders() as any,
+        body: JSON.stringify({ enabled: rbEnabled, annualRate: rate, minBalance: min, maxBalance: max }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Retention bonus settings saved" });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSavingRB(false);
     }
   };
 
@@ -546,6 +594,88 @@ export default function CompanySettings() {
                     <Button className="gap-2" onClick={savePayrollConfig} disabled={savingPayroll}>
                       {savingPayroll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                       Save Payroll Settings
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Retention Bonus */}
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserCircle className="h-5 w-5 text-primary" />
+                Retention Bonus
+              </CardTitle>
+              <CardDescription>
+                Automatically credit sales reps a monthly balance reward — like interest on their commission wallet
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {loadingRB ? (
+                <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Enable Retention Bonus</p>
+                      <p className="text-xs text-muted-foreground">When enabled, eligible reps receive a monthly credit to their available wallet balance</p>
+                    </div>
+                    <Switch checked={rbEnabled} onCheckedChange={setRbEnabled} />
+                  </div>
+
+                  {rbEnabled && (
+                    <div className="space-y-4 pt-2 border-t border-border">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label>Annual Rate (%)</Label>
+                          <Input
+                            type="number" min={0} max={100} step={0.1}
+                            value={rbAnnualRate}
+                            onChange={e => setRbAnnualRate(Number(e.target.value))}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Monthly credit = balance × ({rbAnnualRate}% ÷ 12) = <span className="font-medium text-foreground">{(rbAnnualRate / 12).toFixed(4)}%/mo</span>
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Minimum Balance (R)</Label>
+                          <Input
+                            type="number" min={0} step={100}
+                            value={rbMinBalance}
+                            onChange={e => setRbMinBalance(Number(e.target.value))}
+                          />
+                          <p className="text-xs text-muted-foreground">Rep must hold at least this balance to qualify</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Balance Cap (R) <span className="text-muted-foreground font-normal">— optional</span></Label>
+                          <Input
+                            type="number" min={0} step={1000}
+                            placeholder="No cap"
+                            value={rbMaxBalance}
+                            onChange={e => setRbMaxBalance(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">Bonus is only calculated on balance up to this cap</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-muted/50 border border-border p-4 text-sm space-y-1.5">
+                        <p className="font-medium text-foreground">How it works</p>
+                        <ul className="text-muted-foreground space-y-1 list-disc list-inside text-xs">
+                          <li>Each month, admins run the accrual — eligible reps are credited automatically.</li>
+                          <li>A rep must have <strong>R{rbMinBalance.toLocaleString()}</strong> or more in available balance to qualify.</li>
+                          {rbMaxBalance ? <li>Bonus is calculated on balance up to <strong>R{Number(rbMaxBalance).toLocaleString()}</strong>.</li> : <li>No balance cap — the full available balance is used as the calculation basis.</li>}
+                          <li>Each month's accrual is idempotent — running it twice won't double-credit.</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button className="gap-2" onClick={saveRetentionBonus} disabled={savingRB}>
+                      {savingRB ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Retention Bonus Settings
                     </Button>
                   </div>
                 </>

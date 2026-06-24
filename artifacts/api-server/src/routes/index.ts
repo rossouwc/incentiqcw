@@ -26,6 +26,7 @@ import { commissionSplitConfigRouter } from "./commission-split-config";
 import { changeRequestsRouter } from "./change-requests";
 import { clawbacksRouter } from "./clawbacks";
 import { clawbackApprovalConfigRouter } from "./clawback-approval-config";
+import { retentionBonusRouter } from "./retention-bonus";
 
 const router: IRouter = Router();
 
@@ -57,5 +58,6 @@ router.use("/commission-split-config", commissionSplitConfigRouter);
 router.use("/change-requests", changeRequestsRouter);
 router.use("/clawbacks", clawbacksRouter);
 router.use("/clawback-approval-config", clawbackApprovalConfigRouter);
+router.use("/retention-bonus", retentionBonusRouter);
 
 export default router;
