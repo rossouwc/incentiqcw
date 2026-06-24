@@ -97,6 +97,7 @@ enum TransactionType {
   CLAWBACK_DEDUCTION
   FUTURE_OFFSET_APPLIED
   CLAWBACK_PENDING
+  BALANCE_REWARD
 }
 
 enum ClawbackType {
@@ -257,6 +258,10 @@ model Tenant {
   payrollDay               Int?             @default(25)
   commissionCutoffDay      Int?             @default(20)
   allowPayrollDeduction    Boolean          @default(false)
+  retentionBonusEnabled    Boolean          @default(false)
+  retentionBonusAnnualRate Float            @default(5)
+  retentionBonusMinBalance Float            @default(5000)
+  retentionBonusMaxBalance Float?
   onboardingStatus     String           @default("PENDING")
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -300,10 +305,11 @@ model User {
   lastName     String
   email        String
   passwordHash String
-  role         UserRole   @default(SALES_EXECUTIVE)
-  status       UserStatus @default(ACTIVE)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  role                  UserRole   @default(SALES_EXECUTIVE)
+  status                UserStatus @default(ACTIVE)
+  retentionBonusEnabled Boolean    @default(false)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dealsAsExecutive     Deal[]             @relation("SalesExecutive")
